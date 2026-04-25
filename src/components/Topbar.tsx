@@ -17,10 +17,6 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center bg-[#6899c4] text-white text-xs font-medium px-4 py-2 rounded shadow-sm mr-2 cursor-pointer hover:bg-[#5a86ae] transition-colors">
-          <span className="tracking-wide">VISÃO GLOBAL - 791</span>
-          <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-        </div>
 
         <button className="p-2 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-50 transition-colors">
           <Settings size={18} />

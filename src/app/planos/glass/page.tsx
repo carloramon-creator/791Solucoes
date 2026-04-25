@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabaseGlass } from '@/lib/supabase-glass';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { ArrowLeft, Check, Save, Layers, AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -13,6 +13,24 @@ interface Module {
   slug?: string;
   parent_slug?: string;
 }
+
+const supabase = createSupabaseBrowser();
+
+// Função auxiliar para formatar moeda brasileira em tempo real
+const formatCurrency = (value: string) => {
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '');
+  const amount = Number(digits) / 100;
+  return new Intl.NumberFormat('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+};
+
+// Função para converter string formatada (1.250,50) de volta para número (1250.50)
+const parseCurrency = (formattedValue: string) => {
+  return Number(formattedValue.replace(/\D/g, '')) / 100;
+};
 
 export default function PlanosGlassPage() {
   const [modules, setModules] = useState<Module[]>([]);
@@ -34,16 +52,27 @@ export default function PlanosGlassPage() {
     extraMessagePrice: ''
   });
 
+  // Cálculo do valor total (Base + Todos os Opcionais)
+  const totalFullValue = parseCurrency(basePrice || '0') + 
+    Object.values(optionalPrices).reduce((sum, val) => sum + parseCurrency(val || '0'), 0);
+
   const handleSave = async () => {
     setSaving(true);
     
     const payload = {
-      name: '791glass', // Preenchendo a coluna name que é obrigatória no seu banco
-      sistema: '791glass', // Para identificar qual SaaS é esse plano
-      base_price: Number(basePrice) || 0,
-      included_modules: selectedBasicModules, // Array com os IDs dos módulos inclusos
-      optional_modules_pricing: optionalPrices, // Objeto { "id_modulo": "valor" }
-      system_limits: limits // Objeto com todos os limites
+      name: '791glass', 
+      sistema: '791glass', 
+      base_price: parseCurrency(basePrice) || 0,
+      included_modules: selectedBasicModules, 
+      optional_modules_pricing: Object.fromEntries(
+        Object.entries(optionalPrices).map(([k, v]) => [k, parseCurrency(v)])
+      ), 
+      system_limits: {
+        ...limits,
+        extraUserPrice: parseCurrency(limits.extraUserPrice),
+        extraDevicePrice: parseCurrency(limits.extraDevicePrice),
+        extraMessagePrice: parseCurrency(limits.extraMessagePrice)
+      } 
     };
 
     try {
@@ -51,7 +80,16 @@ export default function PlanosGlassPage() {
       
       const { error } = await supabase
         .from('system_plans')
-        .upsert(payload, { onConflict: 'sistema' }); // Atualiza se já existir um plano '791glass'
+        .upsert({
+          ...payload,
+          user_limit: Number(limits.usersIncluded) || 0,
+          user_extra_price: parseCurrency(limits.extraUserPrice) || 0,
+          whatsapp_user_limit: Number(limits.wppDevices) || 0,
+          whatsapp_message_limit: Number(limits.wppMessages) || 0,
+          whatsapp_user_extra_price: parseCurrency(limits.extraDevicePrice) || 0,
+          whatsapp_message_extra_price: parseCurrency(limits.extraMessagePrice) || 0,
+          segment: 'glass'
+        }, { onConflict: 'sistema' });
 
       if (error) {
         // Se a tabela não tiver chave única em 'sistema', o upsert pode falhar
@@ -108,14 +146,15 @@ export default function PlanosGlassPage() {
   };
 
   useEffect(() => {
-    async function fetchModules() {
+    async function fetchPlanAndModules() {
       try {
-        const { data, error } = await supabaseGlass.from('modules').select('*');
-        if (error) throw error;
+        setLoading(true);
+        // 1. Buscar Módulos do Vidraçarias (para a listagem de checkboxes)
+        const { data: modulesData, error: modulesError } = await supabaseGlass.from('modules').select('*');
+        if (modulesError) throw modulesError;
         
-        if (data) {
-          // Ordenar pelo campo "ordem", se existir. Se não, por nome.
-          const sorted = data.sort((a, b) => {
+        if (modulesData) {
+          const sorted = modulesData.sort((a, b) => {
             if (a.ordem !== undefined && b.ordem !== undefined) {
               return a.ordem - b.ordem;
             }
@@ -123,15 +162,55 @@ export default function PlanosGlassPage() {
           });
           setModules(sorted);
         }
+
+        // 2. Buscar Plano Existente (para preencher os campos)
+        const { data: planData, error: planError } = await supabase
+          .from('system_plans')
+          .select('*')
+          .ilike('sistema', '791glass')
+          .maybeSingle();
+
+        if (planError) throw planError;
+
+        if (planData) {
+          setBasePrice(formatCurrency(String((planData.base_price || 0) * 100)));
+          setSelectedBasicModules(planData.included_modules || []);
+          
+          const formattedOptionals: Record<string, string> = {};
+          Object.entries(planData.optional_modules_pricing || {}).forEach(([k, v]: [string, any]) => {
+            formattedOptionals[k] = formatCurrency(String(Number(v || 0) * 100));
+          });
+          setOptionalPrices(formattedOptionals);
+          
+          if (planData.system_limits && Object.keys(planData.system_limits).length > 0) {
+            setLimits({
+              usersIncluded: String(planData.system_limits.usersIncluded || ''),
+              extraUserPrice: formatCurrency(String(Number(planData.system_limits.extraUserPrice || 0) * 100)),
+              wppDevices: String(planData.system_limits.wppDevices || ''),
+              extraDevicePrice: formatCurrency(String(Number(planData.system_limits.extraDevicePrice || 0) * 100)),
+              wppMessages: String(planData.system_limits.wppMessages || ''),
+              extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100))
+            });
+          } else {
+            setLimits({
+              usersIncluded: String(planData.user_limit || ''),
+              extraUserPrice: formatCurrency(String((planData.user_extra_price || 0) * 100)),
+              wppDevices: String(planData.whatsapp_user_limit || ''),
+              extraDevicePrice: formatCurrency(String((planData.whatsapp_user_extra_price || 0) * 100)),
+              wppMessages: String(planData.whatsapp_message_limit || ''),
+              extraMessagePrice: formatCurrency(String((planData.whatsapp_message_extra_price || 0) * 100))
+            });
+          }
+        }
       } catch (err: any) {
-        console.error('Erro ao buscar módulos:', err.message);
-        setErrorMsg(`Erro Supabase: ${err.message}. (Verifique o terminal do VSCode e o Console do navegador)`);
+        console.error('Erro ao carregar dados:', err.message);
+        setErrorMsg(`Erro ao carregar: ${err.message}`);
       } finally {
         setLoading(false);
       }
     }
 
-    fetchModules();
+    fetchPlanAndModules();
   }, []);
 
   const renderBasicModules = () => {
@@ -230,14 +309,14 @@ export default function PlanosGlassPage() {
                   </button>
                 )}
               </div>
-              <div className="relative w-28 shrink-0">
-                <span className="absolute left-2.5 top-1.5 text-[11px] font-bold text-slate-400">R$</span>
+              <div className="relative w-32 shrink-0">
+                <span className="absolute left-2.5 top-[11px] text-[11px] font-bold text-slate-400">R$</span>
                 <input 
-                  type="number" 
+                  type="text" 
                   placeholder="0,00" 
                   value={optionalPrices[parent.id] || ''}
-                  onChange={(e) => setOptionalPrices(prev => ({ ...prev, [parent.id]: e.target.value }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-xs font-medium rounded-md pl-7 pr-2 py-1.5 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
+                  onChange={(e) => setOptionalPrices(prev => ({ ...prev, [parent.id]: formatCurrency(e.target.value) }))}
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-md pl-8 pr-2 h-[40px] focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
                 />
               </div>
             </div>
@@ -253,14 +332,14 @@ export default function PlanosGlassPage() {
               {unselectedChildren.map(child => (
                 <div key={`opt-child-${child.id}`} className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-sm">
                   <span className="text-[12px] font-medium text-slate-600 truncate mr-2">{child.nome}</span>
-                  <div className="relative w-24 shrink-0">
-                    <span className="absolute left-2 top-1 text-[10px] font-bold text-slate-400">R$</span>
+                  <div className="relative w-32 shrink-0">
+                    <span className="absolute left-2 top-[10px] text-[10px] font-bold text-slate-400">R$</span>
                     <input 
-                      type="number" 
+                      type="text" 
                       placeholder="0,00" 
                       value={optionalPrices[child.id] || ''}
-                      onChange={(e) => setOptionalPrices(prev => ({ ...prev, [child.id]: e.target.value }))}
-                      className="w-full bg-white border border-slate-300 text-slate-900 text-[11px] font-medium rounded pl-6 pr-1 py-1 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
+                      onChange={(e) => setOptionalPrices(prev => ({ ...prev, [child.id]: formatCurrency(e.target.value) }))}
+                      className="w-full bg-white border border-slate-300 text-slate-900 text-[11px] font-bold rounded pl-7 pr-1 h-[36px] focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
                     />
                   </div>
                 </div>
@@ -324,15 +403,34 @@ export default function PlanosGlassPage() {
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Valor do Plano Básico</h2>
         </div>
         <div className="p-6">
-          <div className="max-w-xs">
-            <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">Valor mensal do plano básico (R$)</label>
-            <input 
-              type="number" 
-              placeholder="0,00"
-              value={basePrice}
-              onChange={(e) => setBasePrice(e.target.value)}
-              className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor mensal do plano básico (R$)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">R$</span>
+                <input 
+                  type="text" 
+                  placeholder="0,00"
+                  value={basePrice}
+                  onChange={(e) => setBasePrice(formatCurrency(e.target.value))}
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2 font-medium">Este é o valor de entrada para qualquer vidraçaria.</p>
+            </div>
+
+            <div className="bg-slate-50/80 p-4 rounded-lg border border-dashed border-slate-200">
+              <label className="block text-[11px] font-bold text-[#3b597b] mb-1.5 uppercase tracking-widest">Valor Total Informativo (Base + Opcionais)</label>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-[#3b597b]">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFullValue)}
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">/ Mês</span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                Representa o faturamento mensal máximo se o cliente assinar 100% dos módulos (sem considerar limites extras).
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -381,24 +479,27 @@ export default function PlanosGlassPage() {
           </div>
           <div className="p-6 flex flex-col sm:flex-row gap-4">
             <div className="flex-1">
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Limite de usuários (Incluso)</label>
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de usuários (Incluso)</label>
               <input 
                 type="number" 
                 placeholder="Ex: 5"
                 value={limits.usersIncluded}
                 onChange={(e) => setLimits(prev => ({ ...prev, usersIncluded: e.target.value }))}
-                className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
               />
             </div>
             <div className="flex-1">
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Valor por usuário adicional (R$)</label>
-              <input 
-                type="number" 
-                placeholder="0,00"
-                value={limits.extraUserPrice}
-                onChange={(e) => setLimits(prev => ({ ...prev, extraUserPrice: e.target.value }))}
-                className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
-              />
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor por usuário adicional (R$)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                <input 
+                  type="text" 
+                  placeholder="0,00"
+                  value={limits.extraUserPrice}
+                  onChange={(e) => setLimits(prev => ({ ...prev, extraUserPrice: formatCurrency(e.target.value) }))}
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -411,46 +512,52 @@ export default function PlanosGlassPage() {
           <div className="p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Aparelhos conectados</label>
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Aparelhos conectados</label>
                 <input 
                   type="number" 
                   placeholder="Ex: 1"
                   value={limits.wppDevices}
                   onChange={(e) => setLimits(prev => ({ ...prev, wppDevices: e.target.value }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Valor por aparelho extra (R$)</label>
-                <input 
-                  type="number" 
-                  placeholder="0,00"
-                  value={limits.extraDevicePrice}
-                  onChange={(e) => setLimits(prev => ({ ...prev, extraDevicePrice: e.target.value }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
-                />
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor por aparelho extra (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                  <input 
+                    type="text" 
+                    placeholder="0,00"
+                    value={limits.extraDevicePrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, extraDevicePrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
               <div>
-                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Limite de mensagens</label>
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de mensagens</label>
                 <input 
                   type="number" 
                   placeholder="Ex: 1000"
                   value={limits.wppMessages}
                   onChange={(e) => setLimits(prev => ({ ...prev, wppMessages: e.target.value }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5">Valor por mensagem extra (R$)</label>
-                <input 
-                  type="number" 
-                  placeholder="0,00"
-                  value={limits.extraMessagePrice}
-                  onChange={(e) => setLimits(prev => ({ ...prev, extraMessagePrice: e.target.value }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
-                />
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor por mensagem extra (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                  <input 
+                    type="text" 
+                    placeholder="0,00"
+                    value={limits.extraMessagePrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, extraMessagePrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  />
+                </div>
               </div>
             </div>
           </div>

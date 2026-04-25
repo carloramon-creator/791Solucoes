@@ -38,18 +38,12 @@ export async function POST(req: Request) {
     console.log('[INTER] key começa com:', keyNorm.substring(0, 40));
     console.log('[INTER] clientId:', interClientId?.trim());
 
-    // Agente HTTPS com IPv4 forçado (padrão Barber que funciona)
-    const dns = require('dns');
+    // Agente HTTPS simples — sem lookup customizado (que quebra o DNS no Vercel)
     const httpsAgent = new https.Agent({
       cert: certNorm,
       key: keyNorm,
       ca: caNorm,
-      rejectUnauthorized: false,
-      keepAlive: true,
-      family: 4,
-      lookup: (hostname: string, options: any, callback: any) => {
-        dns.lookup(hostname, { family: 4, all: false }, callback);
-      }
+      rejectUnauthorized: false
     });
 
     // URL da nova plataforma do Banco Inter

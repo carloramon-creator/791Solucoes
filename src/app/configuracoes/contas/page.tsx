@@ -52,6 +52,7 @@ export default function ContasBancariasPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({

@@ -36,7 +36,6 @@ export default function NfseConfigPage() {
     certificate_uploaded: false,
     passphrase: '',
     prestador_cnpj: '',
-    tax_code: '',
     razao_social: '',
     nome_fantasia: '',
     inscricao_municipal: '',

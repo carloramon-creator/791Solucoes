@@ -38,17 +38,27 @@ export async function POST(req: Request) {
     console.log('[INTER] key começa com:', keyNorm.substring(0, 40));
     console.log('[INTER] clientId:', interClientId?.trim());
 
-    // Agente HTTPS simples — sem lookup customizado (que quebra o DNS no Vercel)
+    // Agente HTTPS com DNS customizado via Google (8.8.8.8)
+    // Railway não resolve cdp.inter.co pelo DNS padrão
+    const dns = require('dns');
     const httpsAgent = new https.Agent({
       cert: certNorm,
       key: keyNorm,
       ca: caNorm,
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      lookup: (hostname: string, options: any, callback: any) => {
+        const resolver = new dns.Resolver();
+        resolver.setServers(['8.8.8.8', '8.8.4.4']);
+        resolver.resolve4(hostname, (err: any, addresses: string[]) => {
+          if (err) return callback(err);
+          callback(null, addresses[0], 4);
+        });
+      }
     });
 
     // URL da nova plataforma do Banco Inter
     const interBaseUrl = 'https://cdp.inter.co';
-    const webhookUrl = 'https://api.791solucoes.com.br/api/webhooks/inter';
+    const webhookUrl = 'https://admin.791solucoes.com.br/api/webhooks/inter';
 
     // 1. Obter Token OAuth — credenciais no body (padrão Inter API v2)
     console.log('[INTER] Obtendo token para clientId:', interClientId?.trim());

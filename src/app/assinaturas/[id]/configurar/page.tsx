@@ -108,7 +108,7 @@ export default function ConfigureSubscriptionPage() {
   }
 
   const pricing = useMemo(() => {
-    if (!planConfig) return { base: 0, optionals: 0, extras: 0, total: 0 };
+    if (!planConfig) return { base: 0, optionals: 0, extras: 0, total: 0, discount: 0 };
     const base = planConfig.base_price;
     
     const optionals = selectedOptionalIds.reduce((sum, modRef) => {
@@ -135,7 +135,7 @@ export default function ConfigureSubscriptionPage() {
     const total = subtotal - discountAmount;
 
     return { base, optionals, extras: usersExtraCost + wppExtraCost, total, discount: discountAmount };
-  }, [planConfig, selectedOptionalIds, extraUsers, extraWppDevices, paymentCycle]);
+  }, [planConfig, allModules, selectedOptionalIds, extraUsers, extraWppDevices, paymentCycle]);
 
   const handleToggleOptional = (modId: string) => {
     setSelectedOptionalIds(prev => {

@@ -205,7 +205,7 @@ export default function CategoriasConfigPage() {
             </h2>
             <button 
               onClick={() => {
-                setNewCategory({ name: '', type: 'revenue', parent_id: '' });
+                setNewCategory({ id: '', name: '', type: 'revenue', parent_id: '' });
                 setIsModalOpen(true);
               }}
               className="text-[10px] bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest hover:bg-emerald-100 transition-all"
@@ -222,7 +222,7 @@ export default function CategoriasConfigPage() {
             </h2>
             <button 
               onClick={() => {
-                setNewCategory({ name: '', type: 'expense', parent_id: '' });
+                setNewCategory({ id: '', name: '', type: 'expense', parent_id: '' });
                 setIsModalOpen(true);
               }}
               className="text-[10px] bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest hover:bg-red-100 transition-all"

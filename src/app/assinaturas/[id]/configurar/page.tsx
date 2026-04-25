@@ -408,7 +408,7 @@ export default function ConfigureSubscriptionPage() {
              <div className="space-y-4">
                 <div className="flex justify-between items-center"><span className="text-xs font-medium text-slate-600 uppercase tracking-tight">Plano Base 791Glass</span><span className="text-xs font-medium text-slate-800">{formatCurrency(pricing.base)}</span></div>
                 {selectedOptionalIds
-                  .filter(modId => (planConfig?.optional_modules_pricing[modId] || 0) > 0 && !planConfig.included_modules.includes(modId))
+                  .filter(modId => (planConfig?.optional_modules_pricing?.[modId] || 0) > 0 && !planConfig?.included_modules?.includes(modId))
                   .map(modId => {
                     const mod = allModules.find(m => m.id === modId);
                     return (

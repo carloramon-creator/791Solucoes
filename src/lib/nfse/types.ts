@@ -20,6 +20,7 @@ export interface DPSData {
         cpf?: string;
         razaoSocial: string;
         email?: string;
+        inscricaoMunicipal?: string;
         endereco?: {
             logradouro?: string;
             numero?: string;

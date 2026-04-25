@@ -47,16 +47,6 @@ export function Sidebar() {
         setDisplayEmail(user.email || '');
       }
     });
-
-    // Buscar Logo da Holding
-    fetch('/api/system/nfse-config')
-      .then(res => res.json())
-      .then(data => {
-        if (data?.logo_base64) {
-          setLogoUrl(data.logo_base64);
-        }
-      })
-      .catch(err => console.error('Erro ao carregar logo sidebar:', err));
   }, []);
 
   const toggleMenu = (e: React.MouseEvent, name: string, hasSubItems: boolean) => {
@@ -79,16 +69,7 @@ export function Sidebar() {
     <div className="flex h-full w-[260px] flex-col bg-white border-r border-slate-200">
       <div className="flex h-20 shrink-0 items-center justify-center px-4 border-b border-slate-100 relative">
         <Link href="/" className="flex items-center justify-center font-bold text-lg text-slate-800 hover:opacity-80 transition-opacity">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="h-[60px] w-auto max-w-[200px] object-contain" />
-          ) : (
-            <>
-              <div className="h-8 w-8 rounded-full bg-[#3b597b] flex items-center justify-center text-white text-[10px]">
-                791
-              </div>
-              <span>SOLUÇÕES</span>
-            </>
-          )}
+          <img src="/logo.png" alt="791 Soluções" className="h-[40px] w-auto max-w-[200px] object-contain" />
         </Link>
         <button className="absolute right-4 text-slate-400 hover:text-slate-600">
           <PanelLeftClose size={20} />

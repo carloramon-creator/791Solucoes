@@ -91,7 +91,7 @@ export async function POST(req: Request) {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'x-conta-corrente': interAccountNumber.trim()
+          'x-conta-corrente': interAccountNumber.replace(/\D/g, '')
         },
         timeout: 30000
       }

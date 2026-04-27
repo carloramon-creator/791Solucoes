@@ -222,7 +222,8 @@ export default function FinanceiroPage() {
         status: 'paid',
         date: new Date().toISOString().split('T')[0],
         is_recurring: false,
-        recurring_period: 'monthly'
+        recurring_period: 'monthly',
+        generateAsaas: false
       });
       fetchData();
     } catch (err: any) {

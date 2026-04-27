@@ -27,16 +27,21 @@ export async function POST(req: Request) {
     const headers = { 'access_token': asaasApiKey };
 
     // 1. Buscar ou Criar Cliente no Asaas
-    console.log('[ASAAS] Buscando/Criando cliente:', customerEmail);
+    // Usamos o CPF/CNPJ como chave principal ou um email único para evitar conflitos com cadastros antigos sem CPF
+    console.log('[ASAAS] Buscando/Criando cliente:', customerCpfCnpj);
     let customerId;
     
-    const customersRes = await axios.get(`${baseUrl}/customers?email=${customerEmail}`, { headers });
+    // Tenta buscar por CPF/CNPJ primeiro
+    const customersRes = await axios.get(`${baseUrl}/customers?cpfCnpj=${customerCpfCnpj}`, { headers });
+    
     if (customersRes.data.data.length > 0) {
       customerId = customersRes.data.data[0].id;
+      // Opcional: Atualizar o cliente aqui se necessário
     } else {
+      // Se não achou por CPF, cria um novo
       const newCustomerRes = await axios.post(`${baseUrl}/customers`, {
         name: customerName,
-        email: customerEmail,
+        email: `cliente-${Date.now()}@791solucoes.com.br`, // Email único para evitar erro de duplicidade
         cpfCnpj: customerCpfCnpj
       }, { headers });
       customerId = newCustomerRes.data.id;

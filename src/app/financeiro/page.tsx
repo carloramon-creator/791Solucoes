@@ -233,6 +233,23 @@ export default function FinanceiroPage() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este lançamento?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('system_finance_records')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setRecords(records.filter(r => r.id !== id));
+      updateStats(records.filter(r => r.id !== id));
+    } catch (err: any) {
+      alert('Erro ao excluir: ' + err.message);
+    }
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -395,8 +412,17 @@ export default function FinanceiroPage() {
                         </span>
                       </div>
                     </td>
-                    <td className={`px-8 py-5 text-right pr-12 font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <td className={`px-8 py-5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
                       {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <button 
+                        onClick={() => handleDelete(record.id)}
+                        className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                        title="Excluir Lançamento"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))

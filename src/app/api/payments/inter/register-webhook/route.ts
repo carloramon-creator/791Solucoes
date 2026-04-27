@@ -105,12 +105,12 @@ export async function POST(req: Request) {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-          'x-conta-corrente': interAccountNumber.replace(/\D/g, '')
+          'Content-Length': Buffer.byteLength(body)
+          // Removido x-conta-corrente para teste de 401
         },
         cert: certNorm,
         key: keyNorm,
-        ca: caNorm, // Faltava isso!
+        ca: caNorm || undefined,
         rejectUnauthorized: false
       };
 

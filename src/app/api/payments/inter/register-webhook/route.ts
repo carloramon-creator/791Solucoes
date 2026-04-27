@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     console.log('[INTER] Registrando Webhook de Cobranças');
     
     await axios.put(
-      `${interBaseUrl}/cobranca/v2/webhooks`, // Endpoint de Webhook de Cobranças
+      `${interBaseUrl}/cobranca/v3/cobrancas/webhook`, // Caminho V3 correto!
       { webhookUrl },
       {
         httpsAgent,

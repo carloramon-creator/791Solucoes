@@ -80,11 +80,11 @@ export async function POST(req: Request) {
     const accessToken = tokenResponse.data.access_token;
     console.log('[INTER] Token obtido com sucesso!');
 
-    // 2. Registrar Webhook para Cobranças (Boletos/Pix)
-    console.log('[INTER] Registrando Webhook de Cobranças');
+    // 2. Registrar Webhook para Pix (usa a permissão pix.write, que a credencial já possui)
+    console.log('[INTER] Registrando Webhook de Pix');
     
     await axios.put(
-      `${interBaseUrl}/cobranca/v3/cobrancas/webhook`, // Caminho V3 correto!
+      `${interBaseUrl}/pix/v2/webhook/${interPixKey.trim()}`,
       { webhookUrl },
       {
         httpsAgent,

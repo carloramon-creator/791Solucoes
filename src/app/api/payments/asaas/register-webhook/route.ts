@@ -17,12 +17,14 @@ export async function POST(req: Request) {
 
     // Registra o webhook no Asaas
     const response = await axios.post(`${baseUrl}/webhooks`, {
+      name: '791 Holding',
       url: webhookUrl,
-      email: 'financeiro@791solucoes.com.br', // Email para alertas
+      email: 'financeiro@791solucoes.com.br',
       enabled: true,
       interrupted: false,
       apiVersion: 3,
-      sendType: 'SEQUENTIALLY'
+      sendType: 'SEQUENTIALLY',
+      events: ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_DELETED']
     }, {
       headers: {
         'access_token': asaasApiKey

@@ -20,7 +20,9 @@ import {
   Tag,
   Building,
   Calendar,
-  CreditCard
+  CreditCard,
+  Trash2,
+  ExternalLink
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 

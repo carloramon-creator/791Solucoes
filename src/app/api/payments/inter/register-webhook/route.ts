@@ -57,7 +57,8 @@ export async function POST(req: Request) {
     const tokenParams = new URLSearchParams();
     tokenParams.append('client_id', interClientId.trim());
     tokenParams.append('client_secret', interClientSecret.trim());
-    tokenParams.append('scope', 'pix.read pix.write webhook.read webhook.write');
+    // Escopos de Cobrança (Boleto/Pix) e Webhook
+    tokenParams.append('scope', 'boleto-cobranca.read boleto-cobranca.write webhook.read webhook.write');
     tokenParams.append('grant_type', 'client_credentials');
 
     const tokenResponse = await axios.post(
@@ -71,17 +72,17 @@ export async function POST(req: Request) {
     ).catch(err => {
       const detail = err.response?.data;
       console.error('[INTER] ERRO OAUTH:', detail || err.message);
-      throw new Error(`OAUTH ${err.response?.status}: ${JSON.stringify(detail || err.message)}`);
+      throw new Error(`OAUTH ${err.response?.status || '500'}: ${JSON.stringify(detail || err.message)}`);
     });
 
     const accessToken = tokenResponse.data.access_token;
     console.log('[INTER] Token obtido com sucesso!');
 
-    // 2. Registrar Webhook para a Chave Pix específica
-    console.log('[INTER] Registrando Webhook para a chave:', interPixKey);
+    // 2. Registrar Webhook para Cobranças (Boletos/Pix)
+    console.log('[INTER] Registrando Webhook de Cobranças');
     
     await axios.put(
-      `${interBaseUrl}/pix/v2/webhook/${interPixKey}`,
+      `${interBaseUrl}/cobranca/v2/webhooks`, // Endpoint de Webhook de Cobranças
       { webhookUrl },
       {
         httpsAgent,
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
     ).catch(err => {
       const detail = err.response?.data;
       console.error('[INTER] ERRO WEBHOOK:', detail || err.message);
-      throw new Error(`WEBHOOK ${err.response?.status}: ${JSON.stringify(detail || err.message)}`);
+      throw new Error(`WEBHOOK ${err.response?.status || '500'}: ${JSON.stringify(detail || err.message)}`);
     });
 
     return NextResponse.json({ success: true });

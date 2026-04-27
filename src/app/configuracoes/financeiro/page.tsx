@@ -26,6 +26,7 @@ export default function FinanceiroConfigPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
+  const [registeringAsaas, setRegisteringAsaas] = useState(false);
   const [success, setSuccess] = useState(false);
 
   // Estados das chaves
@@ -138,6 +139,32 @@ export default function FinanceiroConfigPage() {
     }
   };
 
+  const handleRegisterAsaasWebhook = async () => {
+    if (!config.asaasApiKey) {
+      alert('Preencha a API Key do Asaas primeiro');
+      return;
+    }
+
+    setRegisteringAsaas(true);
+    try {
+      const response = await fetch('/api/payments/asaas/register-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          asaasApiKey: config.asaasApiKey,
+          asaasEnv: config.asaasEnv
+        })
+      });
+
+      if (!response.ok) throw new Error('Falha ao registrar webhook no Asaas');
+      alert('Webhook do Asaas registrado com sucesso!');
+    } catch (err: any) {
+      alert(`Erro: ${err.message}`);
+    } finally {
+      setRegisteringAsaas(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -225,6 +252,18 @@ export default function FinanceiroConfigPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
                 />
               </div>
+            </div>
+
+            <div className="pt-2">
+              <button 
+                type="button"
+                disabled={registeringAsaas}
+                onClick={handleRegisterAsaasWebhook}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-all uppercase text-[10px] font-bold tracking-widest border border-blue-100"
+              >
+                {registeringAsaas ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+                {registeringAsaas ? 'Registrando...' : 'Registrar Webhook no Asaas'}
+              </button>
             </div>
           </div>
         </div>

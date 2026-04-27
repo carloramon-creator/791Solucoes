@@ -78,7 +78,8 @@ export default function FinanceiroPage() {
     status: 'paid' as 'paid' | 'pending',
     date: new Date().toISOString().split('T')[0],
     is_recurring: false,
-    recurring_period: 'monthly' as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
+    recurring_period: 'monthly' as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly',
+    generateAsaas: false
   });
 
   const paymentMethods = [
@@ -173,9 +174,42 @@ export default function FinanceiroPage() {
           created_at: new Date(newRecord.date).toISOString(),
           is_recurring: newRecord.is_recurring,
           recurring_period: newRecord.is_recurring ? newRecord.recurring_period : null
-        }]);
+        }]).select();
 
       if (error) throw error;
+
+      // Se for receita e pediu Asaas, gera a cobrança
+      if (newRecord.type === 'revenue' && newRecord.generateAsaas && data?.[0]) {
+        const record = data[0];
+        try {
+          // Busca as chaves do Asaas no banco
+          const { data: configData } = await supabase.from('system_configs').select('*').single();
+          
+          if (configData?.asaas_api_key) {
+            const asaasRes = await fetch('/api/payments/asaas/create-charge', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                asaasApiKey: configData.asaas_api_key,
+                asaasEnv: configData.asaas_env,
+                value: record.value,
+                description: record.description,
+                dueDate: record.created_at.split('T')[0],
+                customerName: 'Cliente Holding', // TODO: Permitir escolher cliente
+                customerEmail: 'financeiro@791solucoes.com.br',
+                externalReference: `holding|${record.id}`
+              })
+            });
+
+            if (asaasRes.ok) {
+              const asaasData = await asaasRes.json();
+              alert(`Cobrança Asaas gerada! Link: ${asaasData.invoiceUrl}`);
+            }
+          }
+        } catch (e) {
+          console.error('Erro ao gerar Asaas:', e);
+        }
+      }
       
       setIsModalOpen(false);
       setNewRecord({
@@ -543,6 +577,25 @@ export default function FinanceiroPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Opção ASAAS (Apenas para Receita) */}
+                {newRecord.type === 'revenue' && (
+                  <div className="md:col-span-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-blue-800 uppercase font-black tracking-widest ml-1">Gerar Link de Pagamento no Asaas?</span>
+                      <span className="text-[9px] text-blue-500 uppercase font-bold tracking-tight ml-1">Cria cobrança Pix/Boleto automaticamente</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer mr-1">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer"
+                        checked={newRecord.generateAsaas}
+                        onChange={(e) => setNewRecord({...newRecord, generateAsaas: e.target.checked})}
+                      />
+                      <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                    </label>
+                  </div>
+                )}
 
               </div>
             </div>

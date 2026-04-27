@@ -32,10 +32,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: true, data: response.data });
 
   } catch (err: any) {
-    console.error('[ASAAS] Erro ao registrar webhook:', err.response?.data || err.message);
+    const errorDetail = err.response?.data?.errors?.[0]?.description || err.message;
+    console.error('[ASAAS] Erro ao registrar webhook:', errorDetail);
     return NextResponse.json({ 
       success: false, 
-      error: err.response?.data?.errors?.[0]?.description || err.message 
+      error: `Erro no Asaas: ${errorDetail}` 
     }, { status: 500 });
   }
 }

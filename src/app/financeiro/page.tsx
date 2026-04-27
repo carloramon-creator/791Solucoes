@@ -246,7 +246,8 @@ export default function FinanceiroPage() {
         date: new Date().toISOString().split('T')[0],
         is_recurring: false,
         recurring_period: 'monthly',
-        generateAsaas: false
+        generateAsaas: false,
+        customerCpfCnpj: ''
       });
       fetchData();
     } catch (err: any) {

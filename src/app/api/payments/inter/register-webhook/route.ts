@@ -72,6 +72,7 @@ export async function POST(req: Request) {
         },
         cert: certNorm,
         key: keyNorm,
+        ca: caNorm, // Faltava isso!
         rejectUnauthorized: false
       };
 
@@ -109,6 +110,7 @@ export async function POST(req: Request) {
         },
         cert: certNorm,
         key: keyNorm,
+        ca: caNorm, // Faltava isso!
         rejectUnauthorized: false
       };
 

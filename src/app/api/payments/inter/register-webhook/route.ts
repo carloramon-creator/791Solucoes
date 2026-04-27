@@ -58,8 +58,8 @@ export async function POST(req: Request) {
     const tokenParams = new URLSearchParams();
     tokenParams.append('client_id', interClientId.trim());
     tokenParams.append('client_secret', interClientSecret.trim());
-    // Pedindo apenas o necessário para o Webhook de Pix, para evitar erro de "scope not registered"
-    tokenParams.append('scope', 'pix.read pix.write');
+    // Removido o parâmetro 'scope' — o Inter costuma devolver todos os escopos registrados
+    // para o client_id se nada for solicitado explicitamente.
     tokenParams.append('grant_type', 'client_credentials');
 
     const tokenResponse = await axios.post(

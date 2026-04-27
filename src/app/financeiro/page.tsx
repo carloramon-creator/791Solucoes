@@ -36,6 +36,9 @@ interface FinanceRecord {
   status: 'paid' | 'pending';
   bank_account_id?: string;
   created_at: string;
+  is_recurring: boolean;
+  recurring_period?: string;
+  payment_link?: string;
 }
 
 interface BankAccount {

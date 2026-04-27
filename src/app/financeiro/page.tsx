@@ -187,20 +187,21 @@ export default function FinanceiroPage() {
       if (newRecord.type === 'revenue' && newRecord.generateAsaas && data?.[0]) {
         const record = data[0];
         try {
-          // Busca as chaves do Asaas no banco
-          const { data: configData } = await supabase.from('system_configs').select('*').single();
+          // Busca as chaves do Asaas na API de configuração
+          const configRes = await fetch('/api/system/finance-config');
+          const configData = await configRes.json();
           
-          if (configData?.asaas_api_key) {
+          if (configData?.asaasApiKey) {
             const asaasRes = await fetch('/api/payments/asaas/create-charge', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                asaasApiKey: configData.asaas_api_key,
-                asaasEnv: configData.asaas_env,
+                asaasApiKey: configData.asaasApiKey,
+                asaasEnv: configData.asaasEnv,
                 value: record.value,
                 description: record.description,
                 dueDate: record.created_at.split('T')[0],
-                customerName: 'Cliente Holding', // TODO: Permitir escolher cliente
+                customerName: 'Cliente Holding',
                 customerEmail: 'financeiro@791solucoes.com.br',
                 externalReference: `holding|${record.id}`
               })

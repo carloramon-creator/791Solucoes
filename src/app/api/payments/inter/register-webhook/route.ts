@@ -22,11 +22,12 @@ export async function POST(req: Request) {
       interCertCrt, 
       interCertKey,
       interCertCa,
-      interPixKey 
+      interPixKey,
+      interAccountNumber
     } = await req.json();
 
-    if (!interCertCrt || !interCertKey || !interPixKey) {
-      return NextResponse.json({ success: false, error: 'Certificados ou Chave Pix ausentes' }, { status: 400 });
+    if (!interCertCrt || !interCertKey || !interPixKey || !interAccountNumber) {
+      return NextResponse.json({ success: false, error: 'Certificados, Chave Pix ou Conta Corrente ausentes' }, { status: 400 });
     }
 
     // Normaliza PEMs antes de usar (corrige quebras de linha corrompidas)
@@ -89,7 +90,8 @@ export async function POST(req: Request) {
         httpsAgent,
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-conta-corrente': interAccountNumber.trim()
         },
         timeout: 30000
       }

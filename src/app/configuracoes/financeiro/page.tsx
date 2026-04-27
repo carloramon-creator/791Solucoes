@@ -111,7 +111,8 @@ export default function FinanceiroConfigPage() {
           interCertCrt: config.interCertCrt,
           interCertKey: config.interCertKey,
           interCertCa: config.interCertCa,
-          interPixKey: config.interPixKey
+          interPixKey: config.interPixKey,
+          interAccountNumber: config.interAccountNumber
         })
       });
 
@@ -276,6 +277,21 @@ export default function FinanceiroConfigPage() {
                     placeholder="286e799c-..."
                     value={config.interPixKey}
                     onChange={(e) => setConfig({...config, interPixKey: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Conta Corrente (S/ Dígito - Obrigatório V3)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-3.5 text-slate-400">
+                    <Building size={14} />
+                  </span>
+                  <input 
+                    type="text" 
+                    placeholder="Sua conta..."
+                    value={config.interAccountNumber || ''}
+                    onChange={(e) => setConfig({...config, interAccountNumber: e.target.value})}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
                   />
                 </div>

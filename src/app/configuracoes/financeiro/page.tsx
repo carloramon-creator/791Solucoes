@@ -14,7 +14,8 @@ import {
   Info,
   Database,
   Globe,
-  Wallet
+  Wallet,
+  Building
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';

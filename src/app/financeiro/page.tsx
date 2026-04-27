@@ -210,13 +210,20 @@ export default function FinanceiroPage() {
               const asaasData = await asaasRes.json();
               
               // Atualiza o registro com o link
-              await supabase
+              const { error: updateError } = await supabase
                 .from('system_finance_records')
                 .update({ payment_link: asaasData.invoiceUrl })
                 .eq('id', record.id);
 
-              alert(`Cobrança Asaas gerada! Link: ${asaasData.invoiceUrl}`);
-              fetchData(); // Recarrega para mostrar o link na tabela
+              if (updateError) {
+                alert(`Lançamento salvo, mas erro ao guardar o link: ${updateError.message}`);
+              } else {
+                alert(`Sucesso! Link Asaas gerado.`);
+                fetchData();
+              }
+            } else {
+              const errData = await asaasRes.json();
+              alert(`Erro na API do Asaas: ${errData.error}`);
             }
           }
         } catch (e) {

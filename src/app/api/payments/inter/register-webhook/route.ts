@@ -57,7 +57,8 @@ export async function POST(req: Request) {
       const params = new URLSearchParams();
       params.append('client_id', interClientId.trim());
       params.append('client_secret', interClientSecret.trim());
-      params.append('scope', 'pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
+      // Pedindo apenas os escopos de Cobrança, que você confirmou que tem habilitado
+      params.append('scope', 'boleto-cobranca.read boleto-cobranca.write');
       params.append('grant_type', 'client_credentials');
       
       const body = params.toString();
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
       const body = JSON.stringify({ webhookUrl });
       const options = {
         hostname: 'cdpj.partners.bancointer.com.br',
-        path: `/pix/v2/webhook/${interPixKey.trim().replace(/-/g, '')}`,
+        path: '/cobranca/v3/cobrancas/webhook',
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

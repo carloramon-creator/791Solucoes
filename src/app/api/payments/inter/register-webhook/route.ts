@@ -57,8 +57,9 @@ export async function POST(req: Request) {
     const tokenParams = new URLSearchParams();
     tokenParams.append('client_id', interClientId.trim());
     tokenParams.append('client_secret', interClientSecret.trim());
-    // Escopos de Cobrança (Boleto/Pix) e Webhook
-    tokenParams.append('scope', 'boleto-cobranca.read boleto-cobranca.write webhook.read webhook.write');
+    // Removido webhook.read e webhook.write porque a credencial não os possui (gera erro 401).
+    // Para registrar webhook de cobrança na V3, os escopos de cobrança e rec bastam.
+    tokenParams.append('scope', 'pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
     tokenParams.append('grant_type', 'client_credentials');
 
     const tokenResponse = await axios.post(

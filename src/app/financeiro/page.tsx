@@ -84,7 +84,8 @@ export default function FinanceiroPage() {
     date: new Date().toISOString().split('T')[0],
     is_recurring: false,
     recurring_period: 'monthly' as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly',
-    generateAsaas: false
+    generateAsaas: false,
+    customerCpfCnpj: ''
   });
 
   const paymentMethods = [
@@ -203,6 +204,7 @@ export default function FinanceiroPage() {
                 dueDate: record.created_at.split('T')[0],
                 customerName: 'Cliente Holding',
                 customerEmail: 'financeiro@791solucoes.com.br',
+                customerCpfCnpj: newRecord.customerCpfCnpj,
                 externalReference: `holding|${record.id}`
               })
             });
@@ -653,6 +655,19 @@ export default function FinanceiroPage() {
                       />
                       <div className="w-10 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                     </label>
+                  </div>
+                )}
+
+                {newRecord.generateAsaas && (
+                  <div className="md:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-in slide-in-from-top-2 duration-300">
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2 ml-1">CPF ou CNPJ do Pagador (Obrigatório Asaas)</label>
+                    <input 
+                      type="text" 
+                      placeholder="000.000.000-00"
+                      value={newRecord.customerCpfCnpj}
+                      onChange={(e) => setNewRecord({...newRecord, customerCpfCnpj: e.target.value})}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 h-[48px] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/10 transition-all"
+                    />
                   </div>
                 )}
 

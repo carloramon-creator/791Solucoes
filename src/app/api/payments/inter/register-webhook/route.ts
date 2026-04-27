@@ -6,12 +6,13 @@ import axios from 'axios';
 // ao serem salvos/recuperados do banco de dados como texto
 function normalizePem(pem: string): string {
   if (!pem) return pem;
-  const trimmed = pem.trim();
-  // Detecta se as quebras de linha foram substituídas por \n literal (string)
-  if (!trimmed.includes('\n') && trimmed.includes('\\n')) {
-    return trimmed.replace(/\\n/g, '\n');
-  }
-  return trimmed;
+  // Remove espaços extras no início/fim e garante que quebras de linha sejam \n reais
+  let normalized = pem.trim();
+  normalized = normalized.replace(/\\n/g, '\n');
+  normalized = normalized.replace(/\r\n/g, '\n');
+  // Garante que o certificado comece e termine corretamente
+  if (!normalized.includes('-----BEGIN')) return normalized;
+  return normalized;
 }
 
 export async function POST(req: Request) {
@@ -30,34 +31,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Certificados, Chave Pix ou Conta Corrente ausentes' }, { status: 400 });
     }
 
-    // Normaliza PEMs antes de usar (corrige quebras de linha corrompidas)
+    // Normaliza PEMs com rigor extra
     const certNorm = normalizePem(interCertCrt);
     const keyNorm  = normalizePem(interCertKey);
     const caNorm   = interCertCa ? normalizePem(interCertCa) : undefined;
 
-    console.log('[INTER] cert começa com:', certNorm.substring(0, 40));
-    console.log('[INTER] key começa com:', keyNorm.substring(0, 40));
-    console.log('[INTER] clientId:', interClientId?.trim());
-
-    // Agente HTTPS padrão
-    const httpsAgent = new https.Agent({
-      cert: certNorm,
-      key: keyNorm,
-      ca: caNorm,
-      rejectUnauthorized: false,
-      keepAlive: true
-    });
-
-    // URL oficial de produção da API do Banco Inter
-    const interBaseUrl = 'https://cdpj.partners.bancointer.com.br';
     const webhookUrl = 'https://admin.791solucoes.com.br/api/webhooks/inter';
 
-    // 1. Obter Token OAuth — Usando HTTPS nativo igual ao Barber
+    // 1. Obter Token OAuth
     const getAccessToken = () => new Promise<string>((resolve, reject) => {
       const params = new URLSearchParams();
       params.append('client_id', interClientId.trim());
       params.append('client_secret', interClientSecret.trim());
-      // Escopos EXATAMENTE como estão no Barber
       params.append('scope', 'pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
       params.append('grant_type', 'client_credentials');
       
@@ -75,7 +60,7 @@ export async function POST(req: Request) {
         key: keyNorm,
         ca: caNorm || undefined,
         rejectUnauthorized: false,
-        family: 4 // Força IPv4 igual no Barber
+        family: 4
       };
 
       const reqToken = https.request(options, (res) => {
@@ -95,15 +80,14 @@ export async function POST(req: Request) {
     });
 
     const accessToken = await getAccessToken();
-    console.log('[INTER] Token obtido com sucesso!');
 
-    // 2. Registrar Webhook — Usando HTTPS nativo igual ao Barber
-    const registerWebhook = (token: string) => new Promise((resolve, reject) => {
+    // 2. Tentar Registrar Webhook (Tenta Cobrança, se falhar tenta Pix)
+    const registerWebhook = (token: string, path: string) => new Promise((resolve, reject) => {
       const body = JSON.stringify({ webhookUrl });
       const options = {
         hostname: 'cdpj.partners.bancointer.com.br',
         port: 443,
-        path: '/cobranca/v3/cobrancas/webhook',
+        path: path,
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -115,7 +99,7 @@ export async function POST(req: Request) {
         key: keyNorm,
         ca: caNorm || undefined,
         rejectUnauthorized: false,
-        family: 4 // Força IPv4 igual no Barber
+        family: 4
       };
 
       const reqWeb = https.request(options, (res) => {
@@ -125,7 +109,7 @@ export async function POST(req: Request) {
           if (res.statusCode === 200 || res.statusCode === 204 || res.statusCode === 201) {
             resolve(true);
           } else {
-            reject(new Error(`WEBHOOK ${res.statusCode}: ${data}`));
+            reject(new Error(`${res.statusCode}: ${data}`));
           }
         });
       });
@@ -134,7 +118,14 @@ export async function POST(req: Request) {
       reqWeb.end();
     });
 
-    await registerWebhook(accessToken);
+    try {
+      console.log('[INTER] Tentando Webhook de Cobrança...');
+      await registerWebhook(accessToken, '/cobranca/v3/cobrancas/webhook');
+    } catch (e: any) {
+      console.warn('[INTER] Falha na Cobrança, tentando Pix...', e.message);
+      await registerWebhook(accessToken, `/pix/v2/webhook/${interPixKey.trim().replace(/-/g, '')}`);
+    }
+
     return NextResponse.json({ success: true });
 
   } catch (err: any) {

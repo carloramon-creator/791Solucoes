@@ -33,6 +33,7 @@ export default function FinanceiroConfigPage() {
   const [config, setConfig] = useState({
     asaasApiKey: '',
     asaasWalletId: '',
+    asaasWebhookSecret: '',
     asaasEnv: 'sandbox',
     interClientId: '',
     interClientSecret: '',
@@ -233,6 +234,22 @@ export default function FinanceiroConfigPage() {
                   placeholder="$a_..."
                   value={config.asaasApiKey}
                   onChange={(e) => setConfig({...config, asaasApiKey: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Webhook Token (Security)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3.5 text-slate-400">
+                  <ShieldCheck size={14} />
+                </span>
+                <input 
+                  type="password" 
+                  placeholder="whsec_..."
+                  value={config.asaasWebhookSecret || ''}
+                  onChange={(e) => setConfig({...config, asaasWebhookSecret: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
                 />
               </div>

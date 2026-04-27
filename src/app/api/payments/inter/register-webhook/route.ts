@@ -39,11 +39,11 @@ export async function POST(req: Request) {
     const webhookUrl = 'https://admin.791solucoes.com.br/api/webhooks/inter';
 
     // 1. Obter Token OAuth
-    const getAccessToken = () => new Promise<string>((resolve, reject) => {
+    const getAccessToken = (scopes?: string) => new Promise<string>((resolve, reject) => {
       const params = new URLSearchParams();
       params.append('client_id', interClientId.trim());
       params.append('client_secret', interClientSecret.trim());
-      params.append('scope', 'pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
+      if (scopes) params.append('scope', scopes);
       params.append('grant_type', 'client_credentials');
       
       const body = params.toString();
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
           if (res.statusCode === 200) {
             resolve(JSON.parse(data).access_token);
           } else {
-            reject(new Error(`OAUTH ${res.statusCode}: ${data}`));
+            reject(new Error(`OAUTH_${res.statusCode}: ${data}`));
           }
         });
       });
@@ -79,9 +79,17 @@ export async function POST(req: Request) {
       reqToken.end();
     });
 
-    const accessToken = await getAccessToken();
+    let accessToken;
+    try {
+      // Tenta primeiro com os escopos completos do Barber
+      accessToken = await getAccessToken('pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
+    } catch (e: any) {
+      console.warn('[INTER] Falha com escopos completos, tentando sem escopos...', e.message);
+      // Se falhar por escopo não registrado, tenta sem pedir escopos (o banco manda os que tiver)
+      accessToken = await getAccessToken();
+    }
 
-    // 2. Tentar Registrar Webhook (Tenta Cobrança, se falhar tenta Pix)
+    // 2. Tentar Registrar Webhook
     const registerWebhook = (token: string, path: string) => new Promise((resolve, reject) => {
       const body = JSON.stringify({ webhookUrl });
       const options = {
@@ -109,7 +117,7 @@ export async function POST(req: Request) {
           if (res.statusCode === 200 || res.statusCode === 204 || res.statusCode === 201) {
             resolve(true);
           } else {
-            reject(new Error(`${res.statusCode}: ${data}`));
+            reject(new Error(`WEBHOOK_${res.statusCode}: ${data}`));
           }
         });
       });
@@ -119,10 +127,8 @@ export async function POST(req: Request) {
     });
 
     try {
-      console.log('[INTER] Tentando Webhook de Cobrança...');
       await registerWebhook(accessToken, '/cobranca/v3/cobrancas/webhook');
     } catch (e: any) {
-      console.warn('[INTER] Falha na Cobrança, tentando Pix...', e.message);
       await registerWebhook(accessToken, `/pix/v2/webhook/${interPixKey.trim().replace(/-/g, '')}`);
     }
 

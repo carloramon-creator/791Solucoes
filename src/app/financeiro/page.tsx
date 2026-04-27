@@ -161,7 +161,7 @@ export default function FinanceiroPage() {
     
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('system_finance_records')
         .insert([{
           type: newRecord.type,

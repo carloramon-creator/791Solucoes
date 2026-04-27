@@ -38,6 +38,7 @@ export default function FinanceiroConfigPage() {
     interCertKey: '',
     interCertCa: '',
     interPixKey: '',
+    interAccountNumber: '',
     // Supabase Connections
     glassUrl: '',
     glassServiceKey: '',

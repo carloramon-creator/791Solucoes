@@ -203,7 +203,15 @@ export default function FinanceiroPage() {
 
             if (asaasRes.ok) {
               const asaasData = await asaasRes.json();
+              
+              // Atualiza o registro com o link
+              await supabase
+                .from('system_finance_records')
+                .update({ payment_link: asaasData.invoiceUrl })
+                .eq('id', record.id);
+
               alert(`Cobrança Asaas gerada! Link: ${asaasData.invoiceUrl}`);
+              fetchData(); // Recarrega para mostrar o link na tabela
             }
           }
         } catch (e) {
@@ -423,6 +431,17 @@ export default function FinanceiroPage() {
                       >
                         <Trash2 size={16} />
                       </button>
+                      {record.payment_link && (
+                        <a 
+                          href={record.payment_link} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-600 transition-colors p-2 hover:bg-blue-50 rounded-lg inline-block"
+                          title="Abrir Link de Pagamento"
+                        >
+                          <ExternalLink size={16} />
+                        </a>
+                      )}
                     </td>
                   </tr>
                 ))

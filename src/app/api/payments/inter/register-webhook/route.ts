@@ -46,6 +46,8 @@ export async function POST(req: Request) {
       ca: caNorm,
       rejectUnauthorized: false,
       keepAlive: true
+    });
+
     // URL oficial de produção da API do Banco Inter
     const interBaseUrl = 'https://cdpj.partners.bancointer.com.br';
     const webhookUrl = 'https://admin.791solucoes.com.br/api/webhooks/inter';

@@ -46,60 +46,86 @@ export async function POST(req: Request) {
       ca: caNorm,
       rejectUnauthorized: false,
       keepAlive: true
-    });
-
     // URL oficial de produção da API do Banco Inter
     const interBaseUrl = 'https://cdpj.partners.bancointer.com.br';
     const webhookUrl = 'https://admin.791solucoes.com.br/api/webhooks/inter';
 
-    // 1. Obter Token OAuth — credenciais no body
-    console.log('[INTER] Obtendo token para clientId:', interClientId?.trim());
-    
-    const tokenParams = new URLSearchParams();
-    tokenParams.append('client_id', interClientId.trim());
-    tokenParams.append('client_secret', interClientSecret.trim());
-    // Removido o parâmetro 'scope' — o Inter costuma devolver todos os escopos registrados
-    // para o client_id se nada for solicitado explicitamente.
-    tokenParams.append('grant_type', 'client_credentials');
+    // 1. Obter Token OAuth — Usando HTTPS nativo igual ao Barber
+    const getAccessToken = () => new Promise<string>((resolve, reject) => {
+      const params = new URLSearchParams();
+      params.append('client_id', interClientId.trim());
+      params.append('client_secret', interClientSecret.trim());
+      params.append('scope', 'pix.read pix.write rec.read rec.write boleto-cobranca.read boleto-cobranca.write');
+      params.append('grant_type', 'client_credentials');
+      
+      const body = params.toString();
+      const options = {
+        hostname: 'cdpj.partners.bancointer.com.br',
+        path: '/oauth/v2/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body)
+        },
+        cert: certNorm,
+        key: keyNorm,
+        rejectUnauthorized: false
+      };
 
-    const tokenResponse = await axios.post(
-      `${interBaseUrl}/oauth/v2/token`,
-      tokenParams,
-      {
-        httpsAgent,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 30000
-      }
-    ).catch(err => {
-      const detail = err.response?.data;
-      console.error('[INTER] ERRO OAUTH:', detail || err.message);
-      throw new Error(`OAUTH ${err.response?.status || '500'}: ${JSON.stringify(detail || err.message)}`);
+      const reqToken = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            resolve(JSON.parse(data).access_token);
+          } else {
+            reject(new Error(`OAUTH ${res.statusCode}: ${data}`));
+          }
+        });
+      });
+      reqToken.on('error', reject);
+      reqToken.write(body);
+      reqToken.end();
     });
 
-    const accessToken = tokenResponse.data.access_token;
+    const accessToken = await getAccessToken();
     console.log('[INTER] Token obtido com sucesso!');
 
-    // 2. Registrar Webhook para Pix (usa a permissão pix.write, que a credencial já possui)
-    console.log('[INTER] Registrando Webhook de Pix');
-    
-    await axios.put(
-      `${interBaseUrl}/pix/v2/webhook/${interPixKey.trim()}`,
-      { webhookUrl },
-      {
-        httpsAgent,
+    // 2. Registrar Webhook — Usando HTTPS nativo igual ao Barber
+    const registerWebhook = (token: string) => new Promise((resolve, reject) => {
+      const body = JSON.stringify({ webhookUrl });
+      const options = {
+        hostname: 'cdpj.partners.bancointer.com.br',
+        path: `/pix/v2/webhook/${interPixKey.trim().replace(/-/g, '')}`,
+        method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
           'x-conta-corrente': interAccountNumber.replace(/\D/g, '')
         },
-        timeout: 30000
-      }
-    ).catch(err => {
-      const detail = err.response?.data;
-      console.error('[INTER] ERRO WEBHOOK:', detail || err.message);
-      throw new Error(`WEBHOOK ${err.response?.status || '500'}: ${JSON.stringify(detail || err.message)}`);
+        cert: certNorm,
+        key: keyNorm,
+        rejectUnauthorized: false
+      };
+
+      const reqWeb = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode === 200 || res.statusCode === 204 || res.statusCode === 201) {
+            resolve(true);
+          } else {
+            reject(new Error(`WEBHOOK ${res.statusCode}: ${data}`));
+          }
+        });
+      });
+      reqWeb.on('error', reject);
+      reqWeb.write(body);
+      reqWeb.end();
     });
 
+    await registerWebhook(accessToken);
     return NextResponse.json({ success: true });
 
   } catch (err: any) {

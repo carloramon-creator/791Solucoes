@@ -55,6 +55,15 @@ const BUNDLES_CONFIG = [
     preco: 20,
     modulos: ['rh', 'colaboradores', 'comissoes'],
     descricao: 'Gestão de equipe, comissões e documentos de funcionários.'
+  },
+  {
+    id: 'fiscal',
+    nome: 'Notas Fiscais (NF-e)',
+    icon: '📜',
+    cor: 'purple',
+    preco: 50,
+    modulos: ['notas-fiscais'],
+    descricao: 'Emissão de NF-e e NFC-e integrada com a SEFAZ.'
   }
 ];
 

@@ -44,7 +44,8 @@ export default function PlanosGlassPage() {
     financeiro: '',
     producao: '',
     comunicacao: '',
-    rh: ''
+    rh: '',
+    fiscal: ''
   });
 
   const [limits, setLimits] = useState({
@@ -60,10 +61,11 @@ export default function PlanosGlassPage() {
   const [selectedBasicModules, setSelectedBasicModules] = useState<string[]>([]);
 
   const BUNDLES = [
-    { id: 'financeiro', name: 'Financeiro', items: ['Contas a Pagar', 'Contas a Receber', 'Fluxo de Caixa', 'Fiscal (NF-e)', 'DRE', 'Bancos'] },
+    { id: 'financeiro', name: 'Financeiro', items: ['Contas a Pagar', 'Contas a Receber', 'Fluxo de Caixa', 'Agendamentos', 'Bancos'] },
     { id: 'producao', name: 'Produção', items: ['Ordens de Serviço', 'Gestão de Produção', 'Etapas de Produção', 'Relatórios'] },
     { id: 'comunicacao', name: 'Comunicação', items: ['WhatsApp Business', 'CRM (Vendas)'] },
     { id: 'rh', name: 'Recursos Humanos (RH)', items: ['Colaboradores', 'Comissões'] },
+    { id: 'fiscal', name: 'Notas Fiscais (NF-e)', items: ['NF-e', 'NFC-e', 'Focus NFE'] },
   ];
 
   // Cálculo do valor total

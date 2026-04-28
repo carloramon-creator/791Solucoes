@@ -38,11 +38,15 @@ export default function PlanosGlassPage() {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   
-  // Estados do formulário
-  const [selectedBasicModules, setSelectedBasicModules] = useState<string[]>([]);
-  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  // Estados do formulário por COMBOS
   const [basePrice, setBasePrice] = useState('');
-  const [optionalPrices, setOptionalPrices] = useState<Record<string, string>>({});
+  const [bundlePrices, setBundlePrices] = useState<Record<string, string>>({
+    financeiro: '',
+    producao: '',
+    comunicacao: '',
+    rh: ''
+  });
+
   const [limits, setLimits] = useState({
     usersIncluded: '',
     extraUserPrice: '',
@@ -52,9 +56,16 @@ export default function PlanosGlassPage() {
     extraMessagePrice: ''
   });
 
-  // Cálculo do valor total (Base + Todos os Opcionais)
+  const BUNDLES = [
+    { id: 'financeiro', name: 'Financeiro', items: ['Contas a Pagar', 'Contas a Receber', 'Fluxo de Caixa', 'Fiscal (NF-e)', 'DRE', 'Bancos'] },
+    { id: 'producao', name: 'Produção', items: ['Ordens de Serviço', 'Gestão de Produção', 'Etapas de Produção', 'Relatórios'] },
+    { id: 'comunicacao', name: 'Comunicação', items: ['WhatsApp Business', 'CRM (Vendas)'] },
+    { id: 'rh', name: 'Recursos Humanos (RH)', items: ['Colaboradores', 'Comissões'] },
+  ];
+
+  // Cálculo do valor total
   const totalFullValue = parseCurrency(basePrice || '0') + 
-    Object.values(optionalPrices).reduce((sum, val) => sum + parseCurrency(val || '0'), 0);
+    Object.values(bundlePrices).reduce((sum, val) => sum + parseCurrency(val || '0'), 0);
 
   const handleSave = async () => {
     setSaving(true);
@@ -63,9 +74,8 @@ export default function PlanosGlassPage() {
       name: '791glass', 
       sistema: '791glass', 
       base_price: parseCurrency(basePrice) || 0,
-      included_modules: selectedBasicModules, 
-      optional_modules_pricing: Object.fromEntries(
-        Object.entries(optionalPrices).map(([k, v]) => [k, parseCurrency(v)])
+      bundle_prices: Object.fromEntries(
+        Object.entries(bundlePrices).map(([k, v]) => [k, parseCurrency(v)])
       ), 
       system_limits: {
         ...limits,
@@ -76,31 +86,18 @@ export default function PlanosGlassPage() {
     };
 
     try {
-      console.log("🚀 Enviando para o Supabase (791 Soluções):", payload);
-      
       const { error } = await supabase
         .from('system_plans')
         .upsert({
           ...payload,
-          user_limit: Number(limits.usersIncluded) || 0,
-          user_extra_price: parseCurrency(limits.extraUserPrice) || 0,
-          whatsapp_user_limit: Number(limits.wppDevices) || 0,
-          whatsapp_message_limit: Number(limits.wppMessages) || 0,
-          whatsapp_user_extra_price: parseCurrency(limits.extraDevicePrice) || 0,
-          whatsapp_message_extra_price: parseCurrency(limits.extraMessagePrice) || 0,
           segment: 'glass'
         }, { onConflict: 'sistema' });
 
-      if (error) {
-        // Se a tabela não tiver chave única em 'sistema', o upsert pode falhar
-        // Nesse caso, o erro vai aparecer no alert.
-        throw error;
-      }
-
-      alert("✅ Configurações salvas com sucesso no banco de dados!");
+      if (error) throw error;
+      alert("✅ Planos por Módulo salvos com sucesso!");
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
-      alert(`❌ Erro ao salvar: ${err.message}\n(Verifique se as colunas JSON existem na tabela system_plans)`);
+      alert(`❌ Erro ao salvar: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -146,24 +143,9 @@ export default function PlanosGlassPage() {
   };
 
   useEffect(() => {
-    async function fetchPlanAndModules() {
+    async function fetchPlan() {
       try {
         setLoading(true);
-        // 1. Buscar Módulos do Vidraçarias (para a listagem de checkboxes)
-        const { data: modulesData, error: modulesError } = await supabaseGlass.from('modules').select('*');
-        if (modulesError) throw modulesError;
-        
-        if (modulesData) {
-          const sorted = modulesData.sort((a, b) => {
-            if (a.ordem !== undefined && b.ordem !== undefined) {
-              return a.ordem - b.ordem;
-            }
-            return (a.nome || '').localeCompare(b.nome || '');
-          });
-          setModules(sorted);
-        }
-
-        // 2. Buscar Plano Existente (para preencher os campos)
         const { data: planData, error: planError } = await supabase
           .from('system_plans')
           .select('*')
@@ -174,15 +156,14 @@ export default function PlanosGlassPage() {
 
         if (planData) {
           setBasePrice(formatCurrency(String((planData.base_price || 0) * 100)));
-          setSelectedBasicModules(planData.included_modules || []);
           
-          const formattedOptionals: Record<string, string> = {};
-          Object.entries(planData.optional_modules_pricing || {}).forEach(([k, v]: [string, any]) => {
-            formattedOptionals[k] = formatCurrency(String(Number(v || 0) * 100));
+          const formattedBundles: Record<string, string> = {};
+          Object.entries(planData.bundle_prices || {}).forEach(([k, v]: [string, any]) => {
+            formattedBundles[k] = formatCurrency(String(Number(v || 0) * 100));
           });
-          setOptionalPrices(formattedOptionals);
+          setBundlePrices(prev => ({ ...prev, ...formattedBundles }));
           
-          if (planData.system_limits && Object.keys(planData.system_limits).length > 0) {
+          if (planData.system_limits) {
             setLimits({
               usersIncluded: String(planData.system_limits.usersIncluded || ''),
               extraUserPrice: formatCurrency(String(Number(planData.system_limits.extraUserPrice || 0) * 100)),
@@ -190,15 +171,6 @@ export default function PlanosGlassPage() {
               extraDevicePrice: formatCurrency(String(Number(planData.system_limits.extraDevicePrice || 0) * 100)),
               wppMessages: String(planData.system_limits.wppMessages || ''),
               extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100))
-            });
-          } else {
-            setLimits({
-              usersIncluded: String(planData.user_limit || ''),
-              extraUserPrice: formatCurrency(String((planData.user_extra_price || 0) * 100)),
-              wppDevices: String(planData.whatsapp_user_limit || ''),
-              extraDevicePrice: formatCurrency(String((planData.whatsapp_user_extra_price || 0) * 100)),
-              wppMessages: String(planData.whatsapp_message_limit || ''),
-              extraMessagePrice: formatCurrency(String((planData.whatsapp_message_extra_price || 0) * 100))
             });
           }
         }
@@ -210,155 +182,38 @@ export default function PlanosGlassPage() {
       }
     }
 
-    fetchPlanAndModules();
+    fetchPlan();
   }, []);
 
-  const renderBasicModules = () => {
-    const parents = modules.filter(m => !m.parent_slug);
-    
+  const renderBundles = () => {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {parents.map(parent => {
-          const children = modules.filter(m => m.parent_slug === parent.slug);
-          const isParentSelected = selectedBasicModules.includes(parent.id);
-          const isExpanded = expandedCards[parent.id] !== false; // Default to open if not set
-          
-          return (
-            <div key={parent.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col transition-all hover:border-slate-300">
-              <div className="flex items-center justify-between bg-slate-50 border-b border-slate-100 pr-3">
-                <label className="flex flex-1 items-center gap-3 p-3 cursor-pointer hover:bg-slate-100 transition-colors">
-                  <div className="relative flex items-center justify-center">
-                    <input 
-                      type="checkbox" 
-                      className="peer sr-only" 
-                      checked={isParentSelected}
-                      onChange={() => toggleBasicModule(parent)}
-                    />
-                    <div className="w-5 h-5 border-2 border-slate-300 rounded bg-white peer-checked:bg-[#3b597b] peer-checked:border-[#3b597b] transition-colors flex items-center justify-center">
-                      <Check size={14} className="text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
-                    </div>
-                  </div>
-                  <span className="font-bold text-slate-800 text-[13px] uppercase tracking-wide">{parent.nome}</span>
-                </label>
-                {children.length > 0 && (
-                  <button 
-                    onClick={(e) => toggleExpand(e, parent.id)}
-                    className="p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-200 transition-colors"
-                  >
-                    {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                  </button>
-                )}
-              </div>
-              
-              {children.length > 0 && isExpanded && (
-                <div className="p-2 flex flex-col gap-0.5 bg-white">
-                  {children.map(child => {
-                    const isChildSelected = selectedBasicModules.includes(child.id);
-                    return (
-                      <label key={child.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors group">
-                        <div className="relative flex items-center justify-center ml-1">
-                          <input 
-                            type="checkbox" 
-                            className="peer sr-only" 
-                            checked={isChildSelected}
-                            onChange={() => toggleBasicModule(child)}
-                          />
-                          <div className="w-4 h-4 border-2 border-slate-300 rounded bg-white peer-checked:bg-[#6899c4] peer-checked:border-[#6899c4] transition-colors flex items-center justify-center">
-                            <Check size={12} className="text-white opacity-0 peer-checked:opacity-100 transition-opacity" />
-                          </div>
-                        </div>
-                        <span className="text-[13px] font-medium text-slate-600 group-hover:text-slate-900">{child.nome}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const renderOptionalModules = () => {
-    const parents = modules.filter(m => !m.parent_slug);
-    
-    const cardsToRender = parents.map(parent => {
-      const isParentSelected = selectedBasicModules.includes(parent.id);
-      const children = modules.filter(m => m.parent_slug === parent.slug);
-      const unselectedChildren = children.filter(c => !selectedBasicModules.includes(c.id));
-      
-      const isExpanded = expandedCards[`opt-${parent.id}`] !== false; // Default to open
-      
-      // Se o pai tá incluso E todos os filhos tão inclusos, não renderiza nada aqui
-      if (isParentSelected && unselectedChildren.length === 0) return null;
-
-      return (
-        <div key={`opt-${parent.id}`} className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/30 shadow-sm flex flex-col">
-          
-          {!isParentSelected && (
-            <div className="flex items-center justify-between p-3 border-b border-slate-200 bg-white">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-800 text-[13px] uppercase tracking-wide">{parent.nome}</span>
-                {unselectedChildren.length > 0 && (
-                  <button 
-                    onClick={(e) => toggleExpand(e, `opt-${parent.id}`)}
-                    className="p-0.5 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 transition-colors"
-                  >
-                    {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  </button>
-                )}
-              </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {BUNDLES.map(bundle => (
+          <div key={bundle.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col hover:border-[#3b597b] transition-all">
+            <div className="bg-slate-50/50 p-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide">{bundle.name}</h3>
               <div className="relative w-32 shrink-0">
-                <span className="absolute left-2.5 top-[11px] text-[11px] font-bold text-slate-400">R$</span>
+                <span className="absolute left-2.5 top-[11px] text-[11px] font-bold text-[#3b597b]">R$</span>
                 <input 
                   type="text" 
                   placeholder="0,00" 
-                  value={optionalPrices[parent.id] || ''}
-                  onChange={(e) => setOptionalPrices(prev => ({ ...prev, [parent.id]: formatCurrency(e.target.value) }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-md pl-8 pr-2 h-[40px] focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
+                  value={bundlePrices[bundle.id] || ''}
+                  onChange={(e) => setBundlePrices(prev => ({ ...prev, [bundle.id]: formatCurrency(e.target.value) }))}
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-xs font-black rounded-md pl-8 pr-2 h-[40px] focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
                 />
               </div>
             </div>
-          )}
-
-          {unselectedChildren.length > 0 && isExpanded && (
-            <div className="p-3 flex flex-col gap-2">
-              {isParentSelected && (
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                  Submenus extras em {parent.nome}
-                </div>
-              )}
-              {unselectedChildren.map(child => (
-                <div key={`opt-child-${child.id}`} className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-100 shadow-sm">
-                  <span className="text-[12px] font-medium text-slate-600 truncate mr-2">{child.nome}</span>
-                  <div className="relative w-32 shrink-0">
-                    <span className="absolute left-2 top-[10px] text-[10px] font-bold text-slate-400">R$</span>
-                    <input 
-                      type="text" 
-                      placeholder="0,00" 
-                      value={optionalPrices[child.id] || ''}
-                      onChange={(e) => setOptionalPrices(prev => ({ ...prev, [child.id]: formatCurrency(e.target.value) }))}
-                      className="w-full bg-white border border-slate-300 text-slate-900 text-[11px] font-bold rounded pl-7 pr-1 h-[36px] focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b]" 
-                    />
-                  </div>
-                </div>
+            <div className="p-4 bg-white flex flex-wrap gap-2">
+              {bundle.items.map(item => (
+                <span key={item} className="bg-slate-50 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-full border border-slate-100 uppercase tracking-tighter">
+                  {item}
+                </span>
               ))}
             </div>
-          )}
-        </div>
-      );
-    }).filter(Boolean);
-
-    if (cardsToRender.length === 0 && modules.length > 0) {
-      return (
-        <div className="col-span-full flex items-center justify-center py-6 text-emerald-600 text-sm border-2 border-dashed border-emerald-100 bg-emerald-50/50 rounded-lg">
-          Todos os módulos e submenus já estão inclusos no plano básico!
-        </div>
-      );
-    }
-
-    return <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{cardsToRender}</div>;
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -369,10 +224,10 @@ export default function PlanosGlassPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight uppercase flex items-center gap-2">
             <Layers className="text-[#3b597b]" size={24} />
-            Planos Vidraçarias
+            Configuração de Planos (Glass)
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Configure valores dos módulos, limites e adicionais exclusivos para o segmento de vidraçarias.
+            Defina o preço base e o valor de cada módulo opcional (combos).
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -398,14 +253,14 @@ export default function PlanosGlassPage() {
       )}
 
       {/* Box 1: Valor do Plano Básico */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Valor do Plano Básico</h2>
+          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Plano Básico (Orçamentos/Materiais)</h2>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
-              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor mensal do plano básico (R$)</label>
+              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor mensal do plano base (R$)</label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">R$</span>
                 <input 
@@ -413,59 +268,34 @@ export default function PlanosGlassPage() {
                   placeholder="0,00"
                   value={basePrice}
                   onChange={(e) => setBasePrice(formatCurrency(e.target.value))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-black rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
               </div>
-              <p className="text-[11px] text-slate-400 mt-2 font-medium">Este é o valor de entrada para qualquer vidraçaria.</p>
             </div>
 
-            <div className="bg-slate-50/80 p-4 rounded-lg border border-dashed border-slate-200">
-              <label className="block text-[11px] font-bold text-[#3b597b] mb-1.5 uppercase tracking-widest">Valor Total Informativo (Base + Opcionais)</label>
+            <div className="bg-slate-50/80 p-4 rounded-xl border border-dashed border-slate-200">
+              <label className="block text-[11px] font-bold text-[#3b597b] mb-1.5 uppercase tracking-widest">Valor de Todos os Combos Somados</label>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black text-[#3b597b]">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFullValue)}
                 </span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">/ Mês</span>
               </div>
-              <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
-                Representa o faturamento mensal máximo se o cliente assinar 100% dos módulos (sem considerar limites extras).
-              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Box 2: Módulos do Plano Básico */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Módulos do Plano Básico</h2>
-          <span className="text-[11px] font-semibold bg-[#6899c4]/10 text-[#6899c4] px-2 py-0.5 rounded-full">
-            Selecione o que já vem incluso
-          </span>
-        </div>
-        <div className="p-6 bg-slate-50/30">
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-slate-400 text-sm">Carregando módulos...</div>
-          ) : modules.length === 0 && !errorMsg ? (
-            <div className="flex items-center justify-center py-8 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
-              Nenhum módulo encontrado na tabela 'modules'.
-            </div>
-          ) : (
-            renderBasicModules()
-          )}
-        </div>
-      </div>
-
-      {/* Box 3: Módulos Opcionais */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Box 2: Combos Opcionais */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Módulos Opcionais (Venda Avulsa)</h2>
+          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Módulos de Expansão (Combos)</h2>
         </div>
         <div className="p-6 bg-slate-50/30">
           {loading ? (
             <div className="flex items-center justify-center py-8 text-slate-400 text-sm">Carregando módulos...</div>
-          ) : modules.length === 0 && !errorMsg ? null : (
-            renderOptionalModules()
+          ) : (
+            renderBundles()
           )}
         </div>
       </div>

@@ -48,11 +48,21 @@ export class PaymentProcessor {
       
       const glassSupabase = createClient(glassUrl, glassServiceKey);
       
-      // Calcula próximo vencimento (30 dias a partir de hoje)
-      const nextExpiration = new Date();
-      nextExpiration.setDate(nextExpiration.getDate() + 30);
+      // Calcula próximo vencimento baseado no valor pago
+      // Exemplo de lógica: Mensal ~150, Semestral ~800, Anual ~1500
+      // Vamos usar uma lógica de dias baseada no valor (ajustável conforme seus planos)
+      let daysToAdd = 31;
+      
+      if (payload.value > 1000) {
+        daysToAdd = 366; // Anual
+      } else if (payload.value > 500) {
+        daysToAdd = 185; // Semestral
+      }
 
-      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} até ${nextExpiration.toISOString()}`);
+      const nextExpiration = new Date();
+      nextExpiration.setDate(nextExpiration.getDate() + daysToAdd);
+
+      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} por ${daysToAdd} dias até ${nextExpiration.toISOString()}`);
 
       const { error } = await glassSupabase
         .from('vidracarias')

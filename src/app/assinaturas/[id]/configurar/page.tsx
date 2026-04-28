@@ -31,12 +31,12 @@ const BUNDLES_CONFIG = [
   },
   {
     id: 'producao',
-    nome: 'Produção',
-    icon: '🏭',
+    nome: 'Produção & Engenharia',
+    icon: '📐',
     cor: 'emerald',
-    preco: 120,
-    modulos: ['producao', 'ordens_servico', 'etapas-producao', 'relatorios'],
-    descricao: 'Gestão completa de OS, fábrica e relatórios de produtividade.'
+    preco: 390,
+    modulos: ['producao', 'ordens_servico', 'etapas-producao', 'relatorios', 'engenharia-sacadas'],
+    descricao: 'Gestão de fábrica + Engenharia de Sacadas com cálculo automático e sem erros.'
   },
   {
     id: 'comunicacao',

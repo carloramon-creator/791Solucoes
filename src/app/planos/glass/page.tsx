@@ -65,7 +65,7 @@ export default function PlanosGlassPage() {
     { id: 'producao', name: 'Produção & Engenharia', items: ['Ordens de Serviço', 'Gestão de Produção', 'Etapas de Produção', 'Relatórios', 'Engenharia de Sacadas'] },
     { id: 'comunicacao', name: 'Comunicação', items: ['WhatsApp Business', 'CRM (Vendas)'] },
     { id: 'rh', name: 'Recursos Humanos (RH)', items: ['Colaboradores', 'Comissões'] },
-    { id: 'fiscal', name: 'Notas Fiscais (NF-e)', items: ['NF-e', 'NFC-e', 'Focus NFE'] },
+    { id: 'fiscal', name: 'Notas Fiscais (NF-e)', items: ['NF-e', 'NFC-e'] },
   ];
 
   // Cálculo do valor total

@@ -322,10 +322,10 @@ export default function ConfigureSubscriptionPage() {
               <h2 className="font-medium text-xs uppercase tracking-wider">Módulos Inclusos no Plano Base</h2>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {basicModules.filter(m => !m.parent_slug).map(mod => (
-                <div key={mod.id} className="bg-emerald-50/30 p-3 rounded-lg border border-emerald-100 flex items-center gap-2 min-w-0">
+              {['ORÇAMENTOS', 'MATERIAIS', 'PESSOAS', 'DASHBOARD', 'CONFIGURAÇÕES'].map(tag => (
+                <div key={tag} className="bg-emerald-50/30 p-3 rounded-lg border border-emerald-100 flex items-center gap-2 min-w-0">
                    <Check size={14} className="text-emerald-500 shrink-0" />
-                   <span className="text-xs font-medium text-slate-700 uppercase tracking-tight truncate">{mod.nome}</span>
+                   <span className="text-[9px] font-black text-slate-700 uppercase tracking-tight truncate">{tag}</span>
                 </div>
               ))}
             </div>

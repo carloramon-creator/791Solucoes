@@ -288,6 +288,17 @@ export default function PlanosGlassPage() {
               </div>
             </div>
           </div>
+
+          <div className="mt-6 pt-6 border-t border-slate-100">
+            <label className="block text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Recursos Inclusos no Plano Base:</label>
+            <div className="flex flex-wrap gap-2">
+              {['ORÇAMENTOS', 'MATERIAIS (VIDROS/ALUMÍNIOS)', 'PESSOAS (CLIENTES/FORNEC.)', 'DASHBOARD', 'CONFIGURAÇÕES'].map(tag => (
+                <span key={tag} className="bg-emerald-50 text-emerald-600 text-[9px] font-black px-3 py-1.5 rounded-lg border border-emerald-100 uppercase tracking-tight">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -56,6 +56,9 @@ export default function PlanosGlassPage() {
     extraMessagePrice: ''
   });
 
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [selectedBasicModules, setSelectedBasicModules] = useState<string[]>([]);
+
   const BUNDLES = [
     { id: 'financeiro', name: 'Financeiro', items: ['Contas a Pagar', 'Contas a Receber', 'Fluxo de Caixa', 'Fiscal (NF-e)', 'DRE', 'Bancos'] },
     { id: 'producao', name: 'Produção', items: ['Ordens de Serviço', 'Gestão de Produção', 'Etapas de Produção', 'Relatórios'] },

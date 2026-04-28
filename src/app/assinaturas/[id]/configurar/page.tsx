@@ -18,6 +18,46 @@ import {
 } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 
+// Definição dos Pacotes (Bundles) para a Holding
+const BUNDLES_CONFIG = [
+  {
+    id: 'financeiro',
+    nome: 'Financeiro',
+    icon: '💰',
+    cor: 'blue',
+    preco: 80,
+    modulos: ['financeiro', 'configuracoes-fiscais', 'formas-pagamento', 'agendamentos', 'financeiro-agenda'],
+    descricao: 'Controle de caixa, bancos, boletos e agendamentos.'
+  },
+  {
+    id: 'producao',
+    nome: 'Produção',
+    icon: '🏭',
+    cor: 'emerald',
+    preco: 120,
+    modulos: ['producao', 'ordens_servico', 'etapas-producao', 'relatorios'],
+    descricao: 'Gestão completa de OS, fábrica e relatórios de produtividade.'
+  },
+  {
+    id: 'comunicacao',
+    nome: 'Comunicação',
+    icon: '💬',
+    cor: 'indigo',
+    preco: 250,
+    modulos: ['whatsapp', 'crm'],
+    descricao: 'WhatsApp Business integrado e CRM de vendas.'
+  },
+  {
+    id: 'rh',
+    nome: 'Recursos Humanos',
+    icon: '🧑‍💼',
+    cor: 'amber',
+    preco: 20,
+    modulos: ['rh', 'colaboradores', 'comissoes'],
+    descricao: 'Gestão de equipe, comissões e documentos de funcionários.'
+  }
+];
+
 interface Module {
   id: string;
   nome: string;
@@ -29,6 +69,7 @@ interface PlanConfig {
   base_price: number;
   included_modules: string[];
   optional_modules_pricing: Record<string, number>;
+  bundle_prices: Record<string, number>; // Novo campo para preços de combo
   system_limits: {
     usersIncluded: number;
     extraUserPrice: number;
@@ -36,6 +77,7 @@ interface PlanConfig {
     extraDevicePrice: number;
     wppMessages: number;
     extraMessagePrice: number;
+    wppMessagesPrice: number;
   };
 }
 
@@ -111,15 +153,14 @@ export default function ConfigureSubscriptionPage() {
     if (!planConfig) return { base: 0, optionals: 0, extras: 0, total: 0, discount: 0 };
     const base = planConfig.base_price;
     
-    const optionals = selectedOptionalIds.reduce((sum, modRef) => {
-      const mod = allModules.find(m => m.id === modRef || m.slug === modRef);
-      if (!mod) return sum;
-      
-      const isIncludedInBase = planConfig.included_modules.includes(mod.id) || planConfig.included_modules.includes(mod.slug || '');
-      if (isIncludedInBase) return sum;
-
-      const price = Number(planConfig.optional_modules_pricing?.[mod.id] || planConfig.optional_modules_pricing?.[mod.slug || ''] || 0);
-      return sum + price;
+    // Calcula o preço baseado nos bundles selecionados
+    const optionals = BUNDLES_CONFIG.reduce((sum, bundle) => {
+      // Se algum módulo do bundle estiver selecionado, consideramos o bundle ativo
+      const isBundleActive = bundle.modulos.some(slug => selectedOptionalIds.includes(slug));
+      if (isBundleActive) {
+        return sum + (planConfig.bundle_prices?.[bundle.id] || bundle.preco);
+      }
+      return sum;
     }, 0);
 
     const usersExtraCost = extraUsers * (planConfig.system_limits?.extraUserPrice || 0);
@@ -135,37 +176,26 @@ export default function ConfigureSubscriptionPage() {
     const total = subtotal - discountAmount;
 
     return { base, optionals, extras: usersExtraCost + wppExtraCost, total, discount: discountAmount };
-  }, [planConfig, allModules, selectedOptionalIds, extraUsers, extraWppDevices, paymentCycle]);
+  }, [planConfig, selectedOptionalIds, extraUsers, extraWppDevices, paymentCycle]);
 
-  const handleToggleOptional = (modId: string) => {
+  const handleToggleBundle = (bundleId: string) => {
+    const bundle = BUNDLES_CONFIG.find(b => b.id === bundleId);
+    if (!bundle) return;
+
+    const isBundleActive = bundle.modulos.some(slug => selectedOptionalIds.includes(slug));
+    
     setSelectedOptionalIds(prev => {
-      const mod = allModules.find(m => m.id === modId || m.slug === modId);
-      if (!mod) return prev;
-
-      const isSelected = prev.some(id => id === mod.id || id === mod.slug);
-      let newSelection = isSelected 
-        ? prev.filter(id => id !== mod.id && id !== mod.slug) 
-        : [...prev, mod.slug || mod.id];
-      
-      if (mod && !mod.parent_slug) {
-         const children = allModules.filter(m => m.parent_slug === mod.slug);
-         const childrenIds = children.map(c => c.id);
-         const childrenSlugs = children.map(c => c.slug).filter(Boolean) as string[];
-
-         if (isSelected) {
-            newSelection = newSelection.filter(id => !childrenIds.includes(id) && !childrenSlugs.includes(id));
-         } else {
-            [...childrenIds, ...childrenSlugs].forEach(ref => {
-              if(!newSelection.includes(ref)) newSelection.push(ref);
-            });
-         }
-      } else if (mod && mod.parent_slug) {
-         const parent = allModules.find(m => m.slug === mod.parent_slug);
-         if (parent && !isSelected && !newSelection.some(id => id === parent.id || id === parent.slug)) {
-            newSelection.push(parent.slug || parent.id);
-         }
+      if (isBundleActive) {
+        // Remove todos os módulos do bundle
+        return prev.filter(slug => !bundle.modulos.includes(slug));
+      } else {
+        // Adiciona todos os módulos do bundle
+        const newSelection = [...prev];
+        bundle.modulos.forEach(slug => {
+          if (!newSelection.includes(slug)) newSelection.push(slug);
+        });
+        return newSelection;
       }
-      return newSelection;
     });
   };
 
@@ -292,72 +322,81 @@ export default function ConfigureSubscriptionPage() {
             </div>
           </section>
 
-          {/* Módulos Opcionais */}
-          <section className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-5 text-purple-600">
-              <Layers size={20} />
-              <h2 className="font-medium text-xs uppercase tracking-wider">Adicionais e Módulos Opcionais</h2>
+          {/* Combos de Assinatura */}
+          <section className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+            <div className="flex items-center gap-3 mb-8">
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                <Layers size={20} />
+              </div>
+              <div>
+                <h2 className="font-black text-sm uppercase tracking-widest text-slate-800">Escolha os Combos Ativos</h2>
+                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">Selecione os pacotes de módulos para esta unidade</p>
+              </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {optionalParents.map(parent => {
-                const isParentInBase = planConfig?.included_modules.includes(parent.id);
-                
-                const isParentSelected = selectedOptionalIds.some(id => id === parent.id || id === parent.slug);
-                const isExpanded = expandedMenus[parent.slug] || false;
-                // Lógica de Preço de Pacote (ex: Configurações)
-                const isPackage = parent.slug === 'configuracoes';
-                const children = allModules.filter(m => 
-                  m.parent_slug === parent.slug && 
-                  planConfig?.optional_modules_pricing.hasOwnProperty(m.id) &&
-                  !planConfig.included_modules.includes(m.id)
-                );
 
-                const displayPrice = isPackage 
-                  ? children.reduce((sum, child) => sum + (planConfig?.optional_modules_pricing[child.id] || 0), 0)
-                  : (isParentInBase 
-                      ? children.reduce((sum, child) => sum + (planConfig?.optional_modules_pricing[child.id] || 0), 0)
-                      : (planConfig?.optional_modules_pricing[parent.id] || 0)
-                    );
-                
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {BUNDLES_CONFIG.map(bundle => {
+                const isActive = bundle.modulos.some(slug => selectedOptionalIds.includes(slug));
+                const price = planConfig?.bundle_prices?.[bundle.id] || bundle.preco;
+
+                const colors: Record<string, string> = {
+                  blue: 'border-blue-100 bg-blue-50/20 text-blue-600',
+                  emerald: 'border-emerald-100 bg-emerald-50/20 text-emerald-600',
+                  indigo: 'border-indigo-100 bg-indigo-50/20 text-indigo-600',
+                  amber: 'border-amber-100 bg-amber-50/20 text-amber-600'
+                };
+
                 return (
-                  <div key={parent.id} className={`border rounded-xl overflow-hidden flex flex-col transition-all hover:border-slate-300 ${isParentInBase && !isPackage ? 'border-emerald-100 bg-emerald-50/20' : 'border-slate-100 bg-white'}`}>
-                    <div className={`flex items-center justify-between p-4 transition-colors ${isParentSelected ? 'bg-blue-50/40' : ''}`}>
-                      <div className="flex items-center gap-4 flex-1 cursor-pointer" onClick={() => handleToggleOptional(parent.id)}>
-                        <div className={`h-5 w-5 rounded border flex items-center justify-center transition-all ${isParentSelected ? 'bg-[#3b597b] border-[#3b597b] text-white' : 'border-slate-300'}`}>
-                          {isParentSelected && <Check size={12} />}
-                        </div>
-                        <span className={`text-xs font-medium uppercase tracking-tight ${isParentSelected ? 'text-slate-900' : 'text-slate-500'}`}>
-                          {parent.nome}
-                        </span>
+                  <div 
+                    key={bundle.id}
+                    onClick={() => handleToggleBundle(bundle.id)}
+                    className={`relative p-6 rounded-3xl border-2 transition-all cursor-pointer group flex flex-col gap-4 ${
+                      isActive 
+                        ? 'border-[#3b597b] bg-white shadow-xl shadow-blue-900/5' 
+                        : 'border-slate-100 bg-slate-50/30 hover:border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-inner ${colors[bundle.cor]}`}>
+                        {bundle.icon}
                       </div>
-                      <div className="flex items-center gap-4">
-                        {displayPrice > 0 && <span className="text-xs text-[#3b597b] font-medium">+{formatCurrency(displayPrice)}</span>}
-                        {children.length > 0 && (
-                          <button onClick={() => toggleExpand(parent.slug)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
-                            {isExpanded ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronRight size={18} className="text-slate-400" />}
-                          </button>
-                        )}
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                        isActive ? 'bg-[#3b597b] border-[#3b597b] text-white' : 'border-slate-200'
+                      }`}>
+                        {isActive && <Check size={14} />}
                       </div>
                     </div>
-                    {children.length > 0 && isExpanded && (
-                      <div className="bg-slate-50/50 border-t border-slate-100 p-3 space-y-2">
-                        {children.map(child => {
-                          const isChildSelected = selectedOptionalIds.some(id => id === child.id || id === child.slug);
-                          const childPrice = isPackage ? 0 : (planConfig?.optional_modules_pricing[child.id] || 0);
-                          return (
-                            <div key={child.id} onClick={() => handleToggleOptional(child.id)} className="flex items-center justify-between p-2.5 pl-8 rounded-lg hover:bg-white cursor-pointer group transition-all">
-                              <div className="flex items-center gap-4">
-                                <div className={`h-4 w-4 rounded border flex items-center justify-center transition-all ${isChildSelected ? 'bg-blue-400 border-blue-400 text-white' : 'border-slate-200'}`}>
-                                  {isChildSelected && <Check size={10} />}
-                                </div>
-                                <span className={`text-xs font-medium uppercase tracking-tight ${isChildSelected ? 'text-slate-800' : 'text-slate-400'}`}>{child.nome}</span>
-                              </div>
-                              {childPrice > 0 && <span className="text-[11px] text-slate-400 font-medium">+{formatCurrency(childPrice)}</span>}
-                            </div>
-                          );
-                        })}
+
+                    <div>
+                      <h3 className="font-black text-slate-800 uppercase tracking-tight text-sm mb-1">{bundle.nome}</h3>
+                      <p className="text-[10px] text-slate-400 font-bold leading-relaxed h-8 line-clamp-2">
+                        {bundle.descricao}
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-50 flex items-end justify-between mt-auto">
+                      <div className="flex flex-col">
+                        <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">A partir de</span>
+                        <span className="text-lg font-black text-slate-900">
+                          {formatCurrency(price)}<span className="text-[10px] text-slate-400 font-medium">/mês</span>
+                        </span>
                       </div>
-                    )}
+                      <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${
+                        isActive ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
+                      }`}>
+                        {isActive ? 'Ativo' : 'Inativo'}
+                      </div>
+                    </div>
+
+                    {/* Módulos inclusos */}
+                    <div className="mt-4 flex flex-wrap gap-1.5">
+                       {bundle.modulos.slice(0, 3).map(m => (
+                         <span key={m} className="text-[8px] bg-white/50 border border-slate-100 px-2 py-0.5 rounded text-slate-400 uppercase font-black tracking-tighter">
+                           {m.replace(/_/g, ' ')}
+                         </span>
+                       ))}
+                       {bundle.modulos.length > 3 && <span className="text-[8px] text-slate-300 font-black">+ {bundle.modulos.length - 3}</span>}
+                    </div>
                   </div>
                 );
               })}
@@ -407,17 +446,12 @@ export default function ConfigureSubscriptionPage() {
              <h3 className="text-xs font-medium uppercase tracking-widest text-slate-400 mb-6 border-b border-slate-100 pb-2">Resumo da Assinatura</h3>
              <div className="space-y-4">
                 <div className="flex justify-between items-center"><span className="text-xs font-medium text-slate-600 uppercase tracking-tight">Plano Base 791Glass</span><span className="text-xs font-medium text-slate-800">{formatCurrency(pricing.base)}</span></div>
-                {selectedOptionalIds
-                  .filter(modId => (planConfig?.optional_modules_pricing?.[modId] || 0) > 0 && !planConfig?.included_modules?.includes(modId))
-                  .map(modId => {
-                    const mod = allModules.find(m => m.id === modId);
-                    return (
-                      <div key={modId} className="flex justify-between items-center animate-in slide-in-from-right-1 duration-200">
-                        <span className="text-[11px] font-medium text-slate-400 uppercase tracking-tight">{mod?.nome}</span>
-                        <span className="text-[11px] font-medium text-slate-600">+{formatCurrency(planConfig?.optional_modules_pricing[modId] || 0)}</span>
-                      </div>
-                    );
-                  })}
+                 {BUNDLES_CONFIG.filter(b => b.modulos.some(slug => selectedOptionalIds.includes(slug))).map(bundle => (
+                   <div key={bundle.id} className="flex justify-between items-center animate-in slide-in-from-right-1 duration-200">
+                     <span className="text-[11px] font-medium text-slate-400 uppercase tracking-tight">Combo {bundle.nome}</span>
+                     <span className="text-[11px] font-medium text-slate-600">+{formatCurrency(planConfig?.bundle_prices?.[bundle.id] || bundle.preco)}</span>
+                   </div>
+                 ))}
                 {(extraUsers > 0 || extraWppDevices > 0) && <div className="pt-2 border-t border-slate-50"></div>}
                 {extraUsers > 0 && (
                   <div className="flex justify-between items-center"><span className="text-[11px] font-medium text-slate-400 uppercase tracking-tight">{extraUsers} Usuários Extras</span><span className="text-[11px] font-medium text-slate-600">+{formatCurrency(extraUsers * (planConfig?.system_limits.extraUserPrice || 0))}</span></div>

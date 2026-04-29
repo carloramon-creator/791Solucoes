@@ -87,7 +87,8 @@ export default function PlanosGlassPage() {
         extraUserPrice: parseCurrency(limits.extraUserPrice),
         extraDevicePrice: parseCurrency(limits.extraDevicePrice),
         extraMessagePrice: parseCurrency(limits.extraMessagePrice)
-      } 
+      },
+      included_modules: selectedBasicModules
     };
 
     try {
@@ -160,6 +161,7 @@ export default function PlanosGlassPage() {
         if (planError) throw planError;
 
         if (planData) {
+          setSelectedBasicModules(planData.included_modules || []);
           setBasePrice(formatCurrency(String((planData.base_price || 0) * 100)));
           
           const formattedBundles: Record<string, string> = {};
@@ -179,6 +181,10 @@ export default function PlanosGlassPage() {
             });
           }
         }
+
+        // Carregar módulos do Glass para o seletor
+        const { data: mData } = await supabaseGlass.from('modules').select('*').order('ordem');
+        if (mData) setModules(mData);
       } catch (err: any) {
         console.error('Erro ao carregar dados:', err.message);
         setErrorMsg(`Erro ao carregar: ${err.message}`);

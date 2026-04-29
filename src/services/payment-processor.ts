@@ -41,6 +41,8 @@ export class PaymentProcessor {
 
     // 2. Atualizar o SaaS correspondente
     if (saasType === 'glass') {
+      const cycle = payload.externalReference.split('|')[2] || 'monthly';
+      
       if (!glassServiceKey) {
         console.error('[PAYMENT PROCESSOR] Erro: SUPABASE_GLASS_SERVICE_ROLE_KEY não configurada!');
         return;
@@ -48,21 +50,15 @@ export class PaymentProcessor {
       
       const glassSupabase = createClient(glassUrl, glassServiceKey);
       
-      // Calcula próximo vencimento baseado no valor pago
-      // Exemplo de lógica: Mensal ~150, Semestral ~800, Anual ~1500
-      // Vamos usar uma lógica de dias baseada no valor (ajustável conforme seus planos)
+      // Lógica de validade baseada no ciclo real
       let daysToAdd = 31;
-      
-      if (payload.value > 1000) {
-        daysToAdd = 366; // Anual
-      } else if (payload.value > 500) {
-        daysToAdd = 185; // Semestral
-      }
+      if (cycle === 'annual') daysToAdd = 366;
+      else if (cycle === 'semiannual') daysToAdd = 185;
 
       const nextExpiration = new Date();
       nextExpiration.setDate(nextExpiration.getDate() + daysToAdd);
 
-      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} por ${daysToAdd} dias até ${nextExpiration.toISOString()}`);
+      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} (Ciclo: ${cycle}) por ${daysToAdd} dias até ${nextExpiration.toISOString()}`);
 
       const { error } = await glassSupabase
         .from('vidracarias')

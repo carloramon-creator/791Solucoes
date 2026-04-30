@@ -233,7 +233,7 @@ export default function PatrocinadoresPage() {
         ciclo: 'MONTHLY'
       });
       fetchPatrocinadores();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar:', err);
       const errorMsg = err.message || 'Erro desconhecido';
       alert(`❌ Erro ao salvar patrocinador: ${errorMsg}\n\nVerifique se o nome já existe ou se há campos inválidos.`);

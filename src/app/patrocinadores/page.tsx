@@ -795,14 +795,27 @@ export default function PatrocinadoresPage() {
                     </div>
                   </section>
 
-                  <button 
-                    type="submit"
-                    disabled={saving}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-100 disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 className="animate-spin" size={18} /> : (editingSponsor ? <Pencil size={18} /> : <Plus size={18} />)}
-                    {saving ? 'SALVANDO...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Iniciar Parceria')}
-                  </button>
+                  <div className="flex gap-4">
+                    {editingSponsor && (
+                      <button 
+                        type="button"
+                        onClick={() => handleCreateCharge(editingSponsor)}
+                        disabled={chargingId === editingSponsor.id}
+                        className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-emerald-100 disabled:opacity-50"
+                      >
+                        {chargingId === editingSponsor.id ? <Loader2 className="animate-spin" size={18} /> : <DollarSign size={18} />}
+                        Gerar Cobrança
+                      </button>
+                    )}
+                    <button 
+                      type="submit"
+                      disabled={saving}
+                      className={`${editingSponsor ? 'flex-[2]' : 'w-full'} bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-100 disabled:opacity-50`}
+                    >
+                      {saving ? <Loader2 className="animate-spin" size={18} /> : (editingSponsor ? <Pencil size={18} /> : <Plus size={18} />)}
+                      {saving ? 'SALVANDO...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Iniciar Parceria')}
+                    </button>
+                  </div>
                 </form>
               </div>
 

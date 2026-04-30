@@ -146,7 +146,7 @@ export default function PatrocinadoresPage() {
         cep: formData.cep.replace(/\D/g, ''),
         total_licencas: formData.total_licencas,
         valor_mensal: cleanValor || 0,
-        ciclo: formData.ciclo
+        // ciclo: formData.ciclo // Comentado até a coluna ser criada no DB
       };
 
       if (editingSponsor) {
@@ -688,8 +688,19 @@ export default function PatrocinadoresPage() {
                   <section className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Localização & Cobrança</h4>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1 uppercase">CEP</label>
+                        <input 
+                          type="text" 
+                          placeholder="00000-000"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-bold text-blue-600"
+                          value={formData.cep}
+                          onChange={(e) => setFormData({...formData, cep: maskCep(e.target.value)})}
+                          onBlur={(e) => handleCepBlur(e.target.value)}
+                        />
+                      </div>
                       <div className="md:col-span-3 space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-1">RUA / LOGRADOURO</label>
+                        <label className="text-[9px] font-black text-slate-400 ml-1 uppercase">RUA / LOGRADOURO</label>
                         <input 
                           type="text" 
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
@@ -697,8 +708,10 @@ export default function PatrocinadoresPage() {
                           onChange={(e) => setFormData({...formData, endereco: e.target.value})}
                         />
                       </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-1">Nº</label>
+                        <label className="text-[9px] font-black text-slate-400 ml-1 uppercase">Nº</label>
                         <input 
                           type="text" 
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
@@ -706,10 +719,8 @@ export default function PatrocinadoresPage() {
                           onChange={(e) => setFormData({...formData, numero: e.target.value})}
                         />
                       </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                       <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-1">BAIRRO</label>
+                        <label className="text-[9px] font-black text-slate-400 ml-1 uppercase">BAIRRO</label>
                         <input 
                           type="text" 
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
@@ -717,8 +728,8 @@ export default function PatrocinadoresPage() {
                           onChange={(e) => setFormData({...formData, bairro: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-1">CIDADE / UF</label>
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1 uppercase">CIDADE / UF</label>
                         <div className="flex gap-2">
                           <input 
                             type="text" 
@@ -734,16 +745,6 @@ export default function PatrocinadoresPage() {
                             onChange={(e) => setFormData({...formData, estado: e.target.value.toUpperCase()})}
                           />
                         </div>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-black text-slate-400 ml-1">CEP</label>
-                        <input 
-                          type="text" 
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
-                          value={formData.cep}
-                          onChange={(e) => setFormData({...formData, cep: maskCep(e.target.value)})}
-                          onBlur={(e) => handleCepBlur(e.target.value)}
-                        />
                       </div>
                     </div>
 

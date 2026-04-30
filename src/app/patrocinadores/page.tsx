@@ -36,8 +36,17 @@ interface Patrocinador {
   cpf_cnpj: string;
   telefone: string;
   nome_responsavel: string;
+  razao_social: string;
+  endereco: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  estado: string;
+  cep: string;
   licencas_usadas?: number;
   vouchers?: { codigo: string }[];
+  vidracarias?: any[];
+  projeto_templates?: any[];
 }
 
 export default function PatrocinadoresPage() {
@@ -52,10 +61,17 @@ export default function PatrocinadoresPage() {
   // Estados do formulário
   const [formData, setFormData] = useState({
     nome: '',
+    razao_social: '',
     email: '',
     cpf_cnpj: '',
     telefone: '',
     nome_responsavel: '',
+    endereco: '',
+    numero: '',
+    bairro: '',
+    cidade: '',
+    estado: '',
+    cep: '',
     total_licencas: 20,
     valor_mensal: ''
   });
@@ -72,7 +88,9 @@ export default function PatrocinadoresPage() {
         .from('patrocinadores')
         .select(`
           *,
-          vouchers (codigo, usado_por_vidracaria_id)
+          vouchers (codigo, usado_por_vidracaria_id),
+          vidracarias (*),
+          projeto_templates (id, nome)
         `)
         .order('created_at', { ascending: false });
 
@@ -105,19 +123,28 @@ export default function PatrocinadoresPage() {
     try {
       const slug = formData.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       
+      const payload = {
+        nome: formData.nome,
+        razao_social: formData.razao_social,
+        email: formData.email,
+        cpf_cnpj: formData.cpf_cnpj.replace(/\D/g, ''),
+        telefone: formData.telefone.replace(/\D/g, ''),
+        nome_responsavel: formData.nome_responsavel,
+        endereco: formData.endereco,
+        numero: formData.numero,
+        bairro: formData.bairro,
+        cidade: formData.cidade,
+        estado: formData.estado,
+        cep: formData.cep.replace(/\D/g, ''),
+        total_licencas: formData.total_licencas,
+        valor_mensal: parseFloat(formData.valor_mensal) || 0,
+      };
+
       if (editingSponsor) {
         // ATUALIZAR PATROCINADOR EXISTENTE
         const { error: uError } = await supabase
           .from('patrocinadores')
-          .update({
-            nome: formData.nome,
-            email: formData.email,
-            cpf_cnpj: formData.cpf_cnpj.replace(/\D/g, ''),
-            telefone: formData.telefone.replace(/\D/g, ''),
-            nome_responsavel: formData.nome_responsavel,
-            total_licencas: formData.total_licencas,
-            valor_mensal: parseFloat(formData.valor_mensal) || 0,
-          })
+          .update(payload)
           .eq('id', editingSponsor.id);
 
         if (uError) throw uError;
@@ -126,17 +153,7 @@ export default function PatrocinadoresPage() {
         // CRIAR NOVO PATROCINADOR
         const { data: sponsor, error: sError } = await supabase
           .from('patrocinadores')
-          .insert([{
-            nome: formData.nome,
-            email: formData.email,
-            cpf_cnpj: formData.cpf_cnpj.replace(/\D/g, ''),
-            telefone: formData.telefone.replace(/\D/g, ''),
-            nome_responsavel: formData.nome_responsavel,
-            slug,
-            total_licencas: formData.total_licencas,
-            valor_mensal: parseFloat(formData.valor_mensal) || 0,
-            status: 'ativo'
-          }])
+          .insert([{ ...payload, slug, status: 'ativo' }])
           .select()
           .single();
 
@@ -159,17 +176,24 @@ export default function PatrocinadoresPage() {
       setEditingSponsor(null);
       setFormData({ 
         nome: '', 
+        razao_social: '',
         email: '', 
         cpf_cnpj: '', 
         telefone: '', 
         nome_responsavel: '',
+        endereco: '',
+        numero: '',
+        bairro: '',
+        cidade: '',
+        estado: '',
+        cep: '',
         total_licencas: 20, 
         valor_mensal: '' 
       });
       fetchPatrocinadores();
     } catch (err) {
       console.error('Erro ao salvar:', err);
-      alert('Erro ao salvar patrocinador. Verifique se o nome já existe.');
+      alert('Erro ao salvar patrocinador. Verifique os campos e se o nome já existe.');
     } finally {
       setSaving(false);
     }
@@ -179,10 +203,17 @@ export default function PatrocinadoresPage() {
     setEditingSponsor(p);
     setFormData({
       nome: p.nome,
+      razao_social: p.razao_social || '',
       email: p.email || '',
       cpf_cnpj: p.cpf_cnpj || '',
       telefone: p.telefone || '',
       nome_responsavel: p.nome_responsavel || '',
+      endereco: p.endereco || '',
+      numero: p.numero || '',
+      bairro: p.bairro || '',
+      cidade: p.cidade || '',
+      estado: p.estado || '',
+      cep: p.cep || '',
       total_licencas: p.total_licencas,
       valor_mensal: p.valor_mensal.toString()
     });
@@ -404,128 +435,268 @@ export default function PatrocinadoresPage() {
         </div>
       </div>
 
-      {/* Modal de Cadastro */}
+      {/* Modal 360º */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)} />
-          <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
-            <div className="bg-[#1e293b] p-6 text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-black flex items-center gap-2">
-                  <ShieldCheck className="text-blue-400" />
-                  {editingSponsor ? 'Editar Patrocinador' : 'Novo Patrocinador'}
-                </h3>
-                <p className="text-slate-400 text-xs font-medium">
-                  {editingSponsor ? `Editando ${editingSponsor.nome}` : 'Cadastre um parceiro e gere vouchers em lote.'}
-                </p>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} />
+          <div className="relative bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col md:flex-row max-h-[95vh]">
+            
+            {/* Esquerda: Formulário */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="bg-[#1e293b] p-6 text-white flex items-center justify-between sticky top-0 z-10">
+                <div>
+                  <h3 className="text-xl font-black flex items-center gap-2">
+                    <ShieldCheck className="text-blue-400" />
+                    {editingSponsor ? 'Editar Patrocinador' : 'Novo Patrocinador'}
+                  </h3>
+                  <p className="text-slate-400 text-xs font-medium">
+                    {editingSponsor ? `Editando ${editingSponsor.nome}` : 'Cadastre um parceiro e gere licenciamento.'}
+                  </p>
+                </div>
+                <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-2 hover:bg-white/10 rounded-xl transition-all">
+                  <X size={24} />
+                </button>
               </div>
-              <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-2 hover:bg-white/10 rounded-xl transition-all">
-                <X size={24} />
-              </button>
+
+              <form onSubmit={handleSave} className="p-8 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Patrocinador (Fantasia)</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="Ex: All Kit Sacadas"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Razão Social</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="Ex: Industria de Vidros LTDA"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.razao_social}
+                      onChange={(e) => setFormData({...formData, razao_social: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nome do Responsável</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="Ex: João da Silva"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.nome_responsavel}
+                      onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">CPF ou CNPJ</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="00.000.000/0000-00"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.cpf_cnpj}
+                      onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">E-mail Financeiro</label>
+                    <input 
+                      required
+                      type="email" 
+                      placeholder="financeiro@empresa.com"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Telefone de Contato</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="(11) 99999-9999"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Calendar size={14} /> Endereço de Cobrança
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Rua / Logradouro</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                        value={formData.endereco}
+                        onChange={(e) => setFormData({...formData, endereco: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Número</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                        value={formData.numero}
+                        onChange={(e) => setFormData({...formData, numero: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Bairro</label>
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                        value={formData.bairro}
+                        onChange={(e) => setFormData({...formData, bairro: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Cidade / UF</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          placeholder="Cidade"
+                          className="flex-1 px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                          value={formData.cidade}
+                          onChange={(e) => setFormData({...formData, cidade: e.target.value})}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="UF"
+                          maxLength={2}
+                          className="w-12 px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm uppercase text-center font-bold"
+                          value={formData.estado}
+                          onChange={(e) => setFormData({...formData, estado: e.target.value.toUpperCase()})}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">CEP</label>
+                      <input 
+                        type="text" 
+                        placeholder="00000-000"
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
+                        value={formData.cep}
+                        onChange={(e) => setFormData({...formData, cep: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Qtd Licenças do Pacote</label>
+                    <input 
+                      required
+                      type="number" 
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.total_licencas}
+                      onChange={(e) => setFormData({...formData, total_licencas: parseInt(e.target.value)})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Valor Mensal (Cota)</label>
+                    <input 
+                      required
+                      type="number" 
+                      placeholder="R$ 5.000,00"
+                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                      value={formData.valor_mensal}
+                      onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <button 
+                  type="submit"
+                  disabled={saving}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-100 mb-8"
+                >
+                  {saving ? <Loader2 className="animate-spin" /> : (editingSponsor ? <Pencil size={20} /> : <Plus size={20} />)}
+                  {saving ? 'Salvando...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Gerar Primeiro Voucher')}
+                </button>
+              </form>
             </div>
 
-            <form onSubmit={handleSave} className="p-8 space-y-6">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nome da Empresa</label>
-                <input 
-                  required
-                  type="text" 
-                  placeholder="Ex: All Kit Sacadas"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                  value={formData.nome}
-                  onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nome do Responsável</label>
-                <input 
-                  required
-                  type="text" 
-                  placeholder="Ex: João da Silva"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                  value={formData.nome_responsavel}
-                  onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">E-mail</label>
-                  <input 
-                    required
-                    type="email" 
-                    placeholder="financeiro@empresa.com"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  />
+            {/* Direita: Visão de Negócio (Sidebar) */}
+            {editingSponsor && (
+              <div className="w-full md:w-[400px] bg-slate-50 border-l border-slate-100 p-8 flex flex-col overflow-y-auto max-h-[95vh]">
+                <div className="mb-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <Users size={14} className="text-blue-500" /> Vidraçarias Patrocinadas
+                    </p>
+                    <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-md">
+                      {editingSponsor.vidracarias?.length || 0}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {editingSponsor.vidracarias && editingSponsor.vidracarias.length > 0 ? (
+                      editingSponsor.vidracarias.map((v: any) => (
+                        <div key={v.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-200 transition-all">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-bold text-slate-700 text-sm">{v.nome}</p>
+                              <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">Módulos Extra</p>
+                            </div>
+                            <span className="text-sm font-black text-emerald-600">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-slate-100/50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
+                        <p className="text-xs text-slate-400 font-medium italic">Nenhuma vidraçaria vinculada.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Telefone</label>
-                  <input 
-                    required
-                    type="text" 
-                    placeholder="(11) 99999-9999"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                    value={formData.telefone}
-                    onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                  />
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">CPF ou CNPJ</label>
-                <input 
-                  required
-                  type="text" 
-                  placeholder="00.000.000/0000-00"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                  value={formData.cpf_cnpj}
-                  onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Qtd Licenças</label>
-                  <input 
-                    required
-                    type="number" 
-                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                    value={formData.total_licencas}
-                    onChange={(e) => setFormData({...formData, total_licencas: parseInt(e.target.value)})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Valor Mensal</label>
-                  <input 
-                    required
-                    type="number" 
-                    placeholder="R$ 5.000,00"
-                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                    value={formData.valor_mensal}
-                    onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
-                  />
+                  <div className="flex items-center justify-between mb-6">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <ShieldCheck size={14} className="text-blue-500" /> Modelos Oficiais (Templates)
+                    </p>
+                    <span className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-md">
+                      {editingSponsor.projeto_templates?.length || 0}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {editingSponsor.projeto_templates && editingSponsor.projeto_templates.length > 0 ? (
+                      editingSponsor.projeto_templates.map((t: any) => (
+                        <div key={t.id} className="bg-white px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 flex items-center gap-3 hover:bg-slate-50 transition-all">
+                          <div className="w-2 h-2 rounded-full bg-blue-500" />
+                          {t.nome}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-slate-100/50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
+                        <p className="text-xs text-slate-400 font-medium italic">Nenhum modelo configurado.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-
-              <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start border border-blue-100">
-                <CheckCircle2 className="text-blue-600 shrink-0" size={20} />
-                <p className="text-[11px] text-blue-800 font-medium leading-relaxed">
-                  Ao salvar, o sistema irá gerar automaticamente o primeiro voucher de ativação para este patrocinador.
-                </p>
-              </div>
-
-              <button 
-                type="submit"
-                disabled={saving}
-                className="w-full bg-[#1e293b] hover:bg-slate-800 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200"
-              >
-                {saving ? <Loader2 className="animate-spin" /> : (editingSponsor ? <Pencil size={18} /> : <Plus size={18} />)}
-                {saving ? 'Salvando...' : (editingSponsor ? 'Salvar Alterações' : 'Salvar e Gerar Voucher')}
-              </button>
-            </form>
+            )}
           </div>
         </div>
       )}

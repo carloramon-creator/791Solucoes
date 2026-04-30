@@ -49,10 +49,39 @@ export async function GET(req: Request) {
 
     console.log(`[CRON] Bloqueadas ${idsToBlock.length} vidraçarias:`, idsToBlock);
 
+    // --- BLOQUEIO DE PATROCINADORES (HOLDING) ---
+    const holdingUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const holdingSupabase = createClient(holdingUrl, holdingServiceKey);
+
+    console.log(`[CRON] Verificando patrocinadores vencidos antes de ${deadlineStr}`);
+
+    const { data: expiredSponsors, error: fetchSponsorError } = await holdingSupabase
+      .from('patrocinadores')
+      .select('id, nome')
+      .eq('status', 'ativo')
+      .lt('data_expiracao', deadlineStr);
+
+    if (fetchSponsorError) throw fetchSponsorError;
+
+    if (expiredSponsors && expiredSponsors.length > 0) {
+      const sponsorIds = expiredSponsors.map(s => s.id);
+      await holdingSupabase
+        .from('patrocinadores')
+        .update({ 
+          status: 'bloqueado',
+          updated_at: new Date().toISOString()
+        })
+        .in('id', sponsorIds);
+      
+      console.log(`[CRON] Bloqueados ${sponsorIds.length} patrocinadores:`, sponsorIds);
+    }
+
     return NextResponse.json({ 
       success: true, 
-      blockedCount: idsToBlock.length,
-      details: expired
+      blockedTenantsCount: idsToBlock.length,
+      blockedSponsorsCount: expiredSponsors?.length || 0,
+      details: { tenants: expired, sponsors: expiredSponsors }
     });
 
   } catch (err: any) {

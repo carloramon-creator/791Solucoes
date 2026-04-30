@@ -75,6 +75,52 @@ export class PaymentProcessor {
       } else {
         console.log(`[PAYMENT PROCESSOR] Vidracaria ${tenantId} no Glass ativada com sucesso!`);
       }
+    } 
+    
+    // CASO 3: Patrocinadores (Holding)
+    else if (saasType === 'sponsor') {
+      console.log(`[PAYMENT PROCESSOR] Ativando Patrocinador: ${tenantId}`);
+      
+      const { data: sponsor, error: fError } = await holdingSupabase
+        .from('patrocinadores')
+        .select('*')
+        .eq('id', tenantId)
+        .single();
+
+      if (fError || !sponsor) {
+        console.error(`[PAYMENT PROCESSOR] Patrocinador ${tenantId} não encontrado!`);
+        return;
+      }
+
+      // Cálculo de validade baseado no ciclo
+      const cycle = sponsor.ciclo || 'MONTHLY';
+      let daysToAdd = 31;
+      
+      if (cycle === 'QUARTERLY') daysToAdd = 92;
+      else if (cycle === 'SEMI_ANNUAL') daysToAdd = 183;
+      else if (cycle === 'YEARLY') daysToAdd = 366;
+
+      const currentExp = sponsor.data_expiracao ? new Date(sponsor.data_expiracao) : new Date();
+      // Se já estiver expirado, começa de hoje. Se não, soma à data atual.
+      const baseDate = currentExp > new Date() ? currentExp : new Date();
+      
+      const nextExpiration = new Date(baseDate);
+      nextExpiration.setDate(nextExpiration.getDate() + daysToAdd);
+
+      console.log(`[PAYMENT PROCESSOR] Patrocinador ${sponsor.nome} ativado até ${nextExpiration.toISOString()} (Ciclo: ${cycle})`);
+
+      const { error: uError } = await holdingSupabase
+        .from('patrocinadores')
+        .update({
+          status: 'ativo',
+          data_expiracao: nextExpiration.toISOString().split('T')[0],
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', tenantId);
+
+      if (uError) {
+        console.error(`[PAYMENT PROCESSOR] Erro ao atualizar Patrocinador:`, uError.message);
+      }
     }
     
     // TODO: Adicionar lógica para o Barber se necessário (embora já esteja integrado lá)

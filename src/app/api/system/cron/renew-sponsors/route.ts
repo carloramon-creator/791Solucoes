@@ -62,8 +62,8 @@ export async function GET(req: Request) {
             cpfCnpj: sponsor.cpf_cnpj,
             telefone: sponsor.telefone,
             valor: sponsor.valor_mensal,
-            description: `Renovação de Patrocínio 791glass - ${sponsor.nome}`,
-            parcelas: 12
+            ciclo: sponsor.ciclo || 'MONTHLY',
+            description: `Renovação de Patrocínio 791glass - ${sponsor.nome}`
           })
         });
 

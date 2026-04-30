@@ -18,7 +18,8 @@ export async function POST(req: Request) {
       telefone,
       valor,
       description,
-      parcelas = 12
+      ciclo = 'MONTHLY',
+      parcelas = 1
     } = await req.json();
 
     console.log('[ASAAS SPONSOR] Iniciando cobrança para:', email);
@@ -78,9 +79,17 @@ export async function POST(req: Request) {
     // 3. Criar o Checkout Link (Tela Bonita)
     const totalValue = parseFloat(valor);
     
+    const cycleMap: any = {
+      'MONTHLY': 'Mensal',
+      'QUARTERLY': 'Trimestral',
+      'SEMI_ANNUAL': 'Semestral',
+      'YEARLY': 'Anual'
+    };
+    const cycleLabel = cycleMap[ciclo] || 'Mensal';
+
     const checkoutPayload: any = {
         name: `Patrocínio 791glass - ${nome}`,
-        description: description || `Cota de Patrocínio 791glass`,
+        description: description || `Renovação ${cycleLabel} - Cota de Patrocínio 791glass`,
         billingTypes: ['CREDIT_CARD'], 
         chargeTypes: ['DETACHED', 'INSTALLMENT'], 
         installment: {

@@ -31,6 +31,7 @@ interface Patrocinador {
   total_licencas: number;
   valor_mensal: number;
   data_expiracao: string | null;
+  ciclo: string;
   created_at: string;
   email: string;
   cpf_cnpj: string;
@@ -76,7 +77,8 @@ export default function PatrocinadoresPage() {
     estado: '',
     cep: '',
     total_licencas: 20,
-    valor_mensal: ''
+    valor_mensal: '',
+    ciclo: 'MONTHLY'
   });
   const [editingSponsor, setEditingSponsor] = useState<Patrocinador | null>(null);
 
@@ -139,6 +141,7 @@ export default function PatrocinadoresPage() {
         cep: formData.cep.replace(/\D/g, ''),
         total_licencas: formData.total_licencas,
         valor_mensal: parseFloat(formData.valor_mensal) || 0,
+        ciclo: formData.ciclo
       };
 
       if (editingSponsor) {
@@ -160,17 +163,42 @@ export default function PatrocinadoresPage() {
 
         if (sError) throw sError;
 
-        // Gerar o primeiro voucher automático apenas para novos
+        // Gerar o primeiro voucher automático
         const voucherCode = generateVoucherCode(formData.nome);
-        const { error: vError } = await supabase
+        await supabase
           .from('vouchers')
           .insert([{
             codigo: voucherCode,
             patrocinador_id: sponsor.id
           }]);
 
-        if (vError) throw vError;
-        alert(`✅ Patrocinador criado com sucesso!\nToken Gerado: ${voucherCode}`);
+        // 🚀 DISPARAR COBRANÇA ASAAS AUTOMATICAMENTE
+        try {
+          const chargeRes = await fetch('/api/payments/asaas/create-sponsor-charge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              patrocinadorId: sponsor.id,
+              nome: formData.nome,
+              email: formData.email,
+              cpfCnpj: formData.cpf_cnpj.replace(/\D/g, ''),
+              telefone: formData.telefone.replace(/\D/g, ''),
+              valor: payload.valor_mensal,
+              description: `Adesão Patrocínio 791glass - ${formData.nome}`
+            })
+          });
+          const chargeData = await chargeRes.json();
+          
+          if (chargeData.success) {
+            alert(`✅ Patrocinador criado!\n\nToken: ${voucherCode}\n\nLink de Pagamento Gerado: ${chargeData.invoiceUrl}`);
+            window.open(chargeData.invoiceUrl, '_blank');
+          } else {
+            alert(`✅ Patrocinador criado, mas houve um erro no Asaas: ${chargeData.error}`);
+          }
+        } catch (asaasErr) {
+          console.error('Erro Asaas:', asaasErr);
+          alert('✅ Patrocinador criado, mas falhou ao gerar link no Asaas.');
+        }
       }
 
       setIsModalOpen(false);
@@ -189,7 +217,8 @@ export default function PatrocinadoresPage() {
         estado: '',
         cep: '',
         total_licencas: 20, 
-        valor_mensal: '' 
+        valor_mensal: '',
+        ciclo: 'MONTHLY'
       });
       fetchPatrocinadores();
     } catch (err) {
@@ -267,7 +296,8 @@ export default function PatrocinadoresPage() {
       estado: p.estado || '',
       cep: p.cep || '',
       total_licencas: p.total_licencas,
-      valor_mensal: p.valor_mensal.toString()
+      valor_mensal: p.valor_mensal.toString(),
+      ciclo: p.ciclo || 'MONTHLY'
     });
     setIsModalOpen(true);
     fetchExtraDetails(p.id);
@@ -665,7 +695,7 @@ export default function PatrocinadoresPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-200">
                       <div className="space-y-1">
                         <label className="text-[10px] font-black text-blue-600 ml-1 uppercase">Cota de Licenças</label>
                         <div className="relative">
@@ -680,7 +710,7 @@ export default function PatrocinadoresPage() {
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-black text-emerald-600 ml-1 uppercase">Valor Mensal (Cota)</label>
+                        <label className="text-[10px] font-black text-emerald-600 ml-1 uppercase">Valor do Ciclo (R$)</label>
                         <div className="relative">
                           <input 
                             required
@@ -690,6 +720,22 @@ export default function PatrocinadoresPage() {
                             onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
                           />
                           <DollarSign className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-200" size={16} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-600 ml-1 uppercase">Ciclo de Cobrança</label>
+                        <div className="relative">
+                          <select 
+                            className="w-full px-4 py-2.5 rounded-xl border-2 border-slate-50 bg-white focus:border-blue-500 transition-all font-black text-slate-700 outline-none text-sm appearance-none"
+                            value={formData.ciclo}
+                            onChange={(e) => setFormData({...formData, ciclo: e.target.value})}
+                          >
+                            <option value="MONTHLY">MENSAL</option>
+                            <option value="QUARTERLY">TRIMESTRAL</option>
+                            <option value="SEMI_ANNUAL">SEMESTRAL</option>
+                            <option value="YEARLY">ANUAL</option>
+                          </select>
+                          <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-200 pointer-events-none" size={16} />
                         </div>
                       </div>
                     </div>

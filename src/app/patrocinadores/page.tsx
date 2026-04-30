@@ -392,6 +392,8 @@ export default function PatrocinadoresPage() {
                           <Pencil size={18} />
                         </button>
                         <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
+                          <MoreHorizontal size={18} />
+                        </button>
                       </div>
                     </td>
                   </tr>

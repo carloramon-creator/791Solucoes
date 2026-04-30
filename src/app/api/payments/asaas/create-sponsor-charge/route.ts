@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         addressNumber: addressNumber || '1000',
         province: province || 'Centro',
         postalCode: (postalCode || '01310-100').replace(/\D/g, ''),
-        cityName: city,
+        city: city,
         state: state
       });
     }

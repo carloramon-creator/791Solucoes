@@ -30,6 +30,7 @@ export default function GlassClientsPage() {
   const [systemPlan, setSystemPlan] = useState<any>(null); // Guardará os módulos inclusos por padrão
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sponsorMap, setSponsorMap] = useState<Record<string, string>>({});
   
   // Modal State
   const [selectedVidracaria, setSelectedVidracaria] = useState<Vidracaria | null>(null);
@@ -74,6 +75,23 @@ export default function GlassClientsPage() {
         setVidracarias(vData || []);
         setModules(sortedModules);
         if (pData) setSystemPlan(pData);
+
+        // 4. Buscar Patrocinadores e Vínculos (Holding) para o selo
+        const { data: sData } = await supabase
+          .from('patrocinadores')
+          .select('id, nome');
+        
+        const { data: vDataHold } = await supabase
+          .from('vouchers')
+          .select('patrocinador_id, usado_por_vidracaria_id')
+          .not('usado_por_vidracaria_id', 'is', null);
+
+        const map: Record<string, string> = {};
+        vDataHold?.forEach(v => {
+          const sponsor = sData?.find(s => s.id === v.patrocinador_id);
+          if (sponsor) map[v.usado_por_vidracaria_id] = sponsor.nome;
+        });
+        setSponsorMap(map);
       } catch (err: any) {
         console.error("Erro ao buscar dados:", err.message);
       } finally {
@@ -230,6 +248,11 @@ export default function GlassClientsPage() {
                     <td className="p-4 pl-6">
                       <div className="font-bold text-slate-800 text-[13px] uppercase">{vid.nome}</div>
                       <div className="text-[11px] text-slate-500 font-medium mt-0.5">Cadastrado em: {vid.created_at ? new Date(vid.created_at).toLocaleDateString() : 'N/A'}</div>
+                      {sponsorMap[vid.id] && (
+                        <div className="text-[10px] text-red-600 font-black uppercase mt-1">
+                          Patrocinado por {sponsorMap[vid.id]}
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-100 text-emerald-700">

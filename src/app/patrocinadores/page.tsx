@@ -242,6 +242,26 @@ export default function PatrocinadoresPage() {
     }
   }
 
+  async function handleGenerateVoucher(sponsorId: string, nome: string) {
+    if (!confirm(`Deseja gerar um novo Voucher para ${nome}?`)) return;
+    
+    try {
+      const voucherCode = generateVoucherCode(nome);
+      const { error } = await supabase
+        .from('vouchers')
+        .insert([{
+          codigo: voucherCode,
+          patrocinador_id: sponsorId
+        }]);
+
+      if (error) throw error;
+      alert(`✅ Voucher ${voucherCode} gerado com sucesso!`);
+      fetchPatrocinadores();
+    } catch (err: any) {
+      alert(`Erro ao gerar voucher: ${err.message}`);
+    }
+  }
+
   // Funções de Máscara
   const maskCpfCnpj = (v: string) => {
     v = v.replace(/\D/g, "");
@@ -533,7 +553,11 @@ export default function PatrocinadoresPage() {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" title="Gerenciar Vouchers">
+                        <button 
+                          onClick={() => handleGenerateVoucher(p.id, p.nome)}
+                          className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" 
+                          title="Gerar Novo Voucher"
+                        >
                           <Key size={18} />
                         </button>
                         <button 

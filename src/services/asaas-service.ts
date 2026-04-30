@@ -16,6 +16,8 @@ export interface AsaasCustomer {
     addressNumber?: string;
     complement?: string;
     province?: string;
+    city?: string;
+    state?: string;
     notificationDisabled?: boolean;
 }
 

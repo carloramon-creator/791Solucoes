@@ -146,7 +146,7 @@ export default function PatrocinadoresPage() {
         cep: formData.cep.replace(/\D/g, ''),
         total_licencas: formData.total_licencas,
         valor_mensal: cleanValor || 0,
-        // ciclo: formData.ciclo // Comentado até a coluna ser criada no DB
+        ciclo: formData.ciclo
       };
 
       if (editingSponsor) {
@@ -381,8 +381,7 @@ export default function PatrocinadoresPage() {
           telefone: p.telefone,
           valor: p.valor_mensal,
           description: `Patrocínio 791glass - ${p.nome}`,
-          ciclo: p.ciclo,
-          parcelas: 12,
+          ciclo: p.ciclo || 'MONTHLY',
           address: p.endereco,
           addressNumber: p.numero,
           province: p.bairro,
@@ -543,7 +542,7 @@ export default function PatrocinadoresPage() {
                       </div>
                       <div className="text-xs text-slate-400 font-bold flex items-center gap-1 mt-1 uppercase">
                         <Calendar size={12} />
-                        {p.data_expiracao || 'Indeterminado'}
+                        {p.ciclo || 'MENSAL'} • {p.data_expiracao || 'Indeterminado'}
                       </div>
                     </td>
                     <td className="px-8 py-6">

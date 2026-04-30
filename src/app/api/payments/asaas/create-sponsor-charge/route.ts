@@ -83,9 +83,15 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. Criar o Checkout Link (Tela Bonita)
-    const totalValue = parseFloat(valor);
+    // 3. Criar a Cobrança (Payment) - Mais confiável que Checkout Link
+    const totalValue = typeof valor === 'string' 
+      ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
+      : parseFloat(valor);
     
+    if (isNaN(totalValue) || totalValue <= 0) {
+      throw new Error('Valor da cobrança inválido.');
+    }
+
     const cycleMap: any = {
       'MONTHLY': 'Mensal',
       'QUARTERLY': 'Trimestral',
@@ -94,44 +100,35 @@ export async function POST(req: Request) {
     };
     const cycleLabel = cycleMap[ciclo] || 'Mensal';
 
-    const checkoutPayload: any = {
-        name: `Patrocínio 791glass - ${nome}`,
-        description: description || `Renovação ${cycleLabel} - Cota de Patrocínio 791glass`,
-        billingTypes: ['CREDIT_CARD'], 
-        chargeTypes: ['DETACHED', 'INSTALLMENT'], 
-        installment: {
-            maxInstallmentCount: parcelas
-        },
-        endDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0], // Link expira em 7 dias
-        value: totalValue,
-        dueDateDays: 5, 
-        externalReference: `sponsor|${patrocinadorId}`,
+    const paymentPayload: any = {
         customer: customer.id,
-        callback: {
-            successUrl: 'https://app.791glass.com.br/patrocinadores',
-            autoRedirect: true
-        }
+        billingType: 'UNDEFINED', // Permite Cartão, Boleto ou Pix
+        value: totalValue,
+        dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0], // Vencimento em 3 dias
+        description: description || `Patrocínio 791glass (${cycleLabel}) - ${nome}`,
+        externalReference: `sponsor|${patrocinadorId}`,
     };
 
-    checkoutPayload.items = [{
-        name: `Cota de Patrocínio - ${nome}`,
-        amount: totalValue,
-        value: totalValue,
-        quantity: 1
-    }];
+    const payment = await asaas.createPayment(paymentPayload);
 
-    const checkout = await asaas.createCheckout(checkoutPayload);
+    // 4. Salvar dados de cobrança no Supabase (Holding)
+    const { error: sError } = await supabaseHolding
+      .from('patrocinadores')
+      .update({
+        asaas_customer_id: customer.id,
+        last_charge_id: payment.id,
+        last_charge_link: payment.invoiceUrl
+      })
+      .eq('id', patrocinadorId);
 
-    const invoiceUrl = checkout.url || checkout.paymentUrl || checkout.invoiceUrl || checkout.link || ''; 
-
-    if (!invoiceUrl) {
-        throw new Error('Checkout gerado, mas URL não encontrada no retorno do Asaas.');
+    if (sError) {
+      console.error('[ASAAS SPONSOR] Erro ao salvar dados no Supabase:', sError.message);
     }
 
     return NextResponse.json({ 
       success: true, 
-      id: checkout.id,
-      invoiceUrl: invoiceUrl
+      id: payment.id,
+      invoiceUrl: payment.invoiceUrl
     });
 
   } catch (err: any) {

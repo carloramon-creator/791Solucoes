@@ -200,6 +200,57 @@ export default function PatrocinadoresPage() {
     }
   }
 
+  // Funções de Máscara
+  const maskCpfCnpj = (v: string) => {
+    v = v.replace(/\D/g, "");
+    if (v.length <= 11) {
+      v = v.replace(/(\d{3})(\d)/, "$1.$2");
+      v = v.replace(/(\d{3})(\d)/, "$1.$2");
+      v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+    } else {
+      v = v.replace(/^(\d{2})(\d)/, "$1.$2");
+      v = v.replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3");
+      v = v.replace(/\.(\d{3})(\d)/, ".$1/$2");
+      v = v.replace(/(\d{4})(\d)/, "$1-$2");
+    }
+    return v.substring(0, 18);
+  };
+
+  const maskPhone = (v: string) => {
+    v = v.replace(/\D/g, "");
+    v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
+    v = v.replace(/(\d)(\d{4})$/, "$1-$2");
+    return v.substring(0, 15);
+  };
+
+  const maskCep = (v: string) => {
+    v = v.replace(/\D/g, "");
+    v = v.replace(/^(\d{5})(\d)/, "$1-$2");
+    return v.substring(0, 9);
+  };
+
+  // Busca de CEP
+  const handleCepBlur = async (cep: string) => {
+    const cleanCep = cep.replace(/\D/g, "");
+    if (cleanCep.length === 8) {
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+        const data = await response.json();
+        if (!data.erro) {
+          setFormData(prev => ({
+            ...prev,
+            endereco: data.logradouro,
+            bairro: data.bairro,
+            cidade: data.localidade,
+            estado: data.uf
+          }));
+        }
+      } catch (error) {
+        console.error("Erro ao buscar CEP:", error);
+      }
+    }
+  };
+
   function handleEdit(p: Patrocinador) {
     setEditingSponsor(p);
     setFormData({
@@ -455,36 +506,33 @@ export default function PatrocinadoresPage() {
         </div>
       </div>
 
-      {/* Modal 360º Dashboard Style */}
+      {/* Modal 360º Compact Dashboard */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} />
-          <div className="relative bg-[#f8fafc] w-full max-w-7xl h-full max-h-[90vh] rounded-[40px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-500 flex flex-col border border-white/20">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} />
+          <div className="relative bg-[#f8fafc] w-full max-w-7xl h-full max-h-[92vh] rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col border border-slate-200">
             
-            {/* Header fixo no topo */}
-            <div className="bg-[#1e293b] p-8 text-white flex items-center justify-between shrink-0 shadow-xl z-20">
-              <div className="flex items-center gap-6">
-                <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center border border-blue-400/30">
-                  <ShieldCheck className="text-blue-400" size={32} />
+            {/* Header Compacto */}
+            <div className="bg-[#1e293b] px-6 py-4 text-white flex items-center justify-between shrink-0 z-20">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-400/20">
+                  <ShieldCheck className="text-blue-400" size={20} />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black tracking-tight">
-                    {editingSponsor ? 'Configurações do Patrocinador' : 'Novo Parceiro Estratégico'}
+                  <h3 className="text-lg font-black tracking-tight">
+                    {editingSponsor ? 'Configurações do Patrocinador' : 'Novo Parceiro'}
                   </h3>
-                  <p className="text-slate-400 text-sm font-medium mt-1">
-                    {editingSponsor ? `Monitorando ${editingSponsor.nome} • ID: ${editingSponsor.id.substring(0,8)}` : 'Cadastre um novo patrocinador e defina as cotas de licenciamento.'}
+                  <p className="text-slate-400 text-[10px] font-medium">
+                    {editingSponsor ? `Monitorando ${editingSponsor.nome}` : 'Defina cotas e licenciamento.'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 {editingSponsor && (
-                  <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-emerald-400 text-xs font-black uppercase tracking-widest">Patrocinador Ativo</span>
-                  </div>
+                  <span className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-[9px] font-black uppercase tracking-widest">Ativo</span>
                 )}
-                <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-3 hover:bg-white/10 rounded-2xl transition-all text-slate-400 hover:text-white">
-                  <X size={28} />
+                <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-2 hover:bg-white/10 rounded-lg transition-all text-slate-400 hover:text-white">
+                  <X size={20} />
                 </button>
               </div>
             </div>
@@ -492,283 +540,268 @@ export default function PatrocinadoresPage() {
             {/* Conteúdo em Grid */}
             <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
               
-              {/* COLUNA 1: Formulário Principal (Fixo ou com Scroll próprio) */}
-              <div className="flex-[1.5] overflow-y-auto p-10 border-r border-slate-200 bg-white">
-                <form onSubmit={handleSave} className="space-y-10">
+              {/* COLUNA 1: Formulário Compacto */}
+              <div className="flex-[1.2] overflow-y-auto p-6 border-r border-slate-200 bg-white">
+                <form onSubmit={handleSave} className="space-y-6">
                   <section>
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-                      <div className="w-6 h-0.5 bg-blue-500" /> Identificação e Contato
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <div className="w-4 h-0.5 bg-blue-500" /> Identificação
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 ml-1">PATROCINADOR (NOME FANTASIA)</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">Nome Fantasia</label>
                         <input 
                           required
                           type="text" 
-                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.nome}
                           onChange={(e) => setFormData({...formData, nome: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 ml-1">RAZÃO SOCIAL</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">Razão Social</label>
                         <input 
                           required
                           type="text" 
-                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.razao_social}
                           onChange={(e) => setFormData({...formData, razao_social: e.target.value})}
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">
-                      <div className="md:col-span-1 space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 ml-1">RESPONSÁVEL</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">Responsável</label>
                         <input 
                           required
                           type="text" 
-                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.nome_responsavel}
                           onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 ml-1">CNPJ / CPF</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">CNPJ / CPF</label>
                         <input 
                           required
                           type="text" 
-                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.cpf_cnpj}
-                          onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
+                          onChange={(e) => setFormData({...formData, cpf_cnpj: maskCpfCnpj(e.target.value)})}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-bold text-slate-500 ml-1">TELEFONE</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">Telefone</label>
                         <input 
                           required
                           type="text" 
-                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.telefone}
-                          onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                          onChange={(e) => setFormData({...formData, telefone: maskPhone(e.target.value)})}
                         />
                       </div>
                     </div>
                   </section>
 
-                  <section className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform">
-                      <Calendar size={120} />
-                    </div>
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
-                       Localização e Faturamento
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                      <div className="md:col-span-3 space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 ml-1">LOGRADOURO</label>
+                  <section className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Localização & Cobrança</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                      <div className="md:col-span-3 space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1">RUA / LOGRADOURO</label>
                         <input 
                           type="text" 
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
                           value={formData.endereco}
                           onChange={(e) => setFormData({...formData, endereco: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 ml-1">Nº</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1">Nº</label>
                         <input 
                           type="text" 
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
                           value={formData.numero}
                           onChange={(e) => setFormData({...formData, numero: e.target.value})}
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 ml-1">BAIRRO</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1">BAIRRO</label>
                         <input 
                           type="text" 
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
                           value={formData.bairro}
                           onChange={(e) => setFormData({...formData, bairro: e.target.value})}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 ml-1">CIDADE / UF</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1">CIDADE / UF</label>
                         <div className="flex gap-2">
                           <input 
                             type="text" 
-                            className="flex-1 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                            className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
                             value={formData.cidade}
                             onChange={(e) => setFormData({...formData, cidade: e.target.value})}
                           />
                           <input 
                             type="text" 
                             maxLength={2}
-                            className="w-16 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-black text-center"
+                            className="w-10 px-1 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none font-bold text-center text-xs"
                             value={formData.estado}
                             onChange={(e) => setFormData({...formData, estado: e.target.value.toUpperCase()})}
                           />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 ml-1">CEP</label>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 ml-1">CEP</label>
                         <input 
                           type="text" 
-                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500/10 outline-none text-xs font-medium"
                           value={formData.cep}
-                          onChange={(e) => setFormData({...formData, cep: e.target.value})}
+                          onChange={(e) => setFormData({...formData, cep: maskCep(e.target.value)})}
+                          onBlur={(e) => handleCepBlur(e.target.value)}
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-200/60">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black text-blue-600 ml-1 uppercase">COTA DE LICENÇAS</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-blue-600 ml-1 uppercase">Cota de Licenças</label>
                         <div className="relative">
                           <input 
                             required
                             type="number" 
-                            className="w-full px-5 py-4 rounded-2xl border-2 border-blue-100 bg-blue-50/30 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-black text-blue-700 text-lg outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border-2 border-blue-50 bg-white focus:border-blue-500 transition-all font-black text-blue-700 outline-none text-sm"
                             value={formData.total_licencas}
                             onChange={(e) => setFormData({...formData, total_licencas: parseInt(e.target.value)})}
                           />
-                          <Users className="absolute right-5 top-1/2 -translate-y-1/2 text-blue-300" size={24} />
+                          <Users className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-200" size={16} />
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black text-emerald-600 ml-1 uppercase">VALOR MENSAL (CONTRATO)</label>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-emerald-600 ml-1 uppercase">Valor Mensal (Cota)</label>
                         <div className="relative">
                           <input 
                             required
                             type="number" 
-                            className="w-full px-5 py-4 rounded-2xl border-2 border-emerald-100 bg-emerald-50/30 focus:bg-white focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 transition-all font-black text-emerald-700 text-lg outline-none"
+                            className="w-full px-4 py-2.5 rounded-xl border-2 border-emerald-50 bg-white focus:border-emerald-500 transition-all font-black text-emerald-700 outline-none text-sm"
                             value={formData.valor_mensal}
                             onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
                           />
-                          <DollarSign className="absolute right-5 top-1/2 -translate-y-1/2 text-emerald-300" size={24} />
+                          <DollarSign className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-200" size={16} />
                         </div>
                       </div>
                     </div>
                   </section>
 
-                  <div className="flex items-center gap-6 pt-4">
-                    <button 
-                      type="submit"
-                      disabled={saving}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-[24px] font-black text-lg uppercase tracking-widest transition-all flex items-center justify-center gap-4 shadow-2xl shadow-blue-100 active:scale-95 disabled:opacity-50"
-                    >
-                      {saving ? <Loader2 className="animate-spin" size={28} /> : (editingSponsor ? <Pencil size={24} /> : <Plus size={24} />)}
-                      {saving ? 'PROCESSANDO...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Gerar Primeiro Voucher')}
-                    </button>
-                  </div>
+                  <button 
+                    type="submit"
+                    disabled={saving}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-100 disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="animate-spin" size={18} /> : (editingSponsor ? <Pencil size={18} /> : <Plus size={18} />)}
+                    {saving ? 'SALVANDO...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Iniciar Parceria')}
+                  </button>
                 </form>
               </div>
 
-              {/* COLUNA 2 & 3: Inteligência (Sidebar Larga) */}
+              {/* COLUNA 2: Inteligência Compacta (Sidebar) */}
               {editingSponsor ? (
-                <div className="flex-1 bg-slate-50 p-10 overflow-y-auto space-y-10">
+                <div className="flex-1 bg-slate-50 p-6 overflow-y-auto space-y-8">
                   
-                  {/* Vidraçarias */}
+                  {/* Vidraçarias - Estilo Excel */}
                   <div>
-                    <div className="flex items-center justify-between mb-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
-                          <Users size={20} />
-                        </div>
-                        <h5 className="font-black text-slate-800 text-lg tracking-tight">Vidraçarias Ativas</h5>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <Users size={14} className="text-blue-500" />
+                        <h5 className="font-black text-xs uppercase tracking-tight">Vidraçarias Parceiras</h5>
                       </div>
-                      <span className="bg-blue-600 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-lg shadow-blue-100">
-                        {loadingDetails ? '...' : currentVidracarias.length} UNID
+                      <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {loadingDetails ? '...' : currentVidracarias.length}
                       </span>
                     </div>
 
-                    <div className="space-y-4">
-                      {loadingDetails ? (
-                        <div className="flex flex-col items-center justify-center p-20 gap-4">
-                          <Loader2 className="animate-spin text-blue-500" size={40} />
-                          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Sincronizando Banco Glass...</p>
-                        </div>
-                      ) : currentVidracarias.length > 0 ? (
-                        currentVidracarias.map((v: any) => (
-                          <div key={v.id} className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm hover:shadow-xl hover:scale-[1.02] hover:border-blue-300 transition-all group">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
-                                  {v.nome?.charAt(0) || '?'}
-                                </div>
-                                <div>
-                                  <p className="font-black text-slate-700 text-base">{v.nome}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                    <span className="text-[10px] text-slate-400 font-black uppercase">Unidade Operacional</span>
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Loja / Unidade</th>
+                            <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Faturamento</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {loadingDetails ? (
+                            <tr>
+                              <td colSpan={2} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-400" size={20} /></td>
+                            </tr>
+                          ) : currentVidracarias.length > 0 ? (
+                            currentVidracarias.map((v: any) => (
+                              <tr key={v.id} className="hover:bg-blue-50/30 transition-colors group">
+                                <td className="px-3 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    <span className="text-[11px] font-bold text-slate-700">{v.nome}</span>
                                   </div>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-[10px] text-slate-400 font-black uppercase mb-1">Faturamento Extra</p>
-                                <p className="text-lg font-black text-emerald-600">
-                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="bg-white/50 border-2 border-dashed border-slate-200 rounded-[32px] p-12 text-center">
-                          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                            <Users size={32} />
-                          </div>
-                          <p className="text-sm font-bold text-slate-400">Nenhuma vidraçaria vinculada.</p>
-                        </div>
-                      )}
+                                </td>
+                                <td className="px-3 py-1.5 text-right">
+                                  <span className="text-[11px] font-black text-slate-600">
+                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={2} className="p-4 text-center text-[10px] text-slate-400 italic">Nenhuma loja vinculada.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
-                  {/* Templates */}
-                  <div className="pt-10 border-t border-slate-200">
-                    <div className="flex items-center justify-between mb-8">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
-                          <BarChart3 size={20} />
-                        </div>
-                        <h5 className="font-black text-slate-800 text-lg tracking-tight">Modelos de Projeto</h5>
+                  {/* Templates - Estilo Excel */}
+                  <div className="pt-6 border-t border-slate-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 text-slate-800">
+                        <BarChart3 size={14} className="text-amber-500" />
+                        <h5 className="font-black text-xs uppercase tracking-tight">Templates de Projeto</h5>
                       </div>
-                      <span className="bg-amber-500 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-lg shadow-amber-100">
-                        {loadingDetails ? '...' : currentTemplates.length} ARQS
+                      <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+                        {loadingDetails ? '...' : currentTemplates.length}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3">
-                      {loadingDetails ? (
-                        <div className="grid grid-cols-1 gap-3">
-                          {[1,2,3].map(i => <div key={i} className="h-14 bg-slate-200 rounded-2xl animate-pulse" />)}
-                        </div>
-                      ) : currentTemplates.length > 0 ? (
-                        currentTemplates.map((t: any) => (
-                          <div key={t.id} className="bg-white px-6 py-4 rounded-2xl border border-slate-200 text-sm font-black text-slate-600 flex items-center justify-between hover:bg-amber-50 hover:border-amber-200 transition-all group">
-                            <div className="flex items-center gap-4">
-                              <div className="w-2 h-2 rounded-full bg-amber-500 group-hover:scale-150 transition-transform" />
-                              {t.nome}
-                            </div>
-                            <ChevronRight size={18} className="text-slate-300 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-slate-400 font-bold italic text-center p-8 bg-slate-100 rounded-2xl">Nenhum modelo oficial configurado.</p>
-                      )}
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                      <div className="max-h-[200px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                          <tbody className="divide-y divide-slate-100">
+                            {loadingDetails ? (
+                              <tr><td className="p-4"><Loader2 className="animate-spin mx-auto text-amber-400" size={16} /></td></tr>
+                            ) : currentTemplates.length > 0 ? (
+                              currentTemplates.map((t: any) => (
+                                <tr key={t.id} className="hover:bg-amber-50/30 transition-colors group">
+                                  <td className="px-3 py-1.5 flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-slate-600">{t.nome}</span>
+                                    <ChevronRight size={12} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr><td className="p-4 text-center text-[10px] text-slate-400 italic">Nenhum modelo.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
 
                 </div>
               ) : (
                 <div className="flex-1 bg-slate-50 flex flex-col items-center justify-center p-10 text-center">
-                  <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center text-blue-500 mb-8 border border-slate-100">
-                    <Zap size={48} className="animate-pulse" />
-                  </div>
-                  <h5 className="text-xl font-black text-slate-800 mb-4">Aguardando Seleção</h5>
-                  <p className="text-slate-400 text-sm font-medium max-w-xs leading-relaxed">
-                    Selecione um patrocinador existente para ver a inteligência de negócios.
-                  </p>
+                  <Zap size={32} className="text-slate-200 mb-4" />
+                  <p className="text-slate-400 text-xs font-bold">Selecione um patrocinador para ver detalhes.</p>
                 </div>
               )}
             </div>

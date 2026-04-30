@@ -57,6 +57,9 @@ export default function PatrocinadoresPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [chargingId, setChargingId] = useState<string | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [currentVidracarias, setCurrentVidracarias] = useState<any[]>([]);
+  const [currentTemplates, setCurrentTemplates] = useState<any[]>([]);
 
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -88,9 +91,7 @@ export default function PatrocinadoresPage() {
         .from('patrocinadores')
         .select(`
           *,
-          vouchers (codigo, usado_por_vidracaria_id),
-          vidracarias (*),
-          projeto_templates (id, nome)
+          vouchers (codigo, usado_por_vidracaria_id)
         `)
         .order('created_at', { ascending: false });
 
@@ -218,6 +219,25 @@ export default function PatrocinadoresPage() {
       valor_mensal: p.valor_mensal.toString()
     });
     setIsModalOpen(true);
+    fetchExtraDetails(p.id);
+  }
+
+  async function fetchExtraDetails(id: string) {
+    setLoadingDetails(true);
+    setCurrentVidracarias([]);
+    setCurrentTemplates([]);
+    try {
+      const res = await fetch(`/api/sponsors/${id}/details`);
+      const data = await res.json();
+      if (data.success) {
+        setCurrentVidracarias(data.vidracarias);
+        setCurrentTemplates(data.templates);
+      }
+    } catch (err) {
+      console.error('Erro detalhes extras:', err);
+    } finally {
+      setLoadingDetails(false);
+    }
   }
 
   async function handleCreateCharge(p: Patrocinador) {
@@ -645,12 +665,14 @@ export default function PatrocinadoresPage() {
                       <Users size={14} className="text-blue-500" /> Vidraçarias Patrocinadas
                     </p>
                     <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-md">
-                      {editingSponsor.vidracarias?.length || 0}
+                      {loadingDetails ? '...' : currentVidracarias.length}
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {editingSponsor.vidracarias && editingSponsor.vidracarias.length > 0 ? (
-                      editingSponsor.vidracarias.map((v: any) => (
+                    {loadingDetails ? (
+                      <div className="flex justify-center p-8"><Loader2 className="animate-spin text-slate-300" /></div>
+                    ) : currentVidracarias.length > 0 ? (
+                      currentVidracarias.map((v: any) => (
                         <div key={v.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-200 transition-all">
                           <div className="flex items-start justify-between">
                             <div>
@@ -677,12 +699,14 @@ export default function PatrocinadoresPage() {
                       <ShieldCheck size={14} className="text-blue-500" /> Modelos Oficiais (Templates)
                     </p>
                     <span className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-md">
-                      {editingSponsor.projeto_templates?.length || 0}
+                      {loadingDetails ? '...' : currentTemplates.length}
                     </span>
                   </div>
                   <div className="grid grid-cols-1 gap-2">
-                    {editingSponsor.projeto_templates && editingSponsor.projeto_templates.length > 0 ? (
-                      editingSponsor.projeto_templates.map((t: any) => (
+                    {loadingDetails ? (
+                      <div className="flex justify-center p-4"><Loader2 className="animate-spin text-slate-300" /></div>
+                    ) : currentTemplates.length > 0 ? (
+                      currentTemplates.map((t: any) => (
                         <div key={t.id} className="bg-white px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 flex items-center gap-3 hover:bg-slate-50 transition-all">
                           <div className="w-2 h-2 rounded-full bg-blue-500" />
                           {t.nome}

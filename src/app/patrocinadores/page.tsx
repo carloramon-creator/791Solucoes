@@ -15,7 +15,11 @@ import {
   MoreHorizontal,
   X,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard,
+  DollarSign,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -28,6 +32,10 @@ interface Patrocinador {
   valor_mensal: number;
   data_expiracao: string | null;
   created_at: string;
+  email: string;
+  cpf_cnpj: string;
+  telefone: string;
+  nome_responsavel: string;
   licencas_usadas?: number;
   vouchers?: { codigo: string }[];
 }
@@ -44,9 +52,14 @@ export default function PatrocinadoresPage() {
   // Estados do formulário
   const [formData, setFormData] = useState({
     nome: '',
+    email: '',
+    cpf_cnpj: '',
+    telefone: '',
+    nome_responsavel: '',
     total_licencas: 20,
     valor_mensal: ''
   });
+  const [editingSponsor, setEditingSponsor] = useState<Patrocinador | null>(null);
 
   useEffect(() => {
     fetchPatrocinadores();
@@ -92,35 +105,67 @@ export default function PatrocinadoresPage() {
     try {
       const slug = formData.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       
-      // 1. Criar o patrocinador
-      const { data: sponsor, error: sError } = await supabase
-        .from('patrocinadores')
-        .insert([{
-          nome: formData.nome,
-          slug,
-          total_licencas: formData.total_licencas,
-          valor_mensal: parseFloat(formData.valor_mensal) || 0,
-          status: 'ativo'
-        }])
-        .select()
-        .single();
+      if (editingSponsor) {
+        // ATUALIZAR PATROCINADOR EXISTENTE
+        const { error: uError } = await supabase
+          .from('patrocinadores')
+          .update({
+            nome: formData.nome,
+            email: formData.email,
+            cpf_cnpj: formData.cpf_cnpj.replace(/\D/g, ''),
+            telefone: formData.telefone.replace(/\D/g, ''),
+            nome_responsavel: formData.nome_responsavel,
+            total_licencas: formData.total_licencas,
+            valor_mensal: parseFloat(formData.valor_mensal) || 0,
+          })
+          .eq('id', editingSponsor.id);
 
-      if (sError) throw sError;
+        if (uError) throw uError;
+        alert('✅ Patrocinador atualizado com sucesso!');
+      } else {
+        // CRIAR NOVO PATROCINADOR
+        const { data: sponsor, error: sError } = await supabase
+          .from('patrocinadores')
+          .insert([{
+            nome: formData.nome,
+            email: formData.email,
+            cpf_cnpj: formData.cpf_cnpj.replace(/\D/g, ''),
+            telefone: formData.telefone.replace(/\D/g, ''),
+            nome_responsavel: formData.nome_responsavel,
+            slug,
+            total_licencas: formData.total_licencas,
+            valor_mensal: parseFloat(formData.valor_mensal) || 0,
+            status: 'ativo'
+          }])
+          .select()
+          .single();
 
-      // 2. Gerar o primeiro voucher automático
-      const voucherCode = generateVoucherCode(formData.nome);
-      const { error: vError } = await supabase
-        .from('vouchers')
-        .insert([{
-          codigo: voucherCode,
-          patrocinador_id: sponsor.id
-        }]);
+        if (sError) throw sError;
 
-      if (vError) throw vError;
+        // Gerar o primeiro voucher automático apenas para novos
+        const voucherCode = generateVoucherCode(formData.nome);
+        const { error: vError } = await supabase
+          .from('vouchers')
+          .insert([{
+            codigo: voucherCode,
+            patrocinador_id: sponsor.id
+          }]);
 
-      alert(`✅ Patrocinador criado com sucesso!\nToken Gerado: ${voucherCode}`);
+        if (vError) throw vError;
+        alert(`✅ Patrocinador criado com sucesso!\nToken Gerado: ${voucherCode}`);
+      }
+
       setIsModalOpen(false);
-      setFormData({ nome: '', total_licencas: 20, valor_mensal: '' });
+      setEditingSponsor(null);
+      setFormData({ 
+        nome: '', 
+        email: '', 
+        cpf_cnpj: '', 
+        telefone: '', 
+        nome_responsavel: '',
+        total_licencas: 20, 
+        valor_mensal: '' 
+      });
       fetchPatrocinadores();
     } catch (err) {
       console.error('Erro ao salvar:', err);
@@ -128,6 +173,20 @@ export default function PatrocinadoresPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleEdit(p: Patrocinador) {
+    setEditingSponsor(p);
+    setFormData({
+      nome: p.nome,
+      email: p.email || '',
+      cpf_cnpj: p.cpf_cnpj || '',
+      telefone: p.telefone || '',
+      nome_responsavel: p.nome_responsavel || '',
+      total_licencas: p.total_licencas,
+      valor_mensal: p.valor_mensal.toString()
+    });
+    setIsModalOpen(true);
   }
 
   async function handleCreateCharge(p: Patrocinador) {
@@ -144,8 +203,9 @@ export default function PatrocinadoresPage() {
         body: JSON.stringify({
           patrocinadorId: p.id,
           nome: p.nome,
-          email: `${p.slug}@791.com.br`, // Email padrão se não houver um específico no banco ainda
-          cpfCnpj: '00.000.000/0000-00', // CPF/CNPJ padrão para ser editado no checkout se necessário
+          email: p.email,
+          cpfCnpj: p.cpf_cnpj,
+          telefone: p.telefone,
           valor: p.valor_mensal,
           description: `Patrocínio 791glass - ${p.nome}`,
           parcelas: 12
@@ -324,9 +384,14 @@ export default function PatrocinadoresPage() {
                         >
                           {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                         </button>
-                        <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
-                          <MoreHorizontal size={18} />
+                        <button 
+                          onClick={() => handleEdit(p)}
+                          className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" 
+                          title="Editar Patrocinador"
+                        >
+                          <Pencil size={18} />
                         </button>
+                        <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
                       </div>
                     </td>
                   </tr>
@@ -346,11 +411,13 @@ export default function PatrocinadoresPage() {
               <div>
                 <h3 className="text-xl font-black flex items-center gap-2">
                   <ShieldCheck className="text-blue-400" />
-                  Novo Patrocinador
+                  {editingSponsor ? 'Editar Patrocinador' : 'Novo Patrocinador'}
                 </h3>
-                <p className="text-slate-400 text-xs font-medium">Cadastre um parceiro e gere vouchers em lote.</p>
+                <p className="text-slate-400 text-xs font-medium">
+                  {editingSponsor ? `Editando ${editingSponsor.nome}` : 'Cadastre um parceiro e gere vouchers em lote.'}
+                </p>
               </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-all">
+              <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-2 hover:bg-white/10 rounded-xl transition-all">
                 <X size={24} />
               </button>
             </div>
@@ -365,6 +432,55 @@ export default function PatrocinadoresPage() {
                   className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
                   value={formData.nome}
                   onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nome do Responsável</label>
+                <input 
+                  required
+                  type="text" 
+                  placeholder="Ex: João da Silva"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                  value={formData.nome_responsavel}
+                  onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">E-mail</label>
+                  <input 
+                    required
+                    type="email" 
+                    placeholder="financeiro@empresa.com"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Telefone</label>
+                  <input 
+                    required
+                    type="text" 
+                    placeholder="(11) 99999-9999"
+                    className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                    value={formData.telefone}
+                    onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">CPF ou CNPJ</label>
+                <input 
+                  required
+                  type="text" 
+                  placeholder="00.000.000/0000-00"
+                  className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                  value={formData.cpf_cnpj}
+                  onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
                 />
               </div>
 
@@ -404,8 +520,8 @@ export default function PatrocinadoresPage() {
                 disabled={saving}
                 className="w-full bg-[#1e293b] hover:bg-slate-800 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200"
               >
-                {saving ? <Loader2 className="animate-spin" /> : <Plus size={18} />}
-                {saving ? 'Salvando...' : 'Salvar e Gerar Voucher'}
+                {saving ? <Loader2 className="animate-spin" /> : (editingSponsor ? <Pencil size={18} /> : <Plus size={18} />)}
+                {saving ? 'Salvando...' : (editingSponsor ? 'Salvar Alterações' : 'Salvar e Gerar Voucher')}
               </button>
             </form>
           </div>

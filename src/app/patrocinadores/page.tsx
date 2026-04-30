@@ -15,7 +15,9 @@ import {
   MoreHorizontal,
   X,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard,
+  DollarSign
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -39,6 +41,7 @@ export default function PatrocinadoresPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [chargingId, setChargingId] = useState<string | null>(null);
 
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -126,6 +129,41 @@ export default function PatrocinadoresPage() {
       alert('Erro ao salvar patrocinador. Verifique se o nome já existe.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCreateCharge(p: Patrocinador) {
+    if (!p.valor_mensal || p.valor_mensal <= 0) {
+      alert('Defina um valor mensal para este patrocinador antes de gerar a cobrança.');
+      return;
+    }
+
+    setChargingId(p.id);
+    try {
+      const response = await fetch('/api/payments/asaas/create-sponsor-charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patrocinadorId: p.id,
+          nome: p.nome,
+          email: `${p.slug}@791.com.br`, // Email padrão se não houver um específico no banco ainda
+          cpfCnpj: '00.000.000/0000-00', // CPF/CNPJ padrão para ser editado no checkout se necessário
+          valor: p.valor_mensal,
+          description: `Patrocínio 791glass - ${p.nome}`,
+          parcelas: 12
+        })
+      });
+
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+
+      // Abre o link em uma nova aba
+      window.open(data.invoiceUrl, '_blank');
+    } catch (err: any) {
+      console.error('Erro ao gerar cobrança:', err);
+      alert('Erro ao gerar cobrança: ' + err.message);
+    } finally {
+      setChargingId(null);
     }
   }
 
@@ -279,6 +317,14 @@ export default function PatrocinadoresPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" title="Gerenciar Vouchers">
                           <Key size={18} />
+                        </button>
+                        <button 
+                          onClick={() => handleCreateCharge(p)}
+                          disabled={chargingId === p.id}
+                          className="p-3 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl text-slate-400 transition-all" 
+                          title="Gerar Cobrança Asaas"
+                        >
+                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <DollarSign size={18} />}
                         </button>
                         <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
                           <MoreHorizontal size={18} />

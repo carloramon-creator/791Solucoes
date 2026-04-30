@@ -15,9 +15,7 @@ import {
   MoreHorizontal,
   X,
   Loader2,
-  CheckCircle2,
-  CreditCard,
-  DollarSign
+  CheckCircle2
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -324,7 +322,7 @@ export default function PatrocinadoresPage() {
                           className="p-3 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl text-slate-400 transition-all" 
                           title="Gerar Cobrança Asaas"
                         >
-                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <DollarSign size={18} />}
+                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
                         </button>
                         <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
                           <MoreHorizontal size={18} />

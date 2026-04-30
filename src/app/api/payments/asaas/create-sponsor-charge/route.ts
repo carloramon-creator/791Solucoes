@@ -104,10 +104,7 @@ export async function POST(req: Request) {
         quantity: 1
     }];
 
-    const checkout = await asaas.request('/checkouts', {
-      method: 'POST',
-      body: JSON.stringify(checkoutPayload)
-    });
+    const checkout = await asaas.createCheckout(checkoutPayload);
 
     const invoiceUrl = checkout.url || checkout.paymentUrl || checkout.invoiceUrl || checkout.link || ''; 
 

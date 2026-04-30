@@ -24,11 +24,11 @@ export async function POST(req: Request) {
     console.log('[ASAAS SPONSOR] Iniciando cobrança para:', email);
 
     // 1. Buscar Config do Asaas na Holding
-    const HOLDING_URL = process.env.SUPABASE_HOLDING_URL || process.env.NEXT_PUBLIC_SUPABASE_HOLDING_URL || '';
-    const HOLDING_SERVICE_KEY = process.env.SUPABASE_HOLDING_SERVICE_ROLE_KEY || '';
+    const HOLDING_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    const HOLDING_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
     
     if (!HOLDING_URL || !HOLDING_SERVICE_KEY) {
-       throw new Error('Configuração de conexão com a Holding (Supabase) ausente no ambiente.');
+       throw new Error('Configuração de conexão (Supabase URL/Key) ausente no ambiente.');
     }
 
     const supabaseHolding = createClient(HOLDING_URL, HOLDING_SERVICE_KEY);

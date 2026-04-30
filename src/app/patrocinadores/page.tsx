@@ -784,9 +784,9 @@ export default function PatrocinadoresPage() {
                             onChange={(e) => setFormData({...formData, ciclo: e.target.value})}
                           >
                             <option value="MONTHLY">MENSAL</option>
-                            <option value="QUARTERLY">TRIMESTRAL</option>
-                            <option value="SEMI_ANNUAL">SEMESTRAL</option>
-                            <option value="YEARLY">ANUAL</option>
+                            <option value="QUARTERLY">TRIMESTRAL (5% DESC.)</option>
+                            <option value="SEMI_ANNUAL">SEMESTRAL (10% DESC.)</option>
+                            <option value="YEARLY">ANUAL (15% DESC.)</option>
                           </select>
                           <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-200 pointer-events-none" size={16} />
                         </div>

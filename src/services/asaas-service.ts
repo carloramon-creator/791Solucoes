@@ -114,6 +114,13 @@ export class AsaasClient {
         return response.data.data?.[0] || null;
     }
 
+    async getCustomerByCpfCnpj(cpfCnpj: string) {
+        const response = await this.client.get('/customers', {
+            params: { cpfCnpj }
+        });
+        return response.data.data?.[0] || null;
+    }
+
     // Payment Management
     async createPayment(payment: AsaasPayment | AsaasCreditCardPayment) {
         const response = await this.client.post('/payments', payment);

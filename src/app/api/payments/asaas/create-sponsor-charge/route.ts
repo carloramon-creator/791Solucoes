@@ -61,7 +61,13 @@ export async function POST(req: Request) {
     });
 
     // 2. Buscar ou Criar Cliente (Patrocinador) no Asaas
-    let customer = await asaas.getCustomerByEmail(email);
+    const cleanCpfCnpj = cpfCnpj.replace(/\D/g, '');
+    let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
+    
+    // Se não achar por CPF, tenta pelo e-mail (fallback)
+    if (!customer) {
+      customer = await asaas.getCustomerByEmail(email);
+    }
     
     let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
     if (cleanPhone.length < 10) cleanPhone = '11987654321';
@@ -83,14 +89,32 @@ export async function POST(req: Request) {
       });
     }
 
-    // 3. Criar a Cobrança (Payment) - Mais confiável que Checkout Link
-    const totalValue = typeof valor === 'string' 
+    // 3. Criar a Cobrança (Payment) - Lógica de Ciclo e Desconto
+    const baseValue = typeof valor === 'string' 
       ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
       : parseFloat(valor);
     
-    if (isNaN(totalValue) || totalValue <= 0) {
+    if (isNaN(baseValue) || baseValue <= 0) {
       throw new Error('Valor da cobrança inválido.');
     }
+
+    let months = 1;
+    let discountPercent = 0;
+
+    if (ciclo === 'QUARTERLY') {
+      months = 3;
+      discountPercent = 5; // 5% de desconto para trimestral
+    } else if (ciclo === 'SEMI_ANNUAL') {
+      months = 6;
+      discountPercent = 10; // 10% de desconto para semestral
+    } else if (ciclo === 'YEARLY') {
+      months = 12;
+      discountPercent = 15; // 15% de desconto para anual
+    }
+
+    const subtotal = baseValue * months;
+    const discountAmount = subtotal * (discountPercent / 100);
+    const totalValue = subtotal - discountAmount;
 
     const cycleMap: any = {
       'MONTHLY': 'Mensal',
@@ -102,10 +126,10 @@ export async function POST(req: Request) {
 
     const paymentPayload: any = {
         customer: customer.id,
-        billingType: 'UNDEFINED', // Permite Cartão, Boleto ou Pix
+        billingType: 'UNDEFINED', 
         value: totalValue,
-        dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0], // Vencimento em 3 dias
-        description: description || `Patrocínio 791glass (${cycleLabel}) - ${nome}`,
+        dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+        description: description || `Adesão Patrocínio 791glass (${cycleLabel}) - ${nome}${discountPercent > 0 ? ` (Desc. ${discountPercent}%)` : ''}`,
         externalReference: `sponsor|${patrocinadorId}`,
     };
 

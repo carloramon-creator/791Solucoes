@@ -19,7 +19,13 @@ export async function POST(req: Request) {
       valor,
       description,
       ciclo = 'MONTHLY',
-      parcelas = 1
+      parcelas = 1,
+      address,
+      addressNumber,
+      province,
+      postalCode,
+      city,
+      state
     } = await req.json();
 
     console.log('[ASAAS SPONSOR] Iniciando cobrança para:', email);
@@ -68,11 +74,12 @@ export async function POST(req: Request) {
         phone: cleanPhone,
         mobilePhone: cleanPhone,
         notificationDisabled: false,
-        // Dados de endereço genéricos para patrocinadores se não houver
-        address: 'Av. Paulista',
-        addressNumber: '1000',
-        province: 'Centro',
-        postalCode: '01310-100'
+        address: address || 'Av. Paulista',
+        addressNumber: addressNumber || '1000',
+        province: province || 'Centro',
+        postalCode: (postalCode || '01310-100').replace(/\D/g, ''),
+        cityName: city,
+        state: state
       });
     }
 

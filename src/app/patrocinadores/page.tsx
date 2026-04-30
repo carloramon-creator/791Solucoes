@@ -126,6 +126,11 @@ export default function PatrocinadoresPage() {
     try {
       const slug = formData.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       
+      // Limpa o valor monetário (ex: "5.000,00" -> 5000.00)
+      const cleanValor = typeof formData.valor_mensal === 'string' 
+        ? parseFloat(formData.valor_mensal.replace(/\./g, '').replace(',', '.')) 
+        : formData.valor_mensal;
+
       const payload = {
         nome: formData.nome,
         razao_social: formData.razao_social,
@@ -140,7 +145,7 @@ export default function PatrocinadoresPage() {
         estado: formData.estado,
         cep: formData.cep.replace(/\D/g, ''),
         total_licencas: formData.total_licencas,
-        valor_mensal: parseFloat(formData.valor_mensal) || 0,
+        valor_mensal: cleanValor || 0,
         ciclo: formData.ciclo
       };
 
@@ -184,7 +189,14 @@ export default function PatrocinadoresPage() {
               cpfCnpj: formData.cpf_cnpj.replace(/\D/g, ''),
               telefone: formData.telefone.replace(/\D/g, ''),
               valor: payload.valor_mensal,
-              description: `Adesão Patrocínio 791glass - ${formData.nome}`
+              description: `Adesão Patrocínio 791glass - ${formData.nome}`,
+              ciclo: formData.ciclo,
+              address: formData.endereco,
+              addressNumber: formData.numero,
+              province: formData.bairro,
+              postalCode: formData.cep.replace(/\D/g, ''),
+              city: formData.cidade,
+              state: formData.estado
             })
           });
           const chargeData = await chargeRes.json();
@@ -223,7 +235,8 @@ export default function PatrocinadoresPage() {
       fetchPatrocinadores();
     } catch (err) {
       console.error('Erro ao salvar:', err);
-      alert('Erro ao salvar patrocinador. Verifique os campos e se o nome já existe.');
+      const errorMsg = err.message || 'Erro desconhecido';
+      alert(`❌ Erro ao salvar patrocinador: ${errorMsg}\n\nVerifique se o nome já existe ou se há campos inválidos.`);
     } finally {
       setSaving(false);
     }
@@ -256,6 +269,14 @@ export default function PatrocinadoresPage() {
     v = v.replace(/\D/g, "");
     v = v.replace(/^(\d{5})(\d)/, "$1-$2");
     return v.substring(0, 9);
+  };
+
+  const maskCurrency = (v: string) => {
+    v = v.replace(/\D/g, "");
+    v = (Number(v) / 100).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+    });
+    return v;
   };
 
   // Busca de CEP
@@ -296,7 +317,7 @@ export default function PatrocinadoresPage() {
       estado: p.estado || '',
       cep: p.cep || '',
       total_licencas: p.total_licencas,
-      valor_mensal: p.valor_mensal.toString(),
+      valor_mensal: maskCurrency(p.valor_mensal.toFixed(2).replace('.', '')),
       ciclo: p.ciclo || 'MONTHLY'
     });
     setIsModalOpen(true);
@@ -340,7 +361,14 @@ export default function PatrocinadoresPage() {
           telefone: p.telefone,
           valor: p.valor_mensal,
           description: `Patrocínio 791glass - ${p.nome}`,
-          parcelas: 12
+          ciclo: p.ciclo,
+          parcelas: 12,
+          address: p.endereco,
+          addressNumber: p.numero,
+          province: p.bairro,
+          postalCode: p.cep,
+          city: p.cidade,
+          state: p.estado
         })
       });
 
@@ -714,10 +742,11 @@ export default function PatrocinadoresPage() {
                         <div className="relative">
                           <input 
                             required
-                            type="number" 
+                            type="text" 
                             className="w-full px-4 py-2.5 rounded-xl border-2 border-emerald-50 bg-white focus:border-emerald-500 transition-all font-black text-emerald-700 outline-none text-sm"
+                            placeholder="0,00"
                             value={formData.valor_mensal}
-                            onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
+                            onChange={(e) => setFormData({...formData, valor_mensal: maskCurrency(e.target.value)})}
                           />
                           <DollarSign className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-200" size={16} />
                         </div>

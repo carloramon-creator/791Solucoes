@@ -42,7 +42,7 @@ interface Vidracaria {
   limite_usuarios?: number;
   limite_mensagens_whatsapp?: number;
   limite_usuarios_whats?: number;
-  cnpj?: string;
+  patrocinador_id?: string;
   ciclo_pagamento?: 'monthly' | 'semiannual' | 'annual';
 }
 
@@ -61,6 +61,8 @@ export default function AssinaturasPage() {
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Vidracaria[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sponsors, setSponsors] = useState<any[]>([]);
+  const [sponsorMap, setSponsorMap] = useState<Record<string, string>>({});
   
   // Configuração de Módulos e Limites
   const [modules, setModules] = useState<Module[]>([]);
@@ -103,6 +105,25 @@ export default function AssinaturasPage() {
           .eq('sistema', '791glass')
           .single();
         if (pData) setSystemPlan(pData);
+        
+        // 4. Buscar Patrocinadores e Vínculos (Holding)
+        const { data: sData } = await supabase
+          .from('patrocinadores')
+          .select('id, nome');
+        setSponsors(sData || []);
+
+        const { data: vDataHold } = await supabase
+          .from('vouchers')
+          .select('patrocinador_id, usado_por_vidracaria_id')
+          .not('usado_por_vidracaria_id', 'is', null);
+
+        // Criar mapa de VidracariaID -> Nome do Patrocinador
+        const map: Record<string, string> = {};
+        vDataHold?.forEach(v => {
+          const sponsor = sData?.find(s => s.id === v.patrocinador_id);
+          if (sponsor) map[v.usado_por_vidracaria_id] = sponsor.nome;
+        });
+        setSponsorMap(map);
 
       } catch (err: any) {
         console.error('Erro ao buscar dados:', err.message);
@@ -355,6 +376,11 @@ export default function AssinaturasPage() {
                               </span>
                             </span>
                             <span className="text-xs text-slate-500">{tenant.email || 'E-mail não cadastrado'}</span>
+                            {sponsorMap[tenant.id] && (
+                              <span className="text-[10px] text-red-600 font-black uppercase mt-0.5">
+                                Patrocinado por {sponsorMap[tenant.id]}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>

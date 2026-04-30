@@ -455,272 +455,323 @@ export default function PatrocinadoresPage() {
         </div>
       </div>
 
-      {/* Modal 360º */}
+      {/* Modal 360º Dashboard Style */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} />
-          <div className="relative bg-white w-full max-w-5xl rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col md:flex-row max-h-[95vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} />
+          <div className="relative bg-[#f8fafc] w-full max-w-7xl h-full max-h-[90vh] rounded-[40px] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-500 flex flex-col border border-white/20">
             
-            {/* Esquerda: Formulário */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="bg-[#1e293b] p-6 text-white flex items-center justify-between sticky top-0 z-10">
+            {/* Header fixo no topo */}
+            <div className="bg-[#1e293b] p-8 text-white flex items-center justify-between shrink-0 shadow-xl z-20">
+              <div className="flex items-center gap-6">
+                <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center border border-blue-400/30">
+                  <ShieldCheck className="text-blue-400" size={32} />
+                </div>
                 <div>
-                  <h3 className="text-xl font-black flex items-center gap-2">
-                    <ShieldCheck className="text-blue-400" />
-                    {editingSponsor ? 'Editar Patrocinador' : 'Novo Patrocinador'}
+                  <h3 className="text-2xl font-black tracking-tight">
+                    {editingSponsor ? 'Configurações do Patrocinador' : 'Novo Parceiro Estratégico'}
                   </h3>
-                  <p className="text-slate-400 text-xs font-medium">
-                    {editingSponsor ? `Editando ${editingSponsor.nome}` : 'Cadastre um parceiro e gere licenciamento.'}
+                  <p className="text-slate-400 text-sm font-medium mt-1">
+                    {editingSponsor ? `Monitorando ${editingSponsor.nome} • ID: ${editingSponsor.id.substring(0,8)}` : 'Cadastre um novo patrocinador e defina as cotas de licenciamento.'}
                   </p>
                 </div>
-                <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-2 hover:bg-white/10 rounded-xl transition-all">
-                  <X size={24} />
+              </div>
+              <div className="flex items-center gap-4">
+                {editingSponsor && (
+                  <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-emerald-400 text-xs font-black uppercase tracking-widest">Patrocinador Ativo</span>
+                  </div>
+                )}
+                <button onClick={() => { setIsModalOpen(false); setEditingSponsor(null); }} className="p-3 hover:bg-white/10 rounded-2xl transition-all text-slate-400 hover:text-white">
+                  <X size={28} />
                 </button>
               </div>
-
-              <form onSubmit={handleSave} className="p-8 space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Patrocinador (Fantasia)</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Ex: All Kit Sacadas"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.nome}
-                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Razão Social</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Ex: Industria de Vidros LTDA"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.razao_social}
-                      onChange={(e) => setFormData({...formData, razao_social: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nome do Responsável</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="Ex: João da Silva"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.nome_responsavel}
-                      onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">CPF ou CNPJ</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="00.000.000/0000-00"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.cpf_cnpj}
-                      onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">E-mail Financeiro</label>
-                    <input 
-                      required
-                      type="email" 
-                      placeholder="financeiro@empresa.com"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Telefone de Contato</label>
-                    <input 
-                      required
-                      type="text" 
-                      placeholder="(11) 99999-9999"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.telefone}
-                      onChange={(e) => setFormData({...formData, telefone: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Calendar size={14} /> Endereço de Cobrança
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div className="md:col-span-2">
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Rua / Logradouro</label>
-                      <input 
-                        type="text" 
-                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
-                        value={formData.endereco}
-                        onChange={(e) => setFormData({...formData, endereco: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Número</label>
-                      <input 
-                        type="text" 
-                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
-                        value={formData.numero}
-                        onChange={(e) => setFormData({...formData, numero: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Bairro</label>
-                      <input 
-                        type="text" 
-                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
-                        value={formData.bairro}
-                        onChange={(e) => setFormData({...formData, bairro: e.target.value})}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Cidade / UF</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          placeholder="Cidade"
-                          className="flex-1 px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
-                          value={formData.cidade}
-                          onChange={(e) => setFormData({...formData, cidade: e.target.value})}
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="UF"
-                          maxLength={2}
-                          className="w-12 px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm uppercase text-center font-bold"
-                          value={formData.estado}
-                          onChange={(e) => setFormData({...formData, estado: e.target.value.toUpperCase()})}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">CEP</label>
-                      <input 
-                        type="text" 
-                        placeholder="00000-000"
-                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white focus:ring-1 focus:ring-blue-500 transition-all text-sm"
-                        value={formData.cep}
-                        onChange={(e) => setFormData({...formData, cep: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Qtd Licenças do Pacote</label>
-                    <input 
-                      required
-                      type="number" 
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.total_licencas}
-                      onChange={(e) => setFormData({...formData, total_licencas: parseInt(e.target.value)})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Valor Mensal (Cota)</label>
-                    <input 
-                      required
-                      type="number" 
-                      placeholder="R$ 5.000,00"
-                      className="w-full px-4 py-3 rounded-xl border border-slate-100 bg-slate-50 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
-                      value={formData.valor_mensal}
-                      onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={saving}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl shadow-blue-100 mb-8"
-                >
-                  {saving ? <Loader2 className="animate-spin" /> : (editingSponsor ? <Pencil size={20} /> : <Plus size={20} />)}
-                  {saving ? 'Salvando...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Gerar Primeiro Voucher')}
-                </button>
-              </form>
             </div>
 
-            {/* Direita: Visão de Negócio (Sidebar) */}
-            {editingSponsor && (
-              <div className="w-full md:w-[400px] bg-slate-50 border-l border-slate-100 p-8 flex flex-col overflow-y-auto max-h-[95vh]">
-                <div className="mb-10">
-                  <div className="flex items-center justify-between mb-6">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <Users size={14} className="text-blue-500" /> Vidraçarias Patrocinadas
-                    </p>
-                    <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-md">
-                      {loadingDetails ? '...' : currentVidracarias.length}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {loadingDetails ? (
-                      <div className="flex justify-center p-8"><Loader2 className="animate-spin text-slate-300" /></div>
-                    ) : currentVidracarias.length > 0 ? (
-                      currentVidracarias.map((v: any) => (
-                        <div key={v.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-200 transition-all">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="font-bold text-slate-700 text-sm">{v.nome}</p>
-                              <p className="text-[10px] text-slate-400 font-medium uppercase mt-0.5">Módulos Extra</p>
-                            </div>
-                            <span className="text-sm font-black text-emerald-600">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="bg-slate-100/50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
-                        <p className="text-xs text-slate-400 font-medium italic">Nenhuma vidraçaria vinculada.</p>
+            {/* Conteúdo em Grid */}
+            <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+              
+              {/* COLUNA 1: Formulário Principal (Fixo ou com Scroll próprio) */}
+              <div className="flex-[1.5] overflow-y-auto p-10 border-r border-slate-200 bg-white">
+                <form onSubmit={handleSave} className="space-y-10">
+                  <section>
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+                      <div className="w-6 h-0.5 bg-blue-500" /> Identificação e Contato
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 ml-1">PATROCINADOR (NOME FANTASIA)</label>
+                        <input 
+                          required
+                          type="text" 
+                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          value={formData.nome}
+                          onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                        />
                       </div>
-                    )}
-                  </div>
-                </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 ml-1">RAZÃO SOCIAL</label>
+                        <input 
+                          required
+                          type="text" 
+                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          value={formData.razao_social}
+                          onChange={(e) => setFormData({...formData, razao_social: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">
+                      <div className="md:col-span-1 space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 ml-1">RESPONSÁVEL</label>
+                        <input 
+                          required
+                          type="text" 
+                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          value={formData.nome_responsavel}
+                          onChange={(e) => setFormData({...formData, nome_responsavel: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 ml-1">CNPJ / CPF</label>
+                        <input 
+                          required
+                          type="text" 
+                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          value={formData.cpf_cnpj}
+                          onChange={(e) => setFormData({...formData, cpf_cnpj: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-bold text-slate-500 ml-1">TELEFONE</label>
+                        <input 
+                          required
+                          type="text" 
+                          className="w-full px-5 py-4 rounded-2xl border border-slate-100 bg-slate-50 focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-bold text-slate-700 outline-none"
+                          value={formData.telefone}
+                          onChange={(e) => setFormData({...formData, telefone: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                  </section>
 
-                <div>
-                  <div className="flex items-center justify-between mb-6">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <ShieldCheck size={14} className="text-blue-500" /> Modelos Oficiais (Templates)
-                    </p>
-                    <span className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-md">
-                      {loadingDetails ? '...' : currentTemplates.length}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {loadingDetails ? (
-                      <div className="flex justify-center p-4"><Loader2 className="animate-spin text-slate-300" /></div>
-                    ) : currentTemplates.length > 0 ? (
-                      currentTemplates.map((t: any) => (
-                        <div key={t.id} className="bg-white px-4 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 flex items-center gap-3 hover:bg-slate-50 transition-all">
-                          <div className="w-2 h-2 rounded-full bg-blue-500" />
-                          {t.nome}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="bg-slate-100/50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
-                        <p className="text-xs text-slate-400 font-medium italic">Nenhum modelo configurado.</p>
+                  <section className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform">
+                      <Calendar size={120} />
+                    </div>
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8 flex items-center gap-2">
+                       Localização e Faturamento
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                      <div className="md:col-span-3 space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 ml-1">LOGRADOURO</label>
+                        <input 
+                          type="text" 
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          value={formData.endereco}
+                          onChange={(e) => setFormData({...formData, endereco: e.target.value})}
+                        />
                       </div>
-                    )}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 ml-1">Nº</label>
+                        <input 
+                          type="text" 
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          value={formData.numero}
+                          onChange={(e) => setFormData({...formData, numero: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 ml-1">BAIRRO</label>
+                        <input 
+                          type="text" 
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          value={formData.bairro}
+                          onChange={(e) => setFormData({...formData, bairro: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 ml-1">CIDADE / UF</label>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            className="flex-1 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                            value={formData.cidade}
+                            onChange={(e) => setFormData({...formData, cidade: e.target.value})}
+                          />
+                          <input 
+                            type="text" 
+                            maxLength={2}
+                            className="w-16 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-black text-center"
+                            value={formData.estado}
+                            onChange={(e) => setFormData({...formData, estado: e.target.value.toUpperCase()})}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 ml-1">CEP</label>
+                        <input 
+                          type="text" 
+                          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-4 focus:ring-blue-500/5 outline-none font-medium"
+                          value={formData.cep}
+                          onChange={(e) => setFormData({...formData, cep: e.target.value})}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 border-t border-slate-200/60">
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black text-blue-600 ml-1 uppercase">COTA DE LICENÇAS</label>
+                        <div className="relative">
+                          <input 
+                            required
+                            type="number" 
+                            className="w-full px-5 py-4 rounded-2xl border-2 border-blue-100 bg-blue-50/30 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 transition-all font-black text-blue-700 text-lg outline-none"
+                            value={formData.total_licencas}
+                            onChange={(e) => setFormData({...formData, total_licencas: parseInt(e.target.value)})}
+                          />
+                          <Users className="absolute right-5 top-1/2 -translate-y-1/2 text-blue-300" size={24} />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black text-emerald-600 ml-1 uppercase">VALOR MENSAL (CONTRATO)</label>
+                        <div className="relative">
+                          <input 
+                            required
+                            type="number" 
+                            className="w-full px-5 py-4 rounded-2xl border-2 border-emerald-100 bg-emerald-50/30 focus:bg-white focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 transition-all font-black text-emerald-700 text-lg outline-none"
+                            value={formData.valor_mensal}
+                            onChange={(e) => setFormData({...formData, valor_mensal: e.target.value})}
+                          />
+                          <DollarSign className="absolute right-5 top-1/2 -translate-y-1/2 text-emerald-300" size={24} />
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <div className="flex items-center gap-6 pt-4">
+                    <button 
+                      type="submit"
+                      disabled={saving}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-[24px] font-black text-lg uppercase tracking-widest transition-all flex items-center justify-center gap-4 shadow-2xl shadow-blue-100 active:scale-95 disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 className="animate-spin" size={28} /> : (editingSponsor ? <Pencil size={24} /> : <Plus size={24} />)}
+                      {saving ? 'PROCESSANDO...' : (editingSponsor ? 'Confirmar Alterações' : 'Salvar e Gerar Primeiro Voucher')}
+                    </button>
                   </div>
-                </div>
+                </form>
               </div>
-            )}
+
+              {/* COLUNA 2 & 3: Inteligência (Sidebar Larga) */}
+              {editingSponsor ? (
+                <div className="flex-1 bg-slate-50 p-10 overflow-y-auto space-y-10">
+                  
+                  {/* Vidraçarias */}
+                  <div>
+                    <div className="flex items-center justify-between mb-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                          <Users size={20} />
+                        </div>
+                        <h5 className="font-black text-slate-800 text-lg tracking-tight">Vidraçarias Ativas</h5>
+                      </div>
+                      <span className="bg-blue-600 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-lg shadow-blue-100">
+                        {loadingDetails ? '...' : currentVidracarias.length} UNID
+                      </span>
+                    </div>
+
+                    <div className="space-y-4">
+                      {loadingDetails ? (
+                        <div className="flex flex-col items-center justify-center p-20 gap-4">
+                          <Loader2 className="animate-spin text-blue-500" size={40} />
+                          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Sincronizando Banco Glass...</p>
+                        </div>
+                      ) : currentVidracarias.length > 0 ? (
+                        currentVidracarias.map((v: any) => (
+                          <div key={v.id} className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm hover:shadow-xl hover:scale-[1.02] hover:border-blue-300 transition-all group">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors">
+                                  {v.nome?.charAt(0) || '?'}
+                                </div>
+                                <div>
+                                  <p className="font-black text-slate-700 text-base">{v.nome}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                                    <span className="text-[10px] text-slate-400 font-black uppercase">Unidade Operacional</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-[10px] text-slate-400 font-black uppercase mb-1">Faturamento Extra</p>
+                                <p className="text-lg font-black text-emerald-600">
+                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="bg-white/50 border-2 border-dashed border-slate-200 rounded-[32px] p-12 text-center">
+                          <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                            <Users size={32} />
+                          </div>
+                          <p className="text-sm font-bold text-slate-400">Nenhuma vidraçaria vinculada.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Templates */}
+                  <div className="pt-10 border-t border-slate-200">
+                    <div className="flex items-center justify-between mb-8">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+                          <BarChart3 size={20} />
+                        </div>
+                        <h5 className="font-black text-slate-800 text-lg tracking-tight">Modelos de Projeto</h5>
+                      </div>
+                      <span className="bg-amber-500 text-white text-[11px] font-black px-3 py-1 rounded-full shadow-lg shadow-amber-100">
+                        {loadingDetails ? '...' : currentTemplates.length} ARQS
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      {loadingDetails ? (
+                        <div className="grid grid-cols-1 gap-3">
+                          {[1,2,3].map(i => <div key={i} className="h-14 bg-slate-200 rounded-2xl animate-pulse" />)}
+                        </div>
+                      ) : currentTemplates.length > 0 ? (
+                        currentTemplates.map((t: any) => (
+                          <div key={t.id} className="bg-white px-6 py-4 rounded-2xl border border-slate-200 text-sm font-black text-slate-600 flex items-center justify-between hover:bg-amber-50 hover:border-amber-200 transition-all group">
+                            <div className="flex items-center gap-4">
+                              <div className="w-2 h-2 rounded-full bg-amber-500 group-hover:scale-150 transition-transform" />
+                              {t.nome}
+                            </div>
+                            <ChevronRight size={18} className="text-slate-300 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400 font-bold italic text-center p-8 bg-slate-100 rounded-2xl">Nenhum modelo oficial configurado.</p>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+                <div className="flex-1 bg-slate-50 flex flex-col items-center justify-center p-10 text-center">
+                  <div className="w-24 h-24 bg-white rounded-3xl shadow-xl flex items-center justify-center text-blue-500 mb-8 border border-slate-100">
+                    <Zap size={48} className="animate-pulse" />
+                  </div>
+                  <h5 className="text-xl font-black text-slate-800 mb-4">Aguardando Seleção</h5>
+                  <p className="text-slate-400 text-sm font-medium max-w-xs leading-relaxed">
+                    Selecione um patrocinador existente para ver a inteligência de negócios.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

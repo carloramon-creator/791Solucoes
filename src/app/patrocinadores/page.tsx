@@ -368,6 +368,26 @@ export default function PatrocinadoresPage() {
       return;
     }
 
+  async function handleCreateCharge(p: any, useFormData: boolean = false) {
+    if (!p) return;
+
+    // Se useFormData for true, usamos o estado atual do formulário (útil no Modal)
+    const dataToUse = useFormData ? {
+      ...p,
+      nome: formData.nome,
+      email: formData.email,
+      cpf_cnpj: formData.cpf_cnpj,
+      telefone: formData.telefone,
+      valor_mensal: formData.valor_mensal,
+      ciclo: formData.ciclo,
+      endereco: formData.endereco,
+      numero: formData.numero,
+      bairro: formData.bairro,
+      cidade: formData.cidade,
+      estado: formData.estado,
+      cep: formData.cep
+    } : p;
+
     setChargingId(p.id);
     try {
       const response = await fetch('/api/payments/asaas/create-sponsor-charge', {
@@ -375,19 +395,19 @@ export default function PatrocinadoresPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patrocinadorId: p.id,
-          nome: p.nome,
-          email: p.email,
-          cpfCnpj: p.cpf_cnpj,
-          telefone: p.telefone,
-          valor: p.valor_mensal,
-          description: `Patrocínio 791glass - ${p.nome}`,
-          ciclo: p.ciclo || 'MONTHLY',
-          address: p.endereco,
-          addressNumber: p.numero,
-          province: p.bairro,
-          postalCode: p.cep,
-          city: p.cidade,
-          state: p.estado
+          nome: dataToUse.nome,
+          email: dataToUse.email,
+          cpfCnpj: dataToUse.cpf_cnpj,
+          telefone: dataToUse.telefone,
+          valor: dataToUse.valor_mensal,
+          description: `Patrocínio 791glass - ${dataToUse.nome}`,
+          ciclo: dataToUse.ciclo || 'MONTHLY',
+          address: dataToUse.endereco,
+          addressNumber: dataToUse.numero,
+          province: dataToUse.bairro,
+          postalCode: dataToUse.cep,
+          city: dataToUse.cidade,
+          state: dataToUse.estado
         })
       });
 
@@ -798,7 +818,7 @@ export default function PatrocinadoresPage() {
                     {editingSponsor && (
                       <button 
                         type="button"
-                        onClick={() => handleCreateCharge(editingSponsor)}
+                        onClick={() => handleCreateCharge(editingSponsor, true)}
                         disabled={chargingId === editingSponsor.id}
                         className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-emerald-100 disabled:opacity-50"
                       >

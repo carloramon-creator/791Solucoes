@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     const cleanCpfCnpj = cpfCnpj.replace(/\D/g, '');
     let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
     
-    // Se não achar por CPF, tenta pelo e-mail (fallback)
+    // Se não achar por CPF, tenta pelo e-mail
     if (!customer) {
       customer = await asaas.getCustomerByEmail(email);
     }
@@ -72,21 +72,28 @@ export async function POST(req: Request) {
     let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
     if (cleanPhone.length < 10) cleanPhone = '11987654321';
 
+    const customerData = {
+      name: nome,
+      email: email,
+      cpfCnpj: cleanCpfCnpj,
+      phone: cleanPhone,
+      mobilePhone: cleanPhone,
+      address: address || 'Endereço não informado',
+      addressNumber: addressNumber || 'S/N',
+      province: province || 'Bairro não informado',
+      postalCode: (postalCode || '00000-000').replace(/\D/g, ''),
+      city: city,
+      state: state
+    };
+
     if (!customer) {
-      customer = await asaas.createCustomer({
-        name: nome,
-        email: email,
-        cpfCnpj: cpfCnpj.replace(/\D/g, ''),
-        phone: cleanPhone,
-        mobilePhone: cleanPhone,
-        notificationDisabled: false,
-        address: address || 'Av. Paulista',
-        addressNumber: addressNumber || '1000',
-        province: province || 'Centro',
-        postalCode: (postalCode || '01310-100').replace(/\D/g, ''),
-        city: city,
-        state: state
-      });
+      customer = await asaas.createCustomer(customerData);
+    } else {
+      // ⚠️ IMPORTANTE: Se o nome for diferente (ex: Barbearia), atualizamos os dados para o Patrocinador atual
+      if (customer.name !== nome || customer.cpfCnpj !== cleanCpfCnpj) {
+        console.log('[ASAAS] Atualizando dados do cliente para coincidir com o Patrocinador:', nome);
+        customer = await asaas.updateCustomer(customer.id, customerData);
+      }
     }
 
     // 3. Criar a Cobrança (Payment) - Lógica de Ciclo e Desconto
@@ -100,16 +107,20 @@ export async function POST(req: Request) {
 
     let months = 1;
     let discountPercent = 0;
+    let installmentCount = 1;
 
     if (ciclo === 'QUARTERLY') {
       months = 3;
-      discountPercent = 5; // 5% de desconto para trimestral
+      discountPercent = 5;
+      installmentCount = 3; // Parcelamento em 3x para trimestral
     } else if (ciclo === 'SEMI_ANNUAL') {
       months = 6;
-      discountPercent = 10; // 10% de desconto para semestral
+      discountPercent = 10;
+      installmentCount = 6; // Parcelamento em 6x para semestral
     } else if (ciclo === 'YEARLY') {
       months = 12;
-      discountPercent = 15; // 15% de desconto para anual
+      discountPercent = 15;
+      installmentCount = 12; // Parcelamento em 12x para anual
     }
 
     const subtotal = baseValue * months;
@@ -129,9 +140,16 @@ export async function POST(req: Request) {
         billingType: 'UNDEFINED', 
         value: totalValue,
         dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
-        description: description || `Adesão Patrocínio 791glass (${cycleLabel}) - ${nome}${discountPercent > 0 ? ` (Desc. ${discountPercent}%)` : ''}`,
+        description: description || `Patrocínio 791glass (${cycleLabel}) - ${nome}${discountPercent > 0 ? ` (Desc. ${discountPercent}%)` : ''}`,
         externalReference: `sponsor|${patrocinadorId}`,
     };
+
+    // Adiciona parcelamento se houver mais de uma parcela
+    if (installmentCount > 1) {
+      paymentPayload.installmentCount = installmentCount;
+      paymentPayload.totalValue = totalValue;
+      delete paymentPayload.value; // No Asaas, se tem totalValue + installmentCount, não usa value
+    }
 
     const payment = await asaas.createPayment(paymentPayload);
 

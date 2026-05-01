@@ -284,6 +284,19 @@ export class AsaasClient {
         }
     }
 
+    /**
+     * Criar um link de pagamento (Flexível)
+     */
+    async createPaymentLink(data: any) {
+        try {
+            const response = await this.client.post('/paymentLinks', data);
+            return response.data;
+        } catch (error: any) {
+            console.error('[ASAAS CLIENT] Error creating payment link:', error.response?.data || error.message);
+            throw error;
+        }
+    }
+
     // Webhook verification
     verifyWebhook(payload: any, signature: string, secret: string): boolean {
         // Asaas doesn't use signature verification by default

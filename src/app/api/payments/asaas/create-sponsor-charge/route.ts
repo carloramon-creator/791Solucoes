@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Criar a Cobrança (Payment) - Lógica de Ciclo e Desconto
+    // 3. Criar o Checkout Link (Layout Moderno com Cronômetro e Itens)
     const baseValue = typeof valor === 'string' 
       ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
       : parseFloat(valor);
@@ -107,20 +107,20 @@ export async function POST(req: Request) {
 
     let months = 1;
     let discountPercent = 0;
-    let installmentCount = 1;
+    let maxInstallments = 1;
 
     if (ciclo === 'QUARTERLY') {
       months = 3;
       discountPercent = 5;
-      installmentCount = 3; // Parcelamento em 3x para trimestral
+      maxInstallments = 3;
     } else if (ciclo === 'SEMI_ANNUAL') {
       months = 6;
       discountPercent = 10;
-      installmentCount = 6; // Parcelamento em 6x para semestral
+      maxInstallments = 6;
     } else if (ciclo === 'YEARLY') {
       months = 12;
       discountPercent = 15;
-      installmentCount = 12; // Parcelamento em 12x para anual
+      maxInstallments = 12;
     }
 
     const subtotal = baseValue * months;
@@ -135,31 +135,48 @@ export async function POST(req: Request) {
     };
     const cycleLabel = cycleMap[ciclo] || 'Mensal';
 
-    const paymentPayload: any = {
+    // Checkout Payload (Layout Moderno)
+    const checkoutPayload: any = {
         customer: customer.id,
-        billingType: installmentCount > 1 ? 'CREDIT_CARD' : 'UNDEFINED', 
+        name: `Adesão Patrocínio 791glass - ${nome}`,
+        description: description || `Cota de Patrocínio (${cycleLabel})`,
         value: totalValue,
-        dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
-        description: description || `Patrocínio 791glass (${cycleLabel}) - ${nome}${discountPercent > 0 ? ` (Desc. ${discountPercent}%)` : ''}`,
+        billingTypes: ['CREDIT_CARD', 'BOLETO', 'PIX'], 
+        chargeTypes: maxInstallments > 1 ? ['INSTALLMENT', 'DETACHED'] : ['DETACHED'],
+        installment: {
+            maxInstallmentCount: maxInstallments
+        },
+        dueDateLimitDays: 3,
         externalReference: `sponsor|${patrocinadorId}`,
+        items: [{
+            name: `Cota Patrocínio ${cycleLabel}`,
+            description: `${nome} - Licenças de Patrocínio`,
+            value: totalValue,
+            amount: totalValue,
+            quantity: 1
+        }],
+        callback: {
+            successUrl: 'https://app.791glass.com.br/patrocinadores',
+            autoRedirect: true
+        }
     };
 
-    // Adiciona parcelamento se houver mais de uma parcela
-    if (installmentCount > 1) {
-      paymentPayload.installmentCount = installmentCount;
-      paymentPayload.totalValue = totalValue;
-      delete paymentPayload.value; // No Asaas, se tem totalValue + installmentCount, não usa value
-    }
+    const checkout = await asaas.createCheckout(checkoutPayload);
 
-    const payment = await asaas.createPayment(paymentPayload);
+    // O Checkout Link retorna a URL no campo 'url' ou 'paymentUrl'
+    const checkoutUrl = checkout.url || checkout.paymentUrl;
+
+    if (!checkoutUrl) {
+        throw new Error('Checkout gerado, mas URL não encontrada.');
+    }
 
     // 4. Salvar dados de cobrança no Supabase (Holding)
     const { error: sError } = await supabaseHolding
       .from('patrocinadores')
       .update({
         asaas_customer_id: customer.id,
-        last_charge_id: payment.id,
-        last_charge_link: payment.invoiceUrl
+        last_charge_id: checkout.id,
+        last_charge_link: checkoutUrl
       })
       .eq('id', patrocinadorId);
 
@@ -169,8 +186,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      id: payment.id,
-      invoiceUrl: payment.invoiceUrl
+      id: checkout.id,
+      invoiceUrl: checkoutUrl
     });
 
   } catch (err: any) {

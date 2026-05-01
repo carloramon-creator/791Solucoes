@@ -137,7 +137,7 @@ export async function POST(req: Request) {
 
     const paymentPayload: any = {
         customer: customer.id,
-        billingType: 'UNDEFINED', 
+        billingType: installmentCount > 1 ? 'CREDIT_CARD' : 'UNDEFINED', 
         value: totalValue,
         dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
         description: description || `Patrocínio 791glass (${cycleLabel}) - ${nome}${discountPercent > 0 ? ` (Desc. ${discountPercent}%)` : ''}`,
@@ -174,10 +174,11 @@ export async function POST(req: Request) {
     });
 
   } catch (err: any) {
-    console.error('[ASAAS SPONSOR ERROR]:', err.message);
+    const asaasError = err.response?.data?.errors?.[0]?.description || err.message;
+    console.error('[ASAAS SPONSOR ERROR]:', asaasError, err.response?.data);
     return NextResponse.json({ 
       success: false, 
-      error: `Asaas rejeitou: ${err.message}`
+      error: `Asaas rejeitou: ${asaasError}`
     }, { status: 500 });
   }
 }

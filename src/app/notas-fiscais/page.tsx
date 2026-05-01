@@ -113,38 +113,8 @@ export default function NotasFiscaisPage() {
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Atualizar
           </button>
-          <button 
-            onClick={async () => {
-              console.log('--- DIAGNÓSTICO PROFUNDO SUPABASE ---');
-              const results: any = {};
-              
-              const tables = ['system_invoices', 'invoices', 'sytem_invoices', 'faturas'];
-              for (const table of tables) {
-                const { data, error } = await supabase.from(table).select('*');
-                results[table] = error ? `Erro: ${error.message}` : `Encontradas: ${data?.length || 0}`;
-                console.log(`Tabela ${table}:`, { data, error });
-              }
-
-              const summary = Object.entries(results).map(([t, r]) => `${t}: ${r}`).join('\n');
-              alert(`Relatório de Tabelas:\n\n${summary}`);
-            }}
-            className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-amber-600 transition-all uppercase tracking-widest shadow-lg shadow-amber-900/10"
-          >
-            Diagnóstico Profundo
-          </button>
         </div>
       </div>
-
-      {/* Erro */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 px-6 py-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
-          <AlertCircle size={20} />
-          <div className="flex flex-col">
-            <span className="text-xs font-black uppercase tracking-widest">Erro de Conexão</span>
-            <span className="text-[11px] font-bold opacity-80">{error}</span>
-          </div>
-        </div>
-      )}
 
       {/* Tabela de Notas */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">

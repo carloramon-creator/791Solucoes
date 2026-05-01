@@ -62,25 +62,32 @@ export async function POST(req: Request) {
 
     // 2. Preparar dados do Cliente (Patrocinador)
     const cleanCpfCnpj = cpfCnpj.replace(/\D/g, '');
-    let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
-    
-    // Se for fixo (começa com 2-5) e tem 11 dígitos, remove o último dígito (Asaas exige 10 para fixos)
-    if (cleanPhone.length === 11 && ['2','3','4','5'].includes(cleanPhone[2])) {
-        cleanPhone = cleanPhone.substring(0, 10);
+    let cleanPhone = (telefone || '').replace(/\D/g, '');
+    let phoneToUse = '';
+    let mobileToUse = '';
+
+    // Lógica de Telefone para o Asaas não rejeitar e permitir preenchimento automático
+    if (cleanPhone.length >= 10) {
+      const isMobile = !(['2','3','4','5'].includes(cleanPhone[2]));
+      if (isMobile && cleanPhone.length === 11) {
+        mobileToUse = cleanPhone;
+      } else {
+        // Se for fixo ou tiver 11 dígitos mas for fixo, trunca para 10
+        phoneToUse = cleanPhone.length > 10 ? cleanPhone.substring(0, 10) : cleanPhone;
+      }
     }
-    if (cleanPhone.length < 10) cleanPhone = '11987654321';
 
     let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
     if (!customer) {
       customer = await asaas.getCustomerByEmail(email);
     }
     
-    const customerData = {
+    const customerData: any = {
       name: nome,
       email: email,
       cpfCnpj: cleanCpfCnpj,
-      phone: cleanPhone,
-      mobilePhone: cleanPhone,
+      phone: phoneToUse || mobileToUse || '1149320232', // Backup landline
+      mobilePhone: mobileToUse || phoneToUse || '11987654321', // Backup mobile
       address: address || 'Endereço não informado',
       addressNumber: addressNumber || 'S/N',
       province: province || 'Bairro não informado',
@@ -92,12 +99,12 @@ export async function POST(req: Request) {
     if (!customer) {
       customer = await asaas.createCustomer(customerData);
     } else {
-      // ⚠️ Sempre atualizamos para garantir que o Asaas tenha o telefone e nome corretos
-      console.log('[ASAAS] Sincronizando dados do cliente:', nome);
+      // ⚠️ Sincronização Total: Garante que o Asaas tenha TUDO para pré-preencher o checkout
+      console.log('[ASAAS] Sincronizando dados completos do cliente:', nome);
       customer = await asaas.updateCustomer(customer.id, customerData);
     }
 
-    // 3. Criar o Checkout Link (Layout Moderno - Estilo Vidraçarias)
+    // 3. Cálculo de Valores e Ciclo
     const baseValue = typeof valor === 'string' 
       ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
       : parseFloat(valor);
@@ -136,44 +143,56 @@ export async function POST(req: Request) {
     };
     const cycleLabel = cycleMap[ciclo] || 'Mensal';
 
-    // Payment Link Payload (Gera o link moderno asaas.com/c/...)
-    const paymentLinkPayload: any = {
+    // 4. Criar o Checkout V3 (Moderno e Pré-preenchido)
+    const checkoutPayload: any = {
+        customer: customer.id,
         name: `Plano de Patrocínio 791glass - ${nome}`,
-        description: description || `Patrocínio ${cycleLabel} + Cota de Licenças`,
+        description: `Cota de Patrocínio (${cycleLabel}) + Módulos de Licenças`,
         value: totalValue,
-        billingType: 'UNDEFINED', // Flexível: Cartão, Boleto, Pix
+        billingType: 'UNDEFINED',
         chargeType: maxInstallments > 1 ? 'INSTALLMENT' : 'DETACHED',
-        maxInstallmentCount: maxInstallments,
+        installment: {
+            maxInstallmentCount: maxInstallments
+        },
         dueDateLimitDays: 3,
         externalReference: `sponsor|${patrocinadorId}`,
-        notificationDisabled: false,
-        customer: customer.id
+        items: [{
+            name: `Patrocínio 791glass (${cycleLabel})`,
+            description: `Patrocinador: ${nome}`,
+            value: totalValue,
+            amount: totalValue,
+            quantity: 1
+        }],
+        callback: {
+            successUrl: 'https://admin.791solucoes.com.br/patrocinadores',
+            autoRedirect: true
+        }
     };
 
-    const paymentLink = await asaas.createPaymentLink(paymentLinkPayload);
+    console.log('[ASAAS] Gerando Checkout V3 para:', customer.id);
+    const checkout = await asaas.createCheckout(checkoutPayload);
 
-    if (!paymentLink.url) {
-        throw new Error('Checkout gerado, mas URL não encontrada.');
+    const checkoutUrl = checkout.url || checkout.paymentUrl;
+
+    if (!checkoutUrl) {
+        throw new Error('Checkout gerado, mas URL não encontrada na resposta do Asaas.');
     }
 
     // 5. Salvar dados de cobrança no Supabase (Holding)
-    const { error: sError } = await supabaseHolding
+    await supabaseHolding
       .from('patrocinadores')
       .update({
         asaas_customer_id: customer.id,
-        last_charge_id: paymentLink.id,
-        last_charge_link: paymentLink.url
+        last_charge_id: checkout.id,
+        last_charge_link: checkoutUrl,
+        updated_at: new Date().toISOString()
       })
       .eq('id', patrocinadorId);
 
-    if (sError) {
-      console.error('[ASAAS SPONSOR] Erro ao salvar dados no Supabase:', sError.message);
-    }
-
     return NextResponse.json({ 
       success: true, 
-      id: paymentLink.id,
-      invoiceUrl: paymentLink.url
+      id: checkout.id,
+      invoiceUrl: checkoutUrl
     });
 
   } catch (err: any) {

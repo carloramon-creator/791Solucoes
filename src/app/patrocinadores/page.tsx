@@ -362,14 +362,12 @@ export default function PatrocinadoresPage() {
     }
   }
 
-  async function handleCreateCharge(p: Patrocinador) {
-    if (!p.valor_mensal || p.valor_mensal <= 0) {
+  async function handleCreateCharge(p: any, useFormData: boolean = false) {
+    if (!p) return;
+    if (!p.valor_mensal && !formData.valor_mensal) {
       alert('Defina um valor mensal para este patrocinador antes de gerar a cobrança.');
       return;
     }
-
-  async function handleCreateCharge(p: any, useFormData: boolean = false) {
-    if (!p) return;
 
     // Se useFormData for true, usamos o estado atual do formulário (útil no Modal)
     const dataToUse = useFormData ? {

@@ -60,18 +60,21 @@ export async function POST(req: Request) {
       environment: environment as any
     });
 
-    // 2. Buscar ou Criar Cliente (Patrocinador) no Asaas
+    // 2. Preparar dados do Cliente (Patrocinador)
     const cleanCpfCnpj = cpfCnpj.replace(/\D/g, '');
-    let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
+    let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
     
-    // Se não achar por CPF, tenta pelo e-mail
+    // Se for fixo (começa com 2-5) e tem 11 dígitos, remove o último dígito (Asaas exige 10 para fixos)
+    if (cleanPhone.length === 11 && ['2','3','4','5'].includes(cleanPhone[2])) {
+        cleanPhone = cleanPhone.substring(0, 10);
+    }
+    if (cleanPhone.length < 10) cleanPhone = '11987654321';
+
+    let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
     if (!customer) {
       customer = await asaas.getCustomerByEmail(email);
     }
     
-    let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
-    if (cleanPhone.length < 10) cleanPhone = '11987654321';
-
     const customerData = {
       name: nome,
       email: email,
@@ -89,28 +92,12 @@ export async function POST(req: Request) {
     if (!customer) {
       customer = await asaas.createCustomer(customerData);
     } else {
-      // ⚠️ IMPORTANTE: Se o nome for diferente (ex: Barbearia), atualizamos os dados para o Patrocinador atual
-      if (customer.name !== nome || customer.cpfCnpj !== cleanCpfCnpj) {
-        console.log('[ASAAS] Atualizando dados do cliente para coincidir com o Patrocinador:', nome);
-        customer = await asaas.updateCustomer(customer.id, customerData);
-      }
+      // ⚠️ Sempre atualizamos para garantir que o Asaas tenha o telefone e nome corretos
+      console.log('[ASAAS] Sincronizando dados do cliente:', nome);
+      customer = await asaas.updateCustomer(customer.id, customerData);
     }
 
-    // 3. Limpeza do Telefone (Asaas é chato com isso)
-    let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
-    // Se for fixo (começa com 2-5) e tem 11 dígitos, provavelmente tem um dígito a mais no final
-    if (cleanPhone.length === 11 && ['2','3','4','5'].includes(cleanPhone[2])) {
-        cleanPhone = cleanPhone.substring(0, 10);
-    }
-
-    // Atualiza o cliente no Asaas com o telefone corrigido
-    await asaas.updateCustomer(customer.id, {
-        ...customerData,
-        phone: cleanPhone,
-        mobilePhone: cleanPhone
-    });
-
-    // 4. Criar o Checkout Link (Layout Moderno - Estilo Vidraçarias)
+    // 3. Criar o Checkout Link (Layout Moderno - Estilo Vidraçarias)
     const baseValue = typeof valor === 'string' 
       ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
       : parseFloat(valor);

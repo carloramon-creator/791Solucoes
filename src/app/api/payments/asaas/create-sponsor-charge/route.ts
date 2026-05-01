@@ -141,7 +141,7 @@ export async function POST(req: Request) {
         name: `Adesão Patrocínio 791glass - ${nome}`,
         description: description || `Cota de Patrocínio (${cycleLabel})`,
         value: totalValue,
-        billingTypes: ['CREDIT_CARD', 'BOLETO', 'PIX'], 
+        billingTypes: ['CREDIT_CARD', 'BOLETO'], 
         chargeTypes: maxInstallments > 1 ? ['INSTALLMENT', 'DETACHED'] : ['DETACHED'],
         installment: {
             maxInstallmentCount: maxInstallments

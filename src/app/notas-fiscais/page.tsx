@@ -47,16 +47,14 @@ export default function NotasFiscaisPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
-        .from('system_invoices')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (dbError) throw dbError;
-      if (data) setInvoices(data);
+      const res = await fetch('/api/system/invoices');
+      const data = await res.json();
+      
+      if (!data.success) throw new Error(data.error);
+      setInvoices(data.invoices || []);
     } catch (err: any) {
       console.error('Erro ao carregar notas:', err);
-      setError(err.message || 'Erro ao conectar com o banco de dados.');
+      setError(err.message || 'Erro ao conectar com o servidor.');
     } finally {
       setLoading(false);
     }
@@ -117,15 +115,22 @@ export default function NotasFiscaisPage() {
           </button>
           <button 
             onClick={async () => {
-              console.log('--- DIAGNÓSTICO SUPABASE ---');
-              console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-              const { data, error, count } = await supabase.from('system_invoices').select('*', { count: 'exact' });
-              console.log('Resultado:', { data, error, count });
-              alert(error ? `Erro: ${error.message}` : `Sucesso! Encontradas ${data?.length || 0} notas.`);
+              console.log('--- DIAGNÓSTICO PROFUNDO SUPABASE ---');
+              const results: any = {};
+              
+              const tables = ['system_invoices', 'invoices', 'sytem_invoices', 'faturas'];
+              for (const table of tables) {
+                const { data, error } = await supabase.from(table).select('*');
+                results[table] = error ? `Erro: ${error.message}` : `Encontradas: ${data?.length || 0}`;
+                console.log(`Tabela ${table}:`, { data, error });
+              }
+
+              const summary = Object.entries(results).map(([t, r]) => `${t}: ${r}`).join('\n');
+              alert(`Relatório de Tabelas:\n\n${summary}`);
             }}
             className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-amber-600 transition-all uppercase tracking-widest shadow-lg shadow-amber-900/10"
           >
-            Diagnóstico
+            Diagnóstico Profundo
           </button>
         </div>
       </div>

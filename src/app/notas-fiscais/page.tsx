@@ -37,6 +37,7 @@ export default function NotasFiscaisPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'authorized' | 'rejected'>('all');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInvoices();
@@ -44,16 +45,18 @@ export default function NotasFiscaisPage() {
 
   async function fetchInvoices() {
     setLoading(true);
+    setError(null);
     try {
-      // Por enquanto buscando da tabela system_invoices (que criaremos se não existir)
-      const { data, error } = await supabase
+      const { data, error: dbError } = await supabase
         .from('system_invoices')
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (dbError) throw dbError;
       if (data) setInvoices(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao carregar notas:', err);
+      setError(err.message || 'Erro ao conectar com o banco de dados.');
     } finally {
       setLoading(false);
     }
@@ -61,8 +64,8 @@ export default function NotasFiscaisPage() {
 
   const filteredInvoices = invoices.filter(inv => {
     const matchesFilter = filter === 'all' || inv.status === filter;
-    const matchesSearch = inv.client_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         inv.invoice_number.includes(searchTerm);
+    const matchesSearch = (inv.client_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || 
+                         (inv.invoice_number?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 
@@ -112,8 +115,31 @@ export default function NotasFiscaisPage() {
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Atualizar
           </button>
+          <button 
+            onClick={async () => {
+              console.log('--- DIAGNÓSTICO SUPABASE ---');
+              console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+              const { data, error, count } = await supabase.from('system_invoices').select('*', { count: 'exact' });
+              console.log('Resultado:', { data, error, count });
+              alert(error ? `Erro: ${error.message}` : `Sucesso! Encontradas ${data?.length || 0} notas.`);
+            }}
+            className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-amber-600 transition-all uppercase tracking-widest shadow-lg shadow-amber-900/10"
+          >
+            Diagnóstico
+          </button>
         </div>
       </div>
+
+      {/* Erro */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-600 px-6 py-4 rounded-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
+          <AlertCircle size={20} />
+          <div className="flex flex-col">
+            <span className="text-xs font-black uppercase tracking-widest">Erro de Conexão</span>
+            <span className="text-[11px] font-bold opacity-80">{error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Tabela de Notas */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">

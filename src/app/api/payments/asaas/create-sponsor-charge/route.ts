@@ -96,7 +96,21 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Criar o Checkout Link (Layout Moderno com Cronômetro e Itens)
+    // 3. Limpeza do Telefone (Asaas é chato com isso)
+    let cleanPhone = (telefone || '11987654321').replace(/\D/g, '');
+    // Se for fixo (começa com 2-5) e tem 11 dígitos, provavelmente tem um dígito a mais no final
+    if (cleanPhone.length === 11 && ['2','3','4','5'].includes(cleanPhone[2])) {
+        cleanPhone = cleanPhone.substring(0, 10);
+    }
+
+    // Atualiza o cliente no Asaas com o telefone corrigido
+    await asaas.updateCustomer(customer.id, {
+        ...customerData,
+        phone: cleanPhone,
+        mobilePhone: cleanPhone
+    });
+
+    // 4. Criar o Checkout Link (Layout Moderno - Estilo Vidraçarias)
     const baseValue = typeof valor === 'string' 
       ? parseFloat(valor.replace(/\./g, '').replace(',', '.')) 
       : parseFloat(valor);
@@ -135,48 +149,33 @@ export async function POST(req: Request) {
     };
     const cycleLabel = cycleMap[ciclo] || 'Mensal';
 
-    // Checkout Payload (Layout Moderno)
-    const checkoutPayload: any = {
-        customer: customer.id,
-        name: `Adesão Patrocínio 791glass - ${nome}`,
-        description: description || `Cota de Patrocínio (${cycleLabel})`,
+    // Payment Link Payload (Gera o link moderno asaas.com/c/...)
+    const paymentLinkPayload: any = {
+        name: `Plano de Patrocínio 791glass - ${nome}`,
+        description: description || `Patrocínio ${cycleLabel} + Cota de Licenças`,
         value: totalValue,
-        billingTypes: ['CREDIT_CARD', 'BOLETO'], 
-        chargeTypes: maxInstallments > 1 ? ['INSTALLMENT', 'DETACHED'] : ['DETACHED'],
-        installment: {
-            maxInstallmentCount: maxInstallments
-        },
+        billingType: 'UNDEFINED', // Flexível: Cartão, Boleto, Pix
+        chargeType: maxInstallments > 1 ? 'INSTALLMENT' : 'DETACHED',
+        maxInstallmentCount: maxInstallments,
         dueDateLimitDays: 3,
         externalReference: `sponsor|${patrocinadorId}`,
-        items: [{
-            name: `Cota Patrocínio ${cycleLabel}`,
-            description: `${nome} - Licenças de Patrocínio`,
-            value: totalValue,
-            amount: totalValue,
-            quantity: 1
-        }],
-        callback: {
-            successUrl: 'https://app.791glass.com.br/patrocinadores',
-            autoRedirect: true
-        }
+        notificationDisabled: false,
+        customer: customer.id
     };
 
-    const checkout = await asaas.createCheckout(checkoutPayload);
+    const paymentLink = await asaas.createPaymentLink(paymentLinkPayload);
 
-    // O Checkout Link retorna a URL no campo 'url' ou 'paymentUrl'
-    const checkoutUrl = checkout.url || checkout.paymentUrl;
-
-    if (!checkoutUrl) {
+    if (!paymentLink.url) {
         throw new Error('Checkout gerado, mas URL não encontrada.');
     }
 
-    // 4. Salvar dados de cobrança no Supabase (Holding)
+    // 5. Salvar dados de cobrança no Supabase (Holding)
     const { error: sError } = await supabaseHolding
       .from('patrocinadores')
       .update({
         asaas_customer_id: customer.id,
-        last_charge_id: checkout.id,
-        last_charge_link: checkoutUrl
+        last_charge_id: paymentLink.id,
+        last_charge_link: paymentLink.url
       })
       .eq('id', patrocinadorId);
 
@@ -186,8 +185,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      id: checkout.id,
-      invoiceUrl: checkoutUrl
+      id: paymentLink.id,
+      invoiceUrl: paymentLink.url
     });
 
   } catch (err: any) {

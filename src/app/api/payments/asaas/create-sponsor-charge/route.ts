@@ -11,21 +11,21 @@ export const revalidate = 0;
 export async function POST(req: Request) {
   try {
     const { 
-      patrocinadorId,
-      nome,
-      email,
-      cpfCnpj,
+      patrocinadorId, 
+      valor, 
+      ciclo = 'MONTHLY', 
+      nome, 
+      email, 
+      cpfCnpj, 
       telefone,
-      valor,
-      description,
-      ciclo = 'MONTHLY',
-      parcelas = 1,
       address,
       addressNumber,
       province,
       postalCode,
       city,
-      state
+      state,
+      description,
+      paymentMode // 'avista' ou 'parcelado'
     } = await req.json();
 
     console.log('[ASAAS SPONSOR] Iniciando cobrança para:', email);
@@ -68,12 +68,13 @@ export async function POST(req: Request) {
 
     // Lógica de Telefone para o Asaas não rejeitar e permitir preenchimento automático
     if (cleanPhone.length >= 10) {
-      const isMobile = !(['2','3','4','5'].includes(cleanPhone[2]));
-      if (isMobile && cleanPhone.length === 11) {
+      const isMobile = !(['2','3','4','5'].includes(cleanPhone[2])) && cleanPhone.length === 11;
+      if (isMobile) {
         mobileToUse = cleanPhone;
+        phoneToUse = ''; // Deixa vazio para não dar erro de "Telefone Comercial Inválido"
       } else {
-        // Se for fixo ou tiver 11 dígitos mas for fixo, trunca para 10
         phoneToUse = cleanPhone.length > 10 ? cleanPhone.substring(0, 10) : cleanPhone;
+        mobileToUse = '';
       }
     }
 
@@ -86,8 +87,8 @@ export async function POST(req: Request) {
       name: nome,
       email: email,
       cpfCnpj: cleanCpfCnpj,
-      phone: phoneToUse || mobileToUse || '1149320232', // Backup landline
-      mobilePhone: mobileToUse || phoneToUse || '11987654321', // Backup mobile
+      phone: phoneToUse,
+      mobilePhone: mobileToUse,
       address: address || 'Endereço não informado',
       addressNumber: addressNumber || 'S/N',
       province: province || 'Bairro não informado',
@@ -144,21 +145,24 @@ export async function POST(req: Request) {
     const cycleLabel = cycleMap[ciclo] || 'Mensal';
 
     // 4. Criar o Checkout V3 (Moderno e Pré-preenchido)
+    const isParcelado = paymentMode === 'parcelado';
+
     const checkoutPayload: any = {
         customer: customer.id,
         name: `Plano de Patrocínio 791glass - ${nome}`,
         description: `Cota de Patrocínio (${cycleLabel}) + Módulos de Licenças`,
         value: totalValue,
-        billingType: 'UNDEFINED',
-        chargeType: maxInstallments > 1 ? 'INSTALLMENT' : 'DETACHED',
-        installment: {
+        // No Checkout V3 o campo é no PLURAL e espera um ARRAY de strings
+        billingTypes: isParcelado ? ['CREDIT_CARD'] : ['BOLETO', 'CREDIT_CARD', 'PIX'],
+        chargeType: isParcelado ? 'INSTALLMENT' : 'DETACHED',
+        installment: isParcelado ? {
             maxInstallmentCount: maxInstallments
-        },
+        } : undefined,
         dueDateLimitDays: 3,
         externalReference: `sponsor|${patrocinadorId}`,
         items: [{
             name: `Patrocínio 791glass (${cycleLabel})`,
-            description: `Patrocinador: ${nome}`,
+            description: `Patrocinador: ${nome} - Modo: ${isParcelado ? 'Parcelado' : 'À Vista'}`,
             value: totalValue,
             amount: totalValue,
             quantity: 1
@@ -169,7 +173,7 @@ export async function POST(req: Request) {
         }
     };
 
-    console.log('[ASAAS] Gerando Checkout V3 para:', customer.id);
+    console.log(`[ASAAS] Gerando Checkout V3 (${paymentMode}) para:`, customer.id);
     const checkout = await asaas.createCheckout(checkoutPayload);
 
     const checkoutUrl = checkout.url || checkout.paymentUrl;

@@ -369,8 +369,8 @@ export default function PatrocinadoresPage() {
       return;
     }
 
-    // Se useFormData for true, usamos o estado atual do formulário (útil no Modal)
-    const dataToUse = useFormData ? {
+    // Se o patrocinador tiver dados novos no formulário (se o modal estiver aberto), usamos eles
+    const dataToUse = isModalOpen && formData ? {
       ...p,
       nome: formData.nome,
       email: formData.email,
@@ -405,7 +405,8 @@ export default function PatrocinadoresPage() {
           province: dataToUse.bairro,
           postalCode: dataToUse.cep,
           city: dataToUse.cidade,
-          state: dataToUse.estado
+          state: dataToUse.estado,
+          paymentMode: mode
         })
       });
 
@@ -578,12 +579,20 @@ export default function PatrocinadoresPage() {
                           <Key size={18} />
                         </button>
                         <button 
-                          onClick={() => handleCreateCharge(p)}
+                          onClick={() => handleCreateCharge(p, 'avista')}
                           disabled={chargingId === p.id}
                           className="p-3 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl text-slate-400 transition-all" 
-                          title="Gerar Cobrança Asaas"
+                          title="Gerar Cobrança À VISTA (Flexível)"
                         >
-                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <Wallet size={18} />}
+                        </button>
+                        <button 
+                          onClick={() => handleCreateCharge(p, 'parcelado')}
+                          disabled={chargingId === p.id}
+                          className="p-3 hover:bg-amber-50 hover:text-amber-600 rounded-xl text-slate-400 transition-all" 
+                          title="Gerar Cobrança PARCELADA (Apenas Cartão)"
+                        >
+                          {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
                         </button>
                         <button 
                           onClick={() => handleEdit(p)}
@@ -812,17 +821,28 @@ export default function PatrocinadoresPage() {
                     </div>
                   </section>
 
-                  <div className="flex gap-4">
+                  <div className="flex flex-col gap-3">
                     {editingSponsor && (
-                      <button 
-                        type="button"
-                        onClick={() => handleCreateCharge(editingSponsor, true)}
-                        disabled={chargingId === editingSponsor.id}
-                        className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-lg shadow-emerald-100 disabled:opacity-50"
-                      >
-                        {chargingId === editingSponsor.id ? <Loader2 className="animate-spin" size={18} /> : <DollarSign size={18} />}
-                        Gerar Cobrança
-                      </button>
+                      <div className="flex gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => handleCreateCharge(editingSponsor, 'avista')}
+                          disabled={chargingId === editingSponsor.id}
+                          className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex flex-col items-center justify-center gap-1 shadow-lg shadow-emerald-100 disabled:opacity-50"
+                        >
+                          <Wallet size={16} />
+                          <span>À Vista (Flex)</span>
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => handleCreateCharge(editingSponsor, 'parcelado')}
+                          disabled={chargingId === editingSponsor.id}
+                          className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all flex flex-col items-center justify-center gap-1 shadow-lg shadow-amber-100 disabled:opacity-50"
+                        >
+                          <CreditCard size={16} />
+                          <span>Cartão (12x)</span>
+                        </button>
+                      </div>
                     )}
                     <button 
                       type="submit"

@@ -256,18 +256,18 @@ async function emitirNFeSaas({
   // Busca dados da vidraçaria (Tomador)
   const { data: vidracaria, error: vErr } = await glassSupabase
     .from('vidracarias')
-    .select('nome, cnpj, cpf_cnpj, email, endereco, logradouro, numero, bairro, cep, cidade, estado, inscricao_municipal')
+    .select('nome, cnpj, email, endereco, endereco_completo, complemento, numero, bairro, cep, cidade, estado, inscricao_municipal')
     .eq('id', vidracariaId)
     .single();
 
   if (vErr || !vidracaria) throw new Error('Vidraçaria não encontrada no Glass: ' + vErr?.message);
 
-  const docTomador = vidracaria.cnpj || vidracaria.cpf_cnpj;
+  const docTomador = vidracaria.cnpj;
   if (!docTomador) {
     throw new Error('Vidraçaria sem CNPJ/CPF para emissão de NF-e.');
   }
 
-  const logradouroTomador = vidracaria.endereco || vidracaria.logradouro;
+  const logradouroTomador = vidracaria.endereco || vidracaria.endereco_completo;
   if (!logradouroTomador) {
     throw new Error('Vidraçaria sem endereço/logradouro para emissão de NF-e.');
   }

@@ -60,6 +60,15 @@ export class PaymentProcessor {
       
       if (!glassServiceKey) {
         console.error('[PAYMENT PROCESSOR] Erro: SUPABASE_GLASS_SERVICE_ROLE_KEY não configurada!');
+        await persistInvoiceFailure({
+          holdingSupabase,
+          tenantId,
+          valor: payload.value,
+          ciclo: cycle,
+          asaasPaymentId,
+          message: 'SUPABASE_GLASS_SERVICE_ROLE_KEY não configurada no ambiente de execução.',
+          step: 'env_glass_service_key',
+        });
         return;
       }
       
@@ -87,6 +96,15 @@ export class PaymentProcessor {
 
       if (error) {
         console.error(`[PAYMENT PROCESSOR] Erro ao atualizar vidracaria no Glass:`, error);
+        await persistInvoiceFailure({
+          holdingSupabase,
+          tenantId,
+          valor: payload.value,
+          ciclo: cycle,
+          asaasPaymentId,
+          message: `Falha ao atualizar vidraçaria no Glass: ${error.message}`,
+          step: 'activate_tenant',
+        });
       } else {
         console.log(`[PAYMENT PROCESSOR] Vidracaria ${tenantId} no Glass ativada com sucesso!`);
 
@@ -120,41 +138,29 @@ export class PaymentProcessor {
           }
         }
 
-        // Emitir NF-e automaticamente após confirmar o pagamento
-        try {
-          await emitirNFeSaas({
-            holdingSupabase,
-            glassSupabase,
-            vidracariaId: tenantId,
-            valor: payload.value,
-            ciclo: cycle,
-            asaasPaymentId,
-          });
-        } catch (nfErr: any) {
-          // Não bloqueia o fluxo principal — registra erro para auditoria e loga
-          try {
-            await holdingSupabase.from('system_invoices').insert({
-              invoice_number: `NF-ERR-${Date.now()}`,
-              status: 'error',
-              client_name: tenantId,
-              client_document: null,
-              value: payload.value,
-              access_link: null,
-              error_message: nfErr?.message || 'Falha desconhecida ao emitir NF-e',
-              metadata: {
-                vidracaria_id: tenantId,
-                mes_ref: new Date().toISOString().slice(0, 7),
-                ciclo: cycle,
-                asaas_payment_id: asaasPaymentId,
-                origem: 'webhook_asaas',
-                step: 'emitirNFeSaas',
-              },
-            });
-          } catch (persistErr: any) {
-            console.error(`[PAYMENT PROCESSOR] Erro ao salvar falha de NF-e em system_invoices:`, persistErr.message);
-          }
-          console.error(`[PAYMENT PROCESSOR] Erro ao emitir NF-e para ${tenantId}:`, nfErr.message);
-        }
+      }
+
+      // Emitir NF-e automaticamente após confirmar o pagamento
+      try {
+        await emitirNFeSaas({
+          holdingSupabase,
+          glassSupabase,
+          vidracariaId: tenantId,
+          valor: payload.value,
+          ciclo: cycle,
+          asaasPaymentId,
+        });
+      } catch (nfErr: any) {
+        await persistInvoiceFailure({
+          holdingSupabase,
+          tenantId,
+          valor: payload.value,
+          ciclo: cycle,
+          asaasPaymentId,
+          message: nfErr?.message || 'Falha desconhecida ao emitir NF-e',
+          step: 'emitirNFeSaas',
+        });
+        console.error(`[PAYMENT PROCESSOR] Erro ao emitir NF-e para ${tenantId}:`, nfErr.message);
       }
     } 
     
@@ -221,6 +227,46 @@ export class PaymentProcessor {
   static async createInterPix(customerData: any, amount: number) {
     // Lógica para criar Pix/Boleto no Inter
     // ...
+  }
+}
+
+async function persistInvoiceFailure({
+  holdingSupabase,
+  tenantId,
+  valor,
+  ciclo,
+  asaasPaymentId,
+  message,
+  step,
+}: {
+  holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
+  tenantId: string;
+  valor: number;
+  ciclo: string;
+  asaasPaymentId?: string | null;
+  message: string;
+  step: string;
+}) {
+  try {
+    await holdingSupabase.from('system_invoices').insert({
+      invoice_number: `HOLD-ERR-${Date.now()}`,
+      status: 'rejected',
+      client_name: tenantId,
+      client_document: null,
+      value: valor,
+      access_link: null,
+      error_message: message,
+      metadata: {
+        vidracaria_id: tenantId,
+        mes_ref: new Date().toISOString().slice(0, 7),
+        ciclo,
+        asaas_payment_id: asaasPaymentId,
+        origem: 'webhook_asaas',
+        step,
+      },
+    });
+  } catch (persistErr: any) {
+    console.error('[PAYMENT PROCESSOR] Erro ao salvar falha de NF-e em system_invoices:', persistErr.message);
   }
 }
 

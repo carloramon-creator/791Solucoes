@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { supabaseServer } from '@/lib/supabase-server';
 
 export async function GET() {
@@ -9,7 +10,38 @@ export async function GET() {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json({ success: true, records: data || [] });
+
+    const records = data || [];
+    const tenantIds = Array.from(new Set(
+      records
+        .map((record: any) => record?.metadata?.tenant_id)
+        .filter((id: string | undefined) => Boolean(id))
+    ));
+
+    let tenantNameById: Record<string, string> = {};
+    if (tenantIds.length > 0 && process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL && process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY) {
+      const glassSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL,
+        process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY
+      );
+
+      const { data: tenants } = await glassSupabase
+        .from('vidracarias')
+        .select('id, nome')
+        .in('id', tenantIds);
+
+      tenantNameById = (tenants || []).reduce((acc: Record<string, string>, tenant: any) => {
+        acc[tenant.id] = tenant.nome;
+        return acc;
+      }, {});
+    }
+
+    const enrichedRecords = records.map((record: any) => ({
+      ...record,
+      tenant_name: tenantNameById[record?.metadata?.tenant_id] || null,
+    }));
+
+    return NextResponse.json({ success: true, records: enrichedRecords });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -29,6 +29,8 @@ interface FinanceRecord {
   type: 'revenue' | 'expense';
   value: number;
   description: string;
+  metadata?: any;
+  tenant_name?: string | null;
   payment_method: string;
   category: string;
   status: 'paid' | 'pending';
@@ -68,7 +70,7 @@ export default function FinanceiroPage() {
   const [newCategoryName, setNewCategoryName] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'revenue' | 'expense'>('all');
+  const [filter, setFilter] = useState<'all' | 'revenue' | 'expense' | 'payable'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [newRecord, setNewRecord] = useState({
@@ -285,9 +287,28 @@ export default function FinanceiroPage() {
     }).format(value);
   };
 
+  const getDisplayDescription = (record: FinanceRecord) => {
+    const tenantSuffixRegex = /\s*-\s*Tenant:\s*[0-9a-f-]+/i;
+    const tenantName = record.tenant_name || record.metadata?.tenant_name;
+
+    if (tenantSuffixRegex.test(record.description)) {
+      if (tenantName) {
+        return record.description.replace(tenantSuffixRegex, ` - ${tenantName}`);
+      }
+      return record.description.replace(tenantSuffixRegex, '').trim();
+    }
+
+    return record.description;
+  };
+
   const filteredRecords = records.filter(r => {
-    const matchesFilter = filter === 'all' || r.type === filter;
-    const matchesSearch = r.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const matchesFilter =
+      filter === 'all' ||
+      (filter === 'revenue' && r.type === 'revenue') ||
+      (filter === 'expense' && r.type === 'expense') ||
+      (filter === 'payable' && r.type === 'expense' && r.status !== 'paid');
+    const description = getDisplayDescription(r);
+    const matchesSearch = description.toLowerCase().includes(searchTerm.toLowerCase()) || 
                          r.category.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesFilter && matchesSearch;
   });
@@ -368,6 +389,10 @@ export default function FinanceiroPage() {
                 onClick={() => setFilter('expense')}
                 className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'expense' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
              >Despesas</button>
+             <button 
+               onClick={() => setFilter('payable')}
+               className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'payable' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >Contas a Pagar</button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
@@ -385,10 +410,10 @@ export default function FinanceiroPage() {
           <table className="w-full text-left">
             <thead>
               <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
-                <th className="px-8 py-4">Data / Status</th>
-                <th className="px-8 py-4">Descrição / Categoria</th>
-                <th className="px-8 py-4 text-center">Método</th>
-                <th className="px-8 py-4 text-right pr-12">Valor</th>
+                <th className="px-8 py-3">Data / Status</th>
+                <th className="px-8 py-3">Descrição / Categoria</th>
+                <th className="px-8 py-3 text-center">Método</th>
+                <th className="px-8 py-3 text-right pr-12">Valor</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -408,19 +433,19 @@ export default function FinanceiroPage() {
               ) : (
                 filteredRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-slate-50/80 transition-all group">
-                    <td className="px-8 py-5">
+                    <td className="px-8 py-2.5">
                       <div className="flex flex-col">
-                        <span className="text-[12px] font-bold text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</span>
+                        <span className="text-[11px] font-bold text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</span>
                         <span className={`text-[9px] uppercase font-black tracking-tighter flex items-center gap-1 mt-0.5 ${record.status === 'paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
                           <div className={`w-1.5 h-1.5 rounded-full ${record.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
                           {record.status === 'paid' ? 'Efetivado' : 'Pendente'}
                         </span>
                       </div>
                     </td>
-                    <td className="px-8 py-5">
+                    <td className="px-8 py-2.5">
                       <div className="flex flex-col">
-                        <span className="text-[13px] text-slate-800 font-bold uppercase tracking-tight">{record.description}</span>
-                        <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[12px] text-slate-800 font-bold uppercase tracking-tight">{getDisplayDescription(record)}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
                           <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-black uppercase tracking-widest">
                             {record.category}
                           </span>
@@ -432,7 +457,7 @@ export default function FinanceiroPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-8 py-5 text-center">
+                    <td className="px-8 py-2.5 text-center">
                       <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-3 py-1 rounded-full">
                         <CreditCard size={10} className="text-slate-400" />
                         <span className="text-[10px] text-slate-600 font-bold uppercase tracking-tighter">
@@ -440,10 +465,10 @@ export default function FinanceiroPage() {
                         </span>
                       </div>
                     </td>
-                    <td className={`px-8 py-5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <td className={`px-8 py-2.5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
                       {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-2 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
                           onClick={() => handleDelete(record.id)}

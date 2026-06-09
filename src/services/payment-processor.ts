@@ -129,7 +129,27 @@ export class PaymentProcessor {
             ciclo: cycle,
           });
         } catch (nfErr: any) {
-          // Não bloqueia o fluxo principal — apenas loga o erro
+          // Não bloqueia o fluxo principal — registra erro para auditoria e loga
+          try {
+            await holdingSupabase.from('system_invoices').insert({
+              invoice_number: `NF-ERR-${Date.now()}`,
+              status: 'error',
+              client_name: tenantId,
+              client_document: null,
+              value: payload.value,
+              access_link: null,
+              error_message: nfErr?.message || 'Falha desconhecida ao emitir NF-e',
+              metadata: {
+                vidracaria_id: tenantId,
+                mes_ref: new Date().toISOString().slice(0, 7),
+                ciclo: cycle,
+                origem: 'webhook_asaas',
+                step: 'emitirNFeSaas',
+              },
+            });
+          } catch (persistErr: any) {
+            console.error(`[PAYMENT PROCESSOR] Erro ao salvar falha de NF-e em system_invoices:`, persistErr.message);
+          }
           console.error(`[PAYMENT PROCESSOR] Erro ao emitir NF-e para ${tenantId}:`, nfErr.message);
         }
       }
@@ -236,11 +256,21 @@ async function emitirNFeSaas({
   // Busca dados da vidraçaria (Tomador)
   const { data: vidracaria, error: vErr } = await glassSupabase
     .from('vidracarias')
-    .select('nome, cnpj, email, endereco, numero, bairro, cep, cidade, estado, inscricao_municipal')
+    .select('nome, cnpj, cpf_cnpj, email, endereco, logradouro, numero, bairro, cep, cidade, estado, inscricao_municipal')
     .eq('id', vidracariaId)
     .single();
 
   if (vErr || !vidracaria) throw new Error('Vidraçaria não encontrada no Glass: ' + vErr?.message);
+
+  const docTomador = vidracaria.cnpj || vidracaria.cpf_cnpj;
+  if (!docTomador) {
+    throw new Error('Vidraçaria sem CNPJ/CPF para emissão de NF-e.');
+  }
+
+  const logradouroTomador = vidracaria.endereco || vidracaria.logradouro;
+  if (!logradouroTomador) {
+    throw new Error('Vidraçaria sem endereço/logradouro para emissão de NF-e.');
+  }
 
   // Busca configurações NFS-e da Holding (Prestador)
   const { data: configData, error: cErr } = await holdingSupabase
@@ -271,12 +301,12 @@ async function emitirNFeSaas({
       },
     },
     tomador: {
-      cnpj: vidracaria.cnpj,
+      cnpj: docTomador,
       razaoSocial: vidracaria.nome,
       email: vidracaria.email,
       inscricaoMunicipal: vidracaria.inscricao_municipal,
       endereco: {
-        logradouro: vidracaria.endereco,
+        logradouro: logradouroTomador,
         numero: vidracaria.numero,
         bairro: vidracaria.bairro,
         cep: vidracaria.cep,
@@ -308,7 +338,7 @@ async function emitirNFeSaas({
     invoice_number: result.invoiceId || dpsData.numero,
     status: result.status,
     client_name: vidracaria.nome,
-    client_document: vidracaria.cnpj,
+    client_document: docTomador,
     value: valor,
     access_link: result.accessLink,
     error_message: result.success ? null : result.message,

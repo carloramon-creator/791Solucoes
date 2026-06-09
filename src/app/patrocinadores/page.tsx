@@ -19,7 +19,8 @@ import {
   CreditCard,
   DollarSign,
   Pencil,
-  Trash2
+  Trash2,
+  Wallet
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 

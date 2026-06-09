@@ -362,7 +362,7 @@ export default function PatrocinadoresPage() {
     }
   }
 
-  async function handleCreateCharge(p: any, useFormData: boolean = false) {
+  async function handleCreateCharge(p: any, mode: 'avista' | 'parcelado' = 'avista') {
     if (!p) return;
     if (!p.valor_mensal && !formData.valor_mensal) {
       alert('Defina um valor mensal para este patrocinador antes de gerar a cobrança.');

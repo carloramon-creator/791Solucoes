@@ -1,6 +1,7 @@
 import { AsaasClient } from './asaas-service';
 import { InterAPIV2 } from './inter-service';
 import { createClient } from '@supabase/supabase-js';
+import ipmProvider from '@/lib/nfse/providers/ipm';
 
 // Configurações globais
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -22,9 +23,10 @@ export class PaymentProcessor {
     bankId: string;
     metadata?: any;
   }) {
-    const [saasType, tenantId] = payload.externalReference.split('|');
+    const parts = payload.externalReference.split('|');
+    const [saasType, tenantId, , couponId] = parts;
     
-    console.log(`[PAYMENT PROCESSOR] Pagamento confirmado para ${saasType}: ${tenantId}`);
+    console.log(`[PAYMENT PROCESSOR] Pagamento confirmado para ${saasType}: ${tenantId}${couponId ? ` (cupom: ${couponId})` : ''}`);
 
     // 1. Registrar na Holding (system_finance_records)
     const holdingSupabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -74,6 +76,50 @@ export class PaymentProcessor {
         console.error(`[PAYMENT PROCESSOR] Erro ao atualizar vidracaria no Glass:`, error);
       } else {
         console.log(`[PAYMENT PROCESSOR] Vidracaria ${tenantId} no Glass ativada com sucesso!`);
+
+        // Registrar uso do cupom (se havia cupom aplicado)
+        if (couponId) {
+          try {
+            const { data: couponRow } = await holdingSupabase
+              .from('coupons')
+              .select('used_count')
+              .eq('id', couponId)
+              .single();
+
+            if (couponRow) {
+              await holdingSupabase
+                .from('coupons')
+                .update({ used_count: couponRow.used_count + 1 })
+                .eq('id', couponId);
+
+              await holdingSupabase.from('coupon_uses').insert({
+                coupon_id: couponId,
+                vidracaria_id: tenantId,
+                used_at: new Date().toISOString(),
+                value: payload.value,
+              });
+
+              console.log(`[PAYMENT PROCESSOR] Uso do cupom ${couponId} registrado para vidraçaria ${tenantId}`);
+            }
+          } catch (couponErr: any) {
+            // Não bloqueia o fluxo — apenas loga
+            console.error(`[PAYMENT PROCESSOR] Erro ao registrar uso do cupom:`, couponErr.message);
+          }
+        }
+
+        // Emitir NF-e automaticamente após confirmar o pagamento
+        try {
+          await emitirNFeSaas({
+            holdingSupabase,
+            glassSupabase,
+            vidracariaId: tenantId,
+            valor: payload.value,
+            ciclo: cycle,
+          });
+        } catch (nfErr: any) {
+          // Não bloqueia o fluxo principal — apenas loga o erro
+          console.error(`[PAYMENT PROCESSOR] Erro ao emitir NF-e para ${tenantId}:`, nfErr.message);
+        }
       }
     } 
     
@@ -140,5 +186,132 @@ export class PaymentProcessor {
   static async createInterPix(customerData: any, amount: number) {
     // Lógica para criar Pix/Boleto no Inter
     // ...
+  }
+}
+
+/**
+ * Emite NF-e para assinatura SaaS 791glass após pagamento confirmado.
+ * Busca dados da vidraçaria no Glass, configurações do prestador na Holding,
+ * emite via IPM e salva em system_invoices.
+ */
+async function emitirNFeSaas({
+  holdingSupabase,
+  glassSupabase,
+  vidracariaId,
+  valor,
+  ciclo,
+}: {
+  holdingSupabase: ReturnType<typeof createClient>;
+  glassSupabase: ReturnType<typeof createClient>;
+  vidracariaId: string;
+  valor: number;
+  ciclo: string;
+}) {
+  // Evita NF-e duplicada para o mesmo mês
+  const mesRef = new Date().toISOString().slice(0, 7); // "2026-06"
+  const { data: existing } = await holdingSupabase
+    .from('system_invoices')
+    .select('id')
+    .eq('metadata->>vidracaria_id', vidracariaId)
+    .eq('metadata->>mes_ref', mesRef)
+    .maybeSingle();
+
+  if (existing) {
+    console.log(`[NF-e SAAS] NF-e já emitida para ${vidracariaId} em ${mesRef} — pulando.`);
+    return;
+  }
+
+  // Busca dados da vidraçaria (Tomador)
+  const { data: vidracaria, error: vErr } = await glassSupabase
+    .from('vidracarias')
+    .select('nome, cnpj, email, endereco, numero, bairro, cep, cidade, estado, inscricao_municipal')
+    .eq('id', vidracariaId)
+    .single();
+
+  if (vErr || !vidracaria) throw new Error('Vidraçaria não encontrada no Glass: ' + vErr?.message);
+
+  // Busca configurações NFS-e da Holding (Prestador)
+  const { data: configData, error: cErr } = await holdingSupabase
+    .from('system_settings')
+    .select('value')
+    .eq('id', 'nfse_config')
+    .single();
+
+  if (cErr || !configData?.value) throw new Error('Configurações NFS-e não encontradas na Holding.');
+  const config = configData.value as any;
+
+  const mesAno = new Date().toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' });
+  const dpsData = {
+    numero: `HOLD-${Date.now()}`,
+    serie: '1',
+    dataEmissao: new Date().toISOString(),
+    prestador: {
+      cnpj: config.prestador_cnpj,
+      razaoSocial: config.razao_social,
+      inscricaoMunicipal: config.inscricao_municipal,
+      endereco: {
+        logradouro: config.logradouro,
+        numero: config.numero,
+        bairro: config.bairro,
+        cep: config.cep,
+        cidade: config.cidade,
+        uf: config.estado,
+      },
+    },
+    tomador: {
+      cnpj: vidracaria.cnpj,
+      razaoSocial: vidracaria.nome,
+      email: vidracaria.email,
+      inscricaoMunicipal: vidracaria.inscricao_municipal,
+      endereco: {
+        logradouro: vidracaria.endereco,
+        numero: vidracaria.numero,
+        bairro: vidracaria.bairro,
+        cep: vidracaria.cep,
+        cidade: vidracaria.cidade,
+        uf: vidracaria.estado,
+      },
+    },
+    servico: {
+      valorServicos: valor,
+      codigoItemListaServico: config.tax_code || '01.01.01',
+      discriminacao: `Assinatura 791glass - Ciclo ${ciclo} - Ref. ${mesAno}`,
+      aliquota: 0,
+    },
+  };
+
+  const result = await ipmProvider.emit(
+    dpsData as any,
+    config.pfxBase64,
+    config.passphrase,
+    {
+      username: config.ipm_username,
+      password: config.ipm_password,
+      municipal_code: config.municipal_code,
+      isTest: config.environment === 'homologacao',
+    }
+  );
+
+  await holdingSupabase.from('system_invoices').insert({
+    invoice_number: result.invoiceId || dpsData.numero,
+    status: result.status,
+    client_name: vidracaria.nome,
+    client_document: vidracaria.cnpj,
+    value: valor,
+    access_link: result.accessLink,
+    error_message: result.success ? null : result.message,
+    metadata: {
+      vidracaria_id: vidracariaId,
+      mes_ref: mesRef,
+      ciclo,
+      xml: result.xml,
+      origem: 'webhook_asaas',
+    },
+  });
+
+  if (result.success) {
+    console.log(`[NF-e SAAS] NF-e emitida com sucesso para ${vidracaria.nome} (${vidracariaId})`);
+  } else {
+    console.error(`[NF-e SAAS] Prefeitura retornou erro para ${vidracariaId}:`, result.message);
   }
 }

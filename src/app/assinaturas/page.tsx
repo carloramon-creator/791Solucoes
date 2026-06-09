@@ -324,28 +324,29 @@ export default function AssinaturasPage() {
                 </tr>
               ) : (
                 filteredTenants.map((tenant) => {
-                  // Cálculo do Valor Mensal
-                  let valorTotal = Number(systemPlan?.base_price || 0);
-                  const basicIds = systemPlan?.included_modules || [];
-                  
-                  // Módulos Opcionais: Filtramos o que não é básico
-                  const optionals = (tenant.modulos_ativos || []).filter(modRef => {
-                    const mod = modules.find(m => m.id === modRef || m.slug === modRef);
-                    if (!mod) return false;
-                    // Se o módulo (ID ou Slug) está na lista de inclusos, não é opcional
-                    return !basicIds.includes(mod.id) && !basicIds.includes(mod.slug || '');
-                  });
+                  // Cálculo do Valor Mensal usando combos (igual à página configurar)
+                  const COMBOS = [
+                    { id: 'financeiro', slugs: ['financeiro','contas-pagar','contas-receber','fluxo-caixa','agendamentos','bancos','cobrancas-boletos','lancamentos','contas-correntes','balancete','comissoes-a-pagar','conciliacao','dre','ia-financeira','integracoes','links-pagamento','plano-contas','formas-pagamento'] },
+                    { id: 'producao',   slugs: ['producao','ordens-servico','relatorios','etapas-producao','estoque'] },
+                    { id: 'comunicacao', slugs: ['chat','crm'] },
+                    { id: 'rh',        slugs: ['rh'] },
+                    { id: 'fiscal',    slugs: ['fiscal','notas-fiscais','notas-fiscais-configuracoes','nf-lista','aliquotas'] },
+                  ];
 
-                  // Soma o preço de cada opcional usando a tabela de preços
-                  optionals.forEach(modRef => {
-                    const mod = modules.find(m => m.id === modRef || m.slug === modRef);
-                    if (mod) {
-                      const price = Number(systemPlan?.optional_modules_pricing?.[mod.id] || systemPlan?.optional_modules_pricing?.[mod.slug || ''] || 0);
+                  let valorTotal = Number(systemPlan?.base_price || 0);
+                  const ativosSet = new Set(tenant.modulos_ativos || []);
+
+                  COMBOS.forEach(combo => {
+                    if (combo.slugs.some(s => ativosSet.has(s))) {
+                      const price =
+                        systemPlan?.bundle_prices?.[combo.id] !== undefined
+                          ? Number(systemPlan.bundle_prices[combo.id])
+                          : Number(systemPlan?.optional_modules_pricing?.[combo.id] || 0);
                       valorTotal += price;
                     }
                   });
 
-                  const baseUsers = Number(systemPlan?.system_limits?.usersIncluded || 0);
+                  const baseUsers = Number(systemPlan?.user_limit || systemPlan?.system_limits?.usersIncluded || 0);
                   const extraUsers = Math.max(0, Number(tenant.limite_usuarios || 0) - baseUsers);
                   valorTotal += extraUsers * Number(systemPlan?.system_limits?.extraUserPrice || 0);
                   const baseWpp = Number(systemPlan?.system_limits?.wppDevices || 0);

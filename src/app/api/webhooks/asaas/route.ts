@@ -55,13 +55,23 @@ export async function POST(req: Request) {
       
       // CASO 2: Assinaturas SaaS (Glass/Barber)
       else if (externalRef.startsWith('glass|') || externalRef.startsWith('barber|')) {
-        await PaymentProcessor.handlePaymentConfirmed({
-          externalReference: externalRef,
-          value: payment.value,
-          paymentMethod: payment.billingType === 'PIX' ? 'Pix' : (payment.billingType === 'CREDIT_CARD' ? 'Cartão' : 'Boleto'),
-          bankId: 'Asaas',
-          metadata: payment
-        });
+        try {
+          await PaymentProcessor.handlePaymentConfirmed({
+            externalReference: externalRef,
+            value: payment.value,
+            paymentMethod: payment.billingType === 'PIX' ? 'Pix' : (payment.billingType === 'CREDIT_CARD' ? 'Cartão' : 'Boleto'),
+            bankId: 'Asaas',
+            metadata: payment
+          });
+        } catch (procErr: any) {
+          console.error('[ASAAS WEBHOOK] Erro no PaymentProcessor:', procErr.message);
+          // Retorna 200 mesmo com erro para Asaas não retentar em loop
+          return NextResponse.json({
+            received: true,
+            error: procErr.message,
+            debug: { event, extRef: externalRef, paymentId: payment.id, customerId: payment.customer }
+          });
+        }
       }
     }
 

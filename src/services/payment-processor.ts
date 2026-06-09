@@ -84,15 +84,30 @@ export class PaymentProcessor {
 
       console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} (Ciclo: ${cycle}) por ${daysToAdd} dias até ${nextExpiration.toISOString()}`);
 
-      const { error } = await glassSupabase
+      const updatePayload = {
+        ativa: true,
+        status_assinatura: 'ativa',
+        vencimento_assinatura: nextExpiration.toISOString().split('T')[0],
+        updated_at: new Date().toISOString()
+      };
+
+      let { error } = await glassSupabase
         .from('vidracarias')
-        .update({
-          ativa: true,
-          status_assinatura: 'ativa',
-          vencimento_assinatura: nextExpiration.toISOString().split('T')[0], // YYYY-MM-DD
-          updated_at: new Date().toISOString()
-        })
+        .update(updatePayload)
         .eq('id', tenantId);
+
+      if (error?.message?.includes("Could not find the 'vencimento_assinatura' column")) {
+        console.warn('[PAYMENT PROCESSOR] Coluna vencimento_assinatura ausente no Glass. Repetindo ativação sem esse campo.');
+
+        ({ error } = await glassSupabase
+          .from('vidracarias')
+          .update({
+            ativa: true,
+            status_assinatura: 'ativa',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', tenantId));
+      }
 
       if (error) {
         console.error(`[PAYMENT PROCESSOR] Erro ao atualizar vidracaria no Glass:`, error);

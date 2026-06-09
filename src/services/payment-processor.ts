@@ -31,16 +31,27 @@ export class PaymentProcessor {
 
     // 1. Registrar na Holding (system_finance_records)
     const holdingSupabase = createClient(supabaseUrl, supabaseServiceKey);
-    await holdingSupabase.from('system_finance_records').insert({
-      business_unit: saasType,
-      type: 'revenue',
-      value: payload.value,
-      description: `Assinatura SaaS ${saasType} - Tenant: ${tenantId}`,
-      payment_method: payload.paymentMethod,
-      bank_id: payload.bankId,
-      category: 'SaaS Revenue',
-      metadata: payload.metadata || {}
-    });
+    try {
+      const metadata = {
+        ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),
+        tenant_id: tenantId,
+        external_reference: payload.externalReference,
+      };
+
+      await holdingSupabase.from('system_finance_records').insert({
+        business_unit: saasType,
+        type: 'revenue',
+        value: payload.value,
+        description: `Assinatura SaaS ${saasType} - Tenant: ${tenantId}`,
+        payment_method: payload.paymentMethod,
+        bank_id: payload.bankId,
+        category: 'SaaS Revenue',
+        metadata,
+      });
+    } catch (financeErr: any) {
+      // Não deve impedir a ativação da assinatura por causa de falha no registro financeiro
+      console.error('[PAYMENT PROCESSOR] Erro ao registrar system_finance_records:', financeErr.message);
+    }
 
     // 2. Atualizar o SaaS correspondente
     if (saasType === 'glass') {

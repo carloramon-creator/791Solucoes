@@ -25,6 +25,11 @@ export async function proxy(request: NextRequest) {
     }
   );
 
+  // Rotas de API não precisam de autenticação (webhooks externos, etc.)
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    return supabaseResponse;
+  }
+
   // Renova a sessão (obrigatório)
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -49,7 +54,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Protege todas as rotas exceto assets estáticos
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Protege todas as rotas exceto assets estáticos e rotas de API
+    '/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

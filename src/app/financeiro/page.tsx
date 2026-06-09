@@ -24,8 +24,6 @@ import {
   Trash2,
   ExternalLink
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-
 interface FinanceRecord {
   id: string;
   type: 'revenue' | 'expense';
@@ -100,15 +98,18 @@ export default function FinanceiroPage() {
     setLoading(true);
     try {
       const [recordsRes, accountsRes] = await Promise.all([
-        supabase.from('system_finance_records').select('*').order('created_at', { ascending: false }),
-        supabase.from('system_bank_accounts').select('id, name, bank_name')
+        fetch('/api/system/finance-records', { cache: 'no-store' }),
+        fetch('/api/system/bank-accounts', { cache: 'no-store' })
       ]);
 
-      if (recordsRes.data) {
-        setRecords(recordsRes.data);
-        updateStats(recordsRes.data);
+      const recordsJson = await recordsRes.json();
+      const accountsJson = await accountsRes.json();
+
+      if (recordsJson.success) {
+        setRecords(recordsJson.records || []);
+        updateStats(recordsJson.records || []);
       }
-      if (accountsRes.data) setBankAccounts(accountsRes.data);
+      if (accountsJson.success) setBankAccounts(accountsJson.accounts || []);
 
       const catRes = await fetch('/api/system/categories');
       if (catRes.ok) {
@@ -167,9 +168,10 @@ export default function FinanceiroPage() {
     
     setSaving(true);
     try {
-      const { data, error } = await supabase
-        .from('system_finance_records')
-        .insert([{
+      const createRes = await fetch('/api/system/finance-records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           type: newRecord.type,
           description: newRecord.description,
           value: parseFloat(newRecord.value),
@@ -180,9 +182,12 @@ export default function FinanceiroPage() {
           created_at: new Date(newRecord.date).toISOString(),
           is_recurring: newRecord.is_recurring,
           recurring_period: newRecord.is_recurring ? newRecord.recurring_period : null
-        }]).select();
+        })
+      });
 
-      if (error) throw error;
+      const createJson = await createRes.json();
+      if (!createJson.success) throw new Error(createJson.error || 'Erro ao salvar lançamento');
+      const data = createJson.record ? [createJson.record] : [];
 
       // Se for receita e pediu Asaas, gera a cobrança
       if (newRecord.type === 'revenue' && newRecord.generateAsaas && data?.[0]) {
@@ -213,13 +218,15 @@ export default function FinanceiroPage() {
               const asaasData = await asaasRes.json();
               
               // Atualiza o registro com o link
-              const { error: updateError } = await supabase
-                .from('system_finance_records')
-                .update({ payment_link: asaasData.invoiceUrl })
-                .eq('id', record.id);
+              const updateRes = await fetch('/api/system/finance-records', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: record.id, payment_link: asaasData.invoiceUrl })
+              });
+              const updateJson = await updateRes.json();
 
-              if (updateError) {
-                alert(`Lançamento salvo, mas erro ao guardar o link: ${updateError.message}`);
+              if (!updateJson.success) {
+                alert(`Lançamento salvo, mas erro ao guardar o link: ${updateJson.error}`);
               } else {
                 alert(`Sucesso! Link Asaas gerado.`);
                 fetchData();
@@ -261,12 +268,9 @@ export default function FinanceiroPage() {
     if (!confirm('Tem certeza que deseja excluir este lançamento?')) return;
     
     try {
-      const { error } = await supabase
-        .from('system_finance_records')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/system/finance-records?id=${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Erro ao excluir');
       setRecords(records.filter(r => r.id !== id));
       updateStats(records.filter(r => r.id !== id));
     } catch (err: any) {

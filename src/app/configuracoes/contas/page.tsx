@@ -18,7 +18,6 @@ import {
   Calendar,
   Layers
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { ConfigTabs } from '@/components/ConfigTabs';
 
 interface BankCard {
@@ -87,16 +86,15 @@ export default function ContasBancariasPage() {
 
   useEffect(() => {
     async function loadAccounts() {
-      const { data: accData } = await supabase
-        .from('system_bank_accounts')
-        .select('*, cards:system_bank_cards(*)')
-        .order('name');
+      const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
+      const accJson = await accRes.json();
+      const accData: BankAccount[] = accJson.success ? accJson.accounts : [];
       
       if (accData) {
         setAccounts(accData);
         
         // Calcula Limite Total
-        const totalLimit = accData.reduce((acc, curr) => {
+        const totalLimit = accData.reduce((acc: number, curr: BankAccount) => {
           const cardLimit = curr.cards?.reduce((cAcc: number, cCurr: any) => cAcc + Number(cCurr.credit_limit), 0) || 0;
           return acc + cardLimit;
         }, 0);
@@ -106,13 +104,13 @@ export default function ContasBancariasPage() {
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
 
-        const { data: financeData } = await supabase
-          .from('system_finance_records')
-          .select('value')
-          .eq('type', 'expense')
-          .gte('created_at', startOfMonth.toISOString());
+        const financeRes = await fetch('/api/system/finance-records', { cache: 'no-store' });
+        const financeJson = await financeRes.json();
+        const financeData = (financeJson.success ? financeJson.records : []).filter((item: any) =>
+          item.type === 'expense' && item.created_at >= startOfMonth.toISOString()
+        );
 
-        const totalSpent = financeData?.reduce((acc, curr) => acc + Number(curr.value), 0) || 0;
+        const totalSpent = financeData?.reduce((acc: number, curr: any) => acc + Number(curr.value), 0) || 0;
 
         setTotals({ limit: totalLimit, spent: totalSpent });
       }
@@ -126,26 +124,25 @@ export default function ContasBancariasPage() {
     setSaving(true);
     try {
       if (editingAccount) {
-        // UPDATE
-        const { data, error } = await supabase
-          .from('system_bank_accounts')
-          .update(formData)
-          .eq('id', editingAccount.id)
-          .select();
-
-        if (error) throw error;
-        if (data) {
-          setAccounts(prev => prev.map(acc => acc.id === editingAccount.id ? { ...data[0], cards: acc.cards } : acc));
+        const res = await fetch('/api/system/bank-accounts', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editingAccount.id, ...formData })
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Erro ao atualizar conta');
+        if (json.account) {
+          setAccounts(prev => prev.map(acc => acc.id === editingAccount.id ? { ...json.account, cards: acc.cards } : acc));
         }
       } else {
-        // INSERT
-        const { data, error } = await supabase
-          .from('system_bank_accounts')
-          .insert([formData])
-          .select();
-
-        if (error) throw error;
-        if (data) setAccounts([...accounts, data[0]]);
+        const res = await fetch('/api/system/bank-accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Erro ao criar conta');
+        if (json.account) setAccounts([...accounts, json.account]);
       }
 
       setIsModalOpen(false);
@@ -172,12 +169,14 @@ export default function ContasBancariasPage() {
     if (!selectedAccountId) return;
     setSaving(true);
     try {
-      const { data, error } = await supabase
-        .from('system_bank_cards')
-        .insert([{ ...cardFormData, account_id: selectedAccountId }])
-        .select();
-
-      if (error) throw error;
+      const res = await fetch('/api/system/bank-cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...cardFormData, account_id: selectedAccountId })
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Erro ao salvar cartão');
+      const data = json.card ? [json.card] : [];
       
       if (data) {
         setAccounts(prev => prev.map(acc => 
@@ -205,12 +204,9 @@ export default function ContasBancariasPage() {
     if (!confirm('Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita.')) return;
     
     try {
-      const { error } = await supabase
-        .from('system_bank_accounts')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      const res = await fetch(`/api/system/bank-accounts?id=${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Erro ao excluir conta');
       setAccounts(prev => prev.filter(acc => acc.id !== id));
       setMenuOpenId(null);
     } catch (err: any) {

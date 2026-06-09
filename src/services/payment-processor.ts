@@ -1,6 +1,7 @@
 import { AsaasClient } from './asaas-service';
 import { InterAPIV2 } from './inter-service';
 import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 
 // Configurações globais
@@ -201,8 +202,8 @@ async function emitirNFeSaas({
   valor,
   ciclo,
 }: {
-  holdingSupabase: ReturnType<typeof createClient>;
-  glassSupabase: ReturnType<typeof createClient>;
+  holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
+  glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   vidracariaId: string;
   valor: number;
   ciclo: string;

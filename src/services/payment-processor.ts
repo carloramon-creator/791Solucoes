@@ -26,6 +26,7 @@ export class PaymentProcessor {
   }) {
     const parts = payload.externalReference.split('|');
     const [saasType, tenantId, , couponId] = parts;
+    const asaasPaymentId = payload?.metadata?.id || payload?.metadata?.payment?.id || null;
     
     console.log(`[PAYMENT PROCESSOR] Pagamento confirmado para ${saasType}: ${tenantId}${couponId ? ` (cupom: ${couponId})` : ''}`);
 
@@ -127,6 +128,7 @@ export class PaymentProcessor {
             vidracariaId: tenantId,
             valor: payload.value,
             ciclo: cycle,
+            asaasPaymentId,
           });
         } catch (nfErr: any) {
           // Não bloqueia o fluxo principal — registra erro para auditoria e loga
@@ -143,6 +145,7 @@ export class PaymentProcessor {
                 vidracaria_id: tenantId,
                 mes_ref: new Date().toISOString().slice(0, 7),
                 ciclo: cycle,
+                asaas_payment_id: asaasPaymentId,
                 origem: 'webhook_asaas',
                 step: 'emitirNFeSaas',
               },
@@ -232,26 +235,30 @@ async function emitirNFeSaas({
   vidracariaId,
   valor,
   ciclo,
+  asaasPaymentId,
 }: {
   holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   vidracariaId: string;
   valor: number;
   ciclo: string;
+  asaasPaymentId?: string | null;
 }) {
-  // Evita NF-e duplicada para o mesmo mês
-  const mesRef = new Date().toISOString().slice(0, 7); // "2026-06"
-  const { data: existing } = await holdingSupabase
-    .from('system_invoices')
-    .select('id')
-    .eq('metadata->>vidracaria_id', vidracariaId)
-    .eq('metadata->>mes_ref', mesRef)
-    .maybeSingle();
+  // Evita NF-e duplicada para o mesmo pagamento do Asaas (idempotência de webhook)
+  if (asaasPaymentId) {
+    const { data: existingByPaymentId } = await holdingSupabase
+      .from('system_invoices')
+      .select('id')
+      .eq('metadata->>asaas_payment_id', asaasPaymentId)
+      .maybeSingle();
 
-  if (existing) {
-    console.log(`[NF-e SAAS] NF-e já emitida para ${vidracariaId} em ${mesRef} — pulando.`);
-    return;
+    if (existingByPaymentId) {
+      console.log(`[NF-e SAAS] Pagamento ${asaasPaymentId} já processado — pulando.`);
+      return;
+    }
   }
+
+  const mesRef = new Date().toISOString().slice(0, 7); // "2026-06"
 
   // Busca dados da vidraçaria (Tomador)
   const { data: vidracaria, error: vErr } = await glassSupabase
@@ -346,6 +353,7 @@ async function emitirNFeSaas({
       vidracaria_id: vidracariaId,
       mes_ref: mesRef,
       ciclo,
+      asaas_payment_id: asaasPaymentId,
       xml: result.xml,
       origem: 'webhook_asaas',
     },

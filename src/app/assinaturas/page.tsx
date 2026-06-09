@@ -353,6 +353,8 @@ export default function AssinaturasPage() {
                   const extraWpp = Math.max(0, Number(tenant.limite_usuarios_whats || 0) - baseWpp);
                   valorTotal += extraWpp * Number(systemPlan?.system_limits?.extraDevicePrice || 0);
 
+                  const basicIds = systemPlan?.included_modules || [];
+
                   // Aplicar Desconto do Ciclo (Apenas uma vez!)
                   if (tenant.ciclo_pagamento === 'semiannual') {
                     const discount = Number(systemPlan?.discount_semestral || 5);
@@ -446,8 +448,8 @@ export default function AssinaturasPage() {
                             let valorTotal = systemPlan?.base_price || 0;
                             
                             // Opcionais
-                            const basicIds = systemPlan?.included_modules || [];
-                            const optionals = (tenant.modulos_ativos || []).filter(mId => !basicIds.includes(mId));
+                            const basicIdsLocal = systemPlan?.included_modules || [];
+                            const optionals = (tenant.modulos_ativos || []).filter(mId => !basicIdsLocal.includes(mId));
                             optionals.forEach(modId => {
                               valorTotal += (systemPlan?.optional_modules_pricing?.[modId] || 0);
                             });
@@ -478,7 +480,7 @@ export default function AssinaturasPage() {
                               .filter(m => {
                                 if (!m || m.parent_slug) return false;
                                 // Se o ID ou Slug do módulo estiver na lista da base, removemos da descrição
-                                return !basicIds.includes(m.id) && !basicIds.includes(m.slug || '');
+                                return !basicIdsLocal.includes(m.id) && !basicIdsLocal.includes(m.slug || '');
                               })
                               .map(m => m?.nome);
 

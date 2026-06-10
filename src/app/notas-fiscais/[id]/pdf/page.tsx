@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { Loader2, Printer, ArrowLeft } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
@@ -28,6 +27,7 @@ export default function InvoicePdfPage() {
   const [config, setConfig] = useState<any>(null);
   const [vidracaria, setVidracaria] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInvoice();
@@ -52,15 +52,19 @@ export default function InvoicePdfPage() {
 
   async function fetchInvoice() {
     try {
-      const { data, error } = await supabase
-        .from('system_invoices')
-        .select('*')
-        .eq('id', id)
-        .single();
-      if (error) throw error;
-      setInvoice(data);
+      setError(null);
+
+      const res = await fetch(`/api/system/invoices/${id}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success || !data.invoice) {
+        throw new Error(data.error || 'Nota não encontrada');
+      }
+
+      setInvoice(data.invoice);
     } catch (err) {
       console.error('Erro nota:', err);
+      setError((err as Error).message || 'Nota não encontrada');
     } finally {
       setLoading(false);
     }
@@ -115,7 +119,7 @@ export default function InvoicePdfPage() {
     </div>
   );
   
-  if (!invoice) return <div className="p-10 text-center">Nota não encontrada</div>;
+  if (error || !invoice) return <div className="p-10 text-center">{error || 'Nota não encontrada'}</div>;
 
   const codVerificacao = invoice.access_link?.split('/').pop() || 'AGUARDANDO';
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(invoice.access_link || '')}`;

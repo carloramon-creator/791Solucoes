@@ -93,12 +93,33 @@ export class IpmProvider implements NfseProvider {
         // Tentar vários padrões de tags que a IPM usa dependendo da cidade/versão
         const numeroNfseMatch = responseXml.match(/<(?:numero_nfse|numero_nota|numero)>(\d+)<\/(?:numero_nfse|numero_nota|numero)>/);
         const linkMatch = responseXml.match(/<(?:link_nfse|link_nota|link)>(.+?)<\/(?:link_nfse|link_nota|link)>/);
+        const responseLower = responseXml.toLowerCase();
+
+        // Alguns retornos vêm com HTTP 200, mas a mensagem da prefeitura indica rejeição.
+        if (responseLower.includes('erro') || responseLower.includes('rejeit')) {
+            return this.parseErrorResponse(responseXml);
+        }
+
+        const invoiceId = numeroNfseMatch ? numeroNfseMatch[1] : '';
+
+        // Sem número oficial da NFS-e, consideramos processamento pendente.
+        // Isso evita falso positivo de "autorizada" com invoice_number HOLD-...
+        if (!invoiceId) {
+            return {
+                success: true,
+                status: 'pending',
+                message: 'Prefeitura recebeu a solicitação, mas ainda não retornou número da NFS-e.',
+                invoiceId: numero.startsWith('HOLD') ? numero : '',
+                accessLink: linkMatch ? linkMatch[1] : '',
+                xml: responseXml,
+            };
+        }
 
         return {
             success: true,
             status: 'authorized',
             message: `NFS-e emitida com sucesso via IPM Fiscal`,
-            invoiceId: numeroNfseMatch ? numeroNfseMatch[1] : (numero.startsWith('HOLD') ? '' : numero),
+            invoiceId,
             accessLink: linkMatch ? linkMatch[1] : '',
             xml: responseXml
         };

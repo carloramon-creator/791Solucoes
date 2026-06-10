@@ -12,6 +12,31 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const glassUrl = process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!;
 const glassServiceKey = process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY!;
 
+function addCycleToDate(baseDate: Date, cycle: string) {
+  const nextDate = new Date(baseDate);
+
+  if (cycle === 'annual') {
+    nextDate.setFullYear(nextDate.getFullYear() + 1);
+    return nextDate;
+  }
+
+  if (cycle === 'semiannual') {
+    nextDate.setMonth(nextDate.getMonth() + 6);
+    return nextDate;
+  }
+
+  nextDate.setMonth(nextDate.getMonth() + 1);
+  return nextDate;
+}
+
+function resolveNextExpiration(currentExpiration: string | null | undefined, cycle: string) {
+  const today = new Date();
+  const parsedExpiration = currentExpiration ? new Date(`${currentExpiration}T00:00:00`) : null;
+
+  const baseDate = parsedExpiration && parsedExpiration > today ? parsedExpiration : today;
+  return addCycleToDate(baseDate, cycle);
+}
+
 export class PaymentProcessor {
   /**
    * Processa um pagamento confirmado (via Webhook)
@@ -74,20 +99,25 @@ export class PaymentProcessor {
       
       const glassSupabase = createClient(glassUrl, glassServiceKey);
       
-      // Lógica de validade baseada no ciclo real
-      let daysToAdd = 31;
-      if (cycle === 'annual') daysToAdd = 366;
-      else if (cycle === 'semiannual') daysToAdd = 185;
+      const { data: currentTenant, error: currentTenantError } = await glassSupabase
+        .from('vidracarias')
+        .select('id, vencimento_assinatura')
+        .eq('id', tenantId)
+        .single();
 
-      const nextExpiration = new Date();
-      nextExpiration.setDate(nextExpiration.getDate() + daysToAdd);
+      if (currentTenantError) {
+        console.warn('[PAYMENT PROCESSOR] Não foi possível ler o vencimento atual da vidraçaria:', currentTenantError.message);
+      }
 
-      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} (Ciclo: ${cycle}) por ${daysToAdd} dias até ${nextExpiration.toISOString()}`);
+      const nextExpiration = resolveNextExpiration(currentTenant?.vencimento_assinatura, cycle);
+
+      console.log(`[PAYMENT PROCESSOR] Ativando vidracaria ${tenantId} (Ciclo: ${cycle}) até ${nextExpiration.toISOString()}`);
 
       const updatePayload = {
         ativa: true,
         status_assinatura: 'ativa',
         vencimento_assinatura: nextExpiration.toISOString().split('T')[0],
+        ultimo_pagamento_em: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
@@ -104,6 +134,7 @@ export class PaymentProcessor {
           .update({
             ativa: true,
             status_assinatura: 'ativa',
+            ultimo_pagamento_em: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq('id', tenantId));

@@ -12,6 +12,11 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const glassUrl = process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!;
 const glassServiceKey = process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY!;
 
+function getLocalIsoTimestamp() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString();
+}
+
 function addCycleToDate(baseDate: Date, cycle: string) {
   const nextDate = new Date(baseDate);
 
@@ -385,7 +390,7 @@ async function emitirNFeSaas({
   const dpsData = {
     numero: `HOLD-${Date.now()}`,
     serie: '1',
-    dataEmissao: new Date().toISOString(),
+    dataEmissao: getLocalIsoTimestamp(),
     prestador: {
       cnpj: config.prestador_cnpj,
       razaoSocial: config.razao_social,

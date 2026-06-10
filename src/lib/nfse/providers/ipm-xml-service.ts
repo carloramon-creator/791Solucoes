@@ -18,6 +18,10 @@ export class IpmXmlService {
 
     public generateIpmXml(data: DPSData, tomCodigo: string = '8303', isTest: boolean = false): string {
         const isPessoaJuridica = !!data.tomador.cnpj;
+        const emissaoDate = new Date(data.dataEmissao);
+        const dataFatoGerador = Number.isNaN(emissaoDate.getTime())
+            ? data.dataEmissao.split('T')[0].split('-').reverse().join('/')
+            : emissaoDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
         // Converter códigos TOM para IBGE se necessário (São José SC)
         const prestadorCidade = tomCodigo === '8303' ? '4216602' : tomCodigo;
@@ -34,7 +38,7 @@ export class IpmXmlService {
                 identificador: data.numero,
                 nf: {
                     serie_nfse: data.serie,
-                    data_fato_gerador: data.dataEmissao.split('T')[0].split('-').reverse().join('/'),
+                    data_fato_gerador: dataFatoGerador,
                     valor_total: this.formatNumber(data.servico.valorServicos),
                     valor_desconto: '0,00',
                     valor_ir: '0,00',

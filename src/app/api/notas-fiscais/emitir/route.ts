@@ -4,6 +4,11 @@ import { getGlassClient } from '@/lib/glass-client';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { DPSData } from '@/lib/nfse/types';
 
+function getLocalIsoTimestamp() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString();
+}
+
 export async function POST(req: Request) {
   try {
     const { vidracaria_id, valor, descricao } = await req.json();
@@ -41,7 +46,7 @@ export async function POST(req: Request) {
     const dpsData: DPSData = {
       numero: `HOLD-${Date.now()}`,
       serie: '1',
-      dataEmissao: new Date().toISOString(),
+      dataEmissao: getLocalIsoTimestamp(),
       prestador: {
         cnpj: config.prestador_cnpj,
         razaoSocial: config.razao_social,

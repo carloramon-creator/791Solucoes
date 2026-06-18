@@ -4,18 +4,17 @@ import { useState, useEffect } from 'react';
 import { 
   Users, 
   Search, 
-  Filter, 
   CreditCard, 
-  Calendar, 
   CheckCircle2, 
   AlertCircle, 
-  Clock,
-  ExternalLink,
   RefreshCw,
-  MoreVertical,
   Building2,
   Settings,
   MessageCircle,
+  Smartphone,
+  TrendingUp,
+  X,
+  MessageSquare,
   ChevronDown,
   ChevronRight,
   Check,
@@ -54,14 +53,62 @@ interface Module {
   parent_slug?: string;
 }
 
-import { useParams, useRouter } from 'next/navigation';
+interface UsageTenantRow {
+  vidracariaId: string;
+  usage: {
+    registeredUsers: number;
+    activeUsers: number;
+    whatsappUsers: number;
+    sectors: number;
+    messagesSent: number;
+  };
+  limits: {
+    users: number;
+    whatsappUsers: number;
+    messages: number;
+  };
+  status: {
+    users: 'ok' | 'warning' | 'exceeded';
+    whatsappUsers: 'ok' | 'warning' | 'exceeded';
+    messages: 'ok' | 'warning' | 'exceeded';
+  };
+  overage: {
+    extraUsers: number;
+    extraWhatsappUsers: number;
+    extraMessages: number;
+    values: {
+      users: number;
+      whatsappUsers: number;
+      messages: number;
+      total: number;
+    };
+  };
+}
+
+interface UsageResponse {
+  messagesPeriodStart: string;
+  totals: {
+    tenants: number;
+    registeredUsers: number;
+    activeUsers: number;
+    whatsappUsers: number;
+    sectors: number;
+    messagesSent: number;
+    overageMonthly: number;
+    usersExceeded: number;
+    whatsappUsersExceeded: number;
+    messagesExceeded: number;
+  };
+  tenants: UsageTenantRow[];
+}
+
+import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Vidracaria[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sponsors, setSponsors] = useState<any[]>([]);
   const [sponsorMap, setSponsorMap] = useState<Record<string, string>>({});
   
   // Configuração de Módulos e Limites
@@ -74,6 +121,13 @@ export default function AssinaturasPage() {
   const [modalWppUsers, setModalWppUsers] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState('');
+  const [usageByTenant, setUsageByTenant] = useState<Record<string, UsageTenantRow>>({});
+  const [usageTotals, setUsageTotals] = useState<UsageResponse['totals'] | null>(null);
+  const [messagesPeriodStart, setMessagesPeriodStart] = useState('');
+  const [selectedUsage, setSelectedUsage] = useState<UsageTenantRow | null>(null);
+  const [selectedUsageTenant, setSelectedUsageTenant] = useState<Vidracaria | null>(null);
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -81,57 +135,91 @@ export default function AssinaturasPage() {
   const [emitData, setEmitData] = useState({ valor: '', descricao: '' });
   const [isEmitting, setIsEmitting] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const { data: vData, error: vError } = await supabaseGlass
-          .from('vidracarias')
-          .select('*')
-          .order('nome');
-        
-        if (vError) throw vError;
-        setTenants(vData || []);
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+  };
 
-        const { data: mData } = await supabaseGlass
-          .from('modules')
-          .select('*')
-          .order('ordem');
-        setModules(mData || []);
+  const getToneClasses = (status: 'ok' | 'warning' | 'exceeded') => {
+    if (status === 'exceeded') return 'border-red-200 bg-red-50 text-red-700';
+    if (status === 'warning') return 'border-amber-200 bg-amber-50 text-amber-700';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  };
 
-        const { data: pData } = await supabase
-          .from('system_plans')
-          .select('*')
-          .eq('sistema', '791glass')
-          .single();
-        if (pData) setSystemPlan(pData);
-        
-        // 4. Buscar Patrocinadores e Vínculos (Holding)
-        const { data: sData } = await supabase
-          .from('patrocinadores')
-          .select('id, nome');
-        setSponsors(sData || []);
+  async function fetchUsageSummary() {
+    setUsageLoading(true);
+    setUsageError('');
+    try {
+      const response = await fetch('/api/admin/subscription-usage', { cache: 'no-store' });
+      const payload = await response.json();
 
-        const { data: vDataHold } = await supabase
-          .from('vouchers')
-          .select('patrocinador_id, usado_por_vidracaria_id')
-          .not('usado_por_vidracaria_id', 'is', null);
-
-        // Criar mapa de VidracariaID -> Nome do Patrocinador
-        const map: Record<string, string> = {};
-        vDataHold?.forEach(v => {
-          const sponsor = sData?.find(s => s.id === v.patrocinador_id);
-          if (sponsor) map[v.usado_por_vidracaria_id] = sponsor.nome;
-        });
-        setSponsorMap(map);
-
-      } catch (err: any) {
-        console.error('Erro ao buscar dados:', err.message);
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Falha ao carregar consumo de assinatura');
       }
-    };
 
+      const mapped = (payload.tenants || []).reduce((acc: Record<string, UsageTenantRow>, item: UsageTenantRow) => {
+        acc[item.vidracariaId] = item;
+        return acc;
+      }, {});
+
+      setUsageByTenant(mapped);
+      setUsageTotals(payload.totals || null);
+      setMessagesPeriodStart(payload.messagesPeriodStart || '');
+    } catch (err: any) {
+      setUsageError(err?.message || 'Falha ao carregar consumo de assinatura');
+    } finally {
+      setUsageLoading(false);
+    }
+  }
+
+  async function fetchData() {
+    setLoading(true);
+    try {
+      const { data: vData, error: vError } = await supabaseGlass
+        .from('vidracarias')
+        .select('*')
+        .order('nome');
+
+      if (vError) throw vError;
+      setTenants(vData || []);
+
+      const { data: mData } = await supabaseGlass
+        .from('modules')
+        .select('*')
+        .order('ordem');
+      setModules(mData || []);
+
+      const { data: pData } = await supabase
+        .from('system_plans')
+        .select('*')
+        .eq('sistema', '791glass')
+        .single();
+      if (pData) setSystemPlan(pData);
+
+      const { data: sData } = await supabase
+        .from('patrocinadores')
+        .select('id, nome');
+
+      const { data: vDataHold } = await supabase
+        .from('vouchers')
+        .select('patrocinador_id, usado_por_vidracaria_id')
+        .not('usado_por_vidracaria_id', 'is', null);
+
+      const map: Record<string, string> = {};
+      vDataHold?.forEach(v => {
+        const sponsor = sData?.find(s => s.id === v.patrocinador_id);
+        if (sponsor) map[v.usado_por_vidracaria_id] = sponsor.nome;
+      });
+      setSponsorMap(map);
+
+      await fetchUsageSummary();
+    } catch (err: any) {
+      console.error('Erro ao buscar dados:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
     fetchData();
   }, []);
 
@@ -272,13 +360,47 @@ export default function AssinaturasPage() {
         </div>
         <div className="flex items-center gap-2">
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => fetchData()}
             className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
           >
-            <RefreshCw size={16} /> Sincronizar Agora
+            <RefreshCw size={16} className={loading || usageLoading ? 'animate-spin' : ''} /> Sincronizar Agora
           </button>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Clientes Monitorados</p>
+          <p className="mt-2 text-2xl font-black text-slate-800">{usageTotals?.tenants ?? tenants.length}</p>
+          <p className="text-[11px] text-slate-500 font-medium">Base total de vidraçarias</p>
+        </div>
+        <div className="bg-white border border-red-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-red-500">Excesso Sistema</p>
+          <p className="mt-2 text-2xl font-black text-red-700">{usageTotals?.usersExceeded ?? 0}</p>
+          <p className="text-[11px] text-red-600 font-medium">Acima do limite de usuários</p>
+        </div>
+        <div className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-600">Excesso WhatsApp</p>
+          <p className="mt-2 text-2xl font-black text-amber-700">{usageTotals?.whatsappUsersExceeded ?? 0}</p>
+          <p className="text-[11px] text-amber-700 font-medium">Acima do limite de usuários WPP</p>
+        </div>
+        <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Mensagens no Ciclo</p>
+          <p className="mt-2 text-2xl font-black text-blue-700">{usageTotals?.messagesSent ?? 0}</p>
+          <p className="text-[11px] text-blue-600 font-medium">Contagem desde o início do mês</p>
+        </div>
+        <div className="bg-white border border-[#3b597b]/25 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#3b597b]">Excesso Estimado</p>
+          <p className="mt-2 text-xl font-black text-[#2f4a66]">{formatCurrency(usageTotals?.overageMonthly || 0)}</p>
+          <p className="text-[11px] text-[#3b597b] font-medium">Potencial adicional mensal</p>
+        </div>
+      </div>
+
+      {usageError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 font-medium">
+          {usageError}
+        </div>
+      )}
 
       {/* Filtros e Busca */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center">
@@ -304,7 +426,7 @@ export default function AssinaturasPage() {
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest">Plano / Módulos</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Status</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Assinatura</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Usuários</th>
+                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Consumo</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-right pr-8">Ações</th>
               </tr>
             </thead>
@@ -324,6 +446,7 @@ export default function AssinaturasPage() {
                 </tr>
               ) : (
                 filteredTenants.map((tenant) => {
+                  const usage = usageByTenant[tenant.id];
                   // Cálculo do Valor Mensal usando combos (igual à página configurar)
                   const COMBOS = [
                     { id: 'financeiro', slugs: ['financeiro','contas-pagar','contas-receber','fluxo-caixa','agendamentos','bancos','cobrancas-boletos','lancamentos','contas-correntes','balancete','comissoes-a-pagar','conciliacao','dre','ia-financeira','integracoes','links-pagamento','plano-contas','formas-pagamento'] },
@@ -426,17 +549,42 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-4">
-                            <div className="flex flex-col items-center">
-                              <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">SIS</span>
-                              <span className="text-[13px] font-medium text-slate-700">{tenant.limite_usuarios}</span>
-                            </div>
-                            <div className="w-px h-6 bg-slate-100" />
-                            <div className="flex flex-col items-center">
-                              <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest leading-none mb-1">WPP</span>
-                              <span className="text-[13px] font-medium text-slate-700">{tenant.limite_usuarios_whats}</span>
-                            </div>
-                         </div>
+                        {usage ? (
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUsage(usage);
+                                setSelectedUsageTenant(tenant);
+                              }}
+                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
+                            >
+                              SIS {usage.usage.registeredUsers}/{usage.limits.users}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUsage(usage);
+                                setSelectedUsageTenant(tenant);
+                              }}
+                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
+                            >
+                              WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUsage(usage);
+                                setSelectedUsageTenant(tenant);
+                              }}
+                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
+                            >
+                              MSG {usage.usage.messagesSent}/{usage.limits.messages}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-center text-[11px] text-slate-400 font-medium">Sem consumo</div>
+                        )}
                       </td>
                     <td className="px-6 py-4 text-right pr-8">
                       <div className="flex justify-end gap-2">
@@ -585,6 +733,85 @@ export default function AssinaturasPage() {
                 {isEmitting ? <Loader2 size={16} className="animate-spin" /> : <FileCheck size={16} />}
                 {isEmitting ? 'Transmitindo...' : 'Emitir Agora'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedUsage && selectedUsageTenant && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/40">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monitoramento de Consumo</p>
+                <h3 className="text-xl font-black text-slate-800 mt-1">{selectedUsageTenant.nome}</h3>
+                <p className="text-[11px] text-slate-500 font-medium">Período de mensagens: {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedUsage(null);
+                  setSelectedUsageTenant(null);
+                }}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 transition"
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.users)}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><Users size={12} /> Sistema</p>
+                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.registeredUsers}/{selectedUsage.limits.users}</p>
+                  <p className="text-[11px] font-medium">Ativos: {selectedUsage.usage.activeUsers}</p>
+                </div>
+                <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.whatsappUsers)}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><Smartphone size={12} /> WhatsApp</p>
+                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.whatsappUsers}/{selectedUsage.limits.whatsappUsers}</p>
+                  <p className="text-[11px] font-medium">Setores: {selectedUsage.usage.sectors}</p>
+                </div>
+                <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.messages)}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><MessageSquare size={12} /> Mensagens</p>
+                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.messagesSent}/{selectedUsage.limits.messages}</p>
+                  <p className="text-[11px] font-medium">No ciclo atual</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center gap-1"><TrendingUp size={12} /> Estimativa de Excedentes</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span>Usuários extras ({selectedUsage.overage.extraUsers})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.users)}</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Usuários WhatsApp extras ({selectedUsage.overage.extraWhatsappUsers})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.whatsappUsers)}</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Mensagens extras ({selectedUsage.overage.extraMessages})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.messages)}</strong>
+                  </div>
+                  <div className="h-px bg-slate-200 my-2" />
+                  <div className="flex items-center justify-between text-base">
+                    <span className="font-black text-slate-800">Total adicional mensal</span>
+                    <span className="font-black text-[#3b597b]">{formatCurrency(selectedUsage.overage.values.total)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <button
+                  onClick={() => {
+                    setSelectedUsage(null);
+                    setSelectedUsageTenant(null);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-600 hover:bg-slate-100"
+                >
+                  Fechar Painel
+                </button>
+              </div>
             </div>
           </div>
         </div>

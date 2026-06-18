@@ -5,6 +5,40 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+type CheckoutItem = {
+  name: string;
+  quantity: number;
+  value: number;
+};
+
+function toNumber(value: unknown, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeItems(rawItems: any[], fallbackValue: number, fallbackDescription: string): CheckoutItem[] {
+  const normalized = (Array.isArray(rawItems) ? rawItems : [])
+    .map((item) => {
+      const quantity = Math.max(1, Math.trunc(toNumber(item?.quantity, 1)));
+      const value = toNumber(item?.value, toNumber(item?.amount, 0));
+      const name = String(item?.name || '').trim();
+      if (!name || value <= 0) return null;
+
+      return { name, quantity, value };
+    })
+    .filter(Boolean) as CheckoutItem[];
+
+  if (normalized.length > 0) return normalized;
+
+  return [
+    {
+      name: fallbackDescription,
+      quantity: 1,
+      value: fallbackValue,
+    },
+  ];
+}
+
 /**
  * ROTA DE ASSINATURA PREMIUM (VIDRAÇARIAS)
  */
@@ -25,6 +59,15 @@ export async function POST(req: Request) {
       cycle, 
       items 
     } = await req.json();
+
+    const basePlanValue = toNumber(planValue, 0);
+    const safeDescription = planDescription || `Assinatura SaaS 791glass - ${customerName}`;
+    const normalizedItems = normalizeItems(items, basePlanValue, safeDescription);
+    const itemsTotal = normalizedItems.reduce((sum, item) => sum + item.value * item.quantity, 0);
+    const effectiveTotal = itemsTotal > 0 ? itemsTotal : basePlanValue;
+    const detailedDescription = `${safeDescription} | ${normalizedItems
+      .map((item) => `${item.name} x${item.quantity}`)
+      .join(' | ')}`;
 
     console.log('[ASAAS API] Iniciando assinatura para:', customerEmail);
 
@@ -91,10 +134,10 @@ export async function POST(req: Request) {
       const result = await asaas.createSubscription({
         customer: customer.id,
         billingType: 'UNDEFINED',
-        value: parseFloat(planValue),
+        value: effectiveTotal,
         cycle: 'MONTHLY',
         nextDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-        description: planDescription || `Assinatura SaaS 791glass - ${customerName}`,
+        description: detailedDescription,
         externalReference: `glass|${tenantId}`
       });
 
@@ -108,12 +151,12 @@ export async function POST(req: Request) {
       }
     } else {
       // Link de Checkout Premium (Semestral/Anual)
-      const totalValue = parseFloat(planValue);
+      const totalValue = effectiveTotal;
       const installmentCount = cycle === 'YEARLY' ? 12 : 6;
       
       const checkoutPayload: any = {
           name: `791glass - Plano ${cycle === 'YEARLY' ? 'Anual' : 'Semestral'}`,
-          description: planDescription || `Plano ${cycle === 'YEARLY' ? 'Anual' : 'Semestral'} 791glass`,
+          description: detailedDescription,
           billingTypes: ['CREDIT_CARD'], 
           chargeTypes: ['DETACHED', 'INSTALLMENT'], 
           installment: {
@@ -130,12 +173,11 @@ export async function POST(req: Request) {
           }
       };
 
-      checkoutPayload.items = [{
-          name: `Plano ${cycle === 'YEARLY' ? 'Anual' : 'Semestral'} + Módulos`,
-          amount: totalValue,
-          value: totalValue,
-          quantity: 1
-      }];
+          checkoutPayload.items = normalizedItems.map((item) => ({
+            name: item.name,
+            value: item.value,
+            quantity: item.quantity
+          }));
 
       const checkout = await asaas.createCheckout(checkoutPayload);
       resultId = checkout.id;

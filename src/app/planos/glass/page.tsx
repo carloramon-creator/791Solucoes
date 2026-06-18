@@ -113,47 +113,31 @@ export default function PlanosGlassPage() {
 
       if (error) throw error;
 
+      let propagatedCount = 0;
       if (propagationMode !== 'none') {
-        if (propagationMode === 'default' && !loadedLimits) {
-          throw new Error('Nao foi possivel identificar os limites anteriores para aplicacao seletiva. Recarregue a pagina e tente novamente.');
+        const response = await fetch('/api/admin/propagate-glass-limits', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            mode: propagationMode,
+            loadedLimits,
+            nextLimits: {
+              usersIncluded: nextUsersIncluded,
+              wppDevices: nextWppDevices,
+              wppMessages: nextWppMessages,
+            },
+          }),
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Falha ao propagar limites para vidracarias.');
         }
 
-        const { data: tenants, error: tenantsError } = await supabaseGlass
-          .from('vidracarias')
-          .select('id, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp');
-
-        if (tenantsError) throw tenantsError;
-
-        for (const tenant of tenants || []) {
-          const tenantUsers = tenant.limite_usuarios == null ? null : Number(tenant.limite_usuarios);
-          const tenantWppDevices = tenant.limite_usuarios_whats == null ? null : Number(tenant.limite_usuarios_whats);
-          const tenantWppMessages = tenant.limite_mensagens_whatsapp == null ? null : Number(tenant.limite_mensagens_whatsapp);
-
-          const updatePayload: Record<string, number> = {};
-
-          if (propagationMode === 'all' || tenantUsers == null || tenantUsers === loadedLimits!.usersIncluded) {
-            updatePayload.limite_usuarios = nextUsersIncluded;
-          }
-
-          if (propagationMode === 'all' || tenantWppDevices == null || tenantWppDevices === loadedLimits!.wppDevices) {
-            updatePayload.limite_usuarios_whats = nextWppDevices;
-          }
-
-          if (propagationMode === 'all' || tenantWppMessages == null || tenantWppMessages === loadedLimits!.wppMessages) {
-            updatePayload.limite_mensagens_whatsapp = nextWppMessages;
-          }
-
-          if (Object.keys(updatePayload).length === 0) continue;
-
-          const { error: syncError } = await supabaseGlass
-            .from('vidracarias')
-            .update(updatePayload)
-            .eq('id', tenant.id);
-
-          if (syncError) {
-            throw syncError;
-          }
-        }
+        propagatedCount = Number(payload?.updated || 0);
       }
 
       setLoadedLimits({
@@ -169,7 +153,11 @@ export default function PlanosGlassPage() {
             ? 'vidracarias padrao foram atualizadas'
             : 'todas as vidracarias foram atualizadas';
 
-      alert(`✅ Plano salvo com sucesso! (${propagationLabel})`);
+      const details = propagationMode === 'none'
+        ? propagationLabel
+        : `${propagationLabel} (${propagatedCount} vidracaria(s) atualizada(s))`;
+
+      alert(`✅ Plano salvo com sucesso! (${details})`);
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
       alert(`❌ Erro ao salvar: ${err.message}`);

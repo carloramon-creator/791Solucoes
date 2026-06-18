@@ -56,6 +56,11 @@ export default function PlanosGlassPage() {
     wppMessages: '',
     extraMessagePrice: ''
   });
+  const [loadedLimits, setLoadedLimits] = useState<{
+    usersIncluded: number;
+    wppDevices: number;
+    wppMessages: number;
+  } | null>(null);
 
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [selectedBasicModules, setSelectedBasicModules] = useState<string[]>([]);
@@ -74,6 +79,9 @@ export default function PlanosGlassPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    const nextUsersIncluded = Number(limits.usersIncluded || 0);
+    const nextWppDevices = Number(limits.wppDevices || 0);
+    const nextWppMessages = Number(limits.wppMessages || 0);
     
     const payload = {
       name: '791glass', 
@@ -84,6 +92,9 @@ export default function PlanosGlassPage() {
       ), 
       system_limits: {
         ...limits,
+        usersIncluded: nextUsersIncluded,
+        wppDevices: nextWppDevices,
+        wppMessages: nextWppMessages,
         extraUserPrice: parseCurrency(limits.extraUserPrice),
         extraDevicePrice: parseCurrency(limits.extraDevicePrice),
         extraMessagePrice: parseCurrency(limits.extraMessagePrice)
@@ -100,6 +111,53 @@ export default function PlanosGlassPage() {
         }, { onConflict: 'sistema' });
 
       if (error) throw error;
+
+      if (loadedLimits) {
+        const { data: tenants, error: tenantsError } = await supabaseGlass
+          .from('vidracarias')
+          .select('id, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp');
+
+        if (tenantsError) throw tenantsError;
+
+        const syncPromises = (tenants || []).map((tenant: any) => {
+          const tenantUsers = tenant.limite_usuarios == null ? null : Number(tenant.limite_usuarios);
+          const tenantWppDevices = tenant.limite_usuarios_whats == null ? null : Number(tenant.limite_usuarios_whats);
+          const tenantWppMessages = tenant.limite_mensagens_whatsapp == null ? null : Number(tenant.limite_mensagens_whatsapp);
+
+          const updatePayload: Record<string, number> = {};
+
+          if (tenantUsers == null || tenantUsers === loadedLimits.usersIncluded) {
+            updatePayload.limite_usuarios = nextUsersIncluded;
+          }
+
+          if (tenantWppDevices == null || tenantWppDevices === loadedLimits.wppDevices) {
+            updatePayload.limite_usuarios_whats = nextWppDevices;
+          }
+
+          if (tenantWppMessages == null || tenantWppMessages === loadedLimits.wppMessages) {
+            updatePayload.limite_mensagens_whatsapp = nextWppMessages;
+          }
+
+          if (Object.keys(updatePayload).length === 0) return null;
+
+          return supabaseGlass
+            .from('vidracarias')
+            .update(updatePayload)
+            .eq('id', tenant.id);
+        }).filter(Boolean) as Promise<any>[];
+
+        if (syncPromises.length > 0) {
+          const results = await Promise.all(syncPromises);
+          const syncError = results.find((result: any) => result?.error)?.error;
+          if (syncError) throw syncError;
+        }
+      }
+
+      setLoadedLimits({
+        usersIncluded: nextUsersIncluded,
+        wppDevices: nextWppDevices,
+        wppMessages: nextWppMessages,
+      });
       alert("✅ Planos por Módulo salvos com sucesso!");
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
@@ -171,12 +229,22 @@ export default function PlanosGlassPage() {
           setBundlePrices(prev => ({ ...prev, ...formattedBundles }));
           
           if (planData.system_limits) {
+            const usersIncluded = Number(planData.system_limits.usersIncluded || 0);
+            const wppDevices = Number(planData.system_limits.wppDevices || 0);
+            const wppMessages = Number(planData.system_limits.wppMessages || 0);
+
+            setLoadedLimits({
+              usersIncluded,
+              wppDevices,
+              wppMessages,
+            });
+
             setLimits({
-              usersIncluded: String(planData.system_limits.usersIncluded || ''),
+              usersIncluded: String(usersIncluded || ''),
               extraUserPrice: formatCurrency(String(Number(planData.system_limits.extraUserPrice || 0) * 100)),
-              wppDevices: String(planData.system_limits.wppDevices || ''),
+              wppDevices: String(wppDevices || ''),
               extraDevicePrice: formatCurrency(String(Number(planData.system_limits.extraDevicePrice || 0) * 100)),
-              wppMessages: String(planData.system_limits.wppMessages || ''),
+              wppMessages: String(wppMessages || ''),
               extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100))
             });
           }

@@ -124,6 +124,9 @@ export async function GET() {
     });
 
     const systemLimits = (planConfig as any)?.system_limits || {};
+    const defaultUsersLimit = toNumber(systemLimits.usersIncluded, 10);
+    const defaultWhatsappUsersLimit = toNumber(systemLimits.wppDevices, 1);
+    const defaultMessagesLimit = toNumber(systemLimits.wppMessages, 1000);
     const extraUserPrice = toNumber(systemLimits.extraUserPrice, 0);
     const extraDevicePrice = toNumber(systemLimits.extraDevicePrice, 0);
     const extraMessagePrice = toNumber(systemLimits.extraMessagePrice, toNumber(systemLimits.wppMessagesPrice, 0));
@@ -137,9 +140,15 @@ export async function GET() {
       const sectorsCount = sectorsByTenant.get(tenantId) || 0;
       const messagesSent = messagesByTenant.get(tenantId) || 0;
 
-      const usersLimit = toNumber(tenant.limite_usuarios, 0);
-      const whatsappUsersLimit = toNumber(tenant.limite_usuarios_whats, 0);
-      const messagesLimit = toNumber(tenant.limite_mensagens_whatsapp, 0);
+      const usersLimit = tenant.limite_usuarios == null
+        ? defaultUsersLimit
+        : toNumber(tenant.limite_usuarios, defaultUsersLimit);
+      const whatsappUsersLimit = tenant.limite_usuarios_whats == null
+        ? defaultWhatsappUsersLimit
+        : toNumber(tenant.limite_usuarios_whats, defaultWhatsappUsersLimit);
+      const messagesLimit = tenant.limite_mensagens_whatsapp == null
+        ? defaultMessagesLimit
+        : toNumber(tenant.limite_mensagens_whatsapp, defaultMessagesLimit);
 
       const extraUsers = Math.max(0, registeredUsers - usersLimit);
       const extraWhatsappUsers = Math.max(0, whatsappUsers - whatsappUsersLimit);

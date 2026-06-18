@@ -193,11 +193,10 @@ export class PaymentProcessor {
 
         if (!error) {
           try {
-            await scheduleOverageChargeForNextCycle({
+            await scheduleMonthlyOverageChargeForTenant({
               holdingSupabase,
               glassSupabase,
               tenantId,
-              dueDate: nextExpiration,
             });
           } catch (overageErr: any) {
             console.error(`[PAYMENT PROCESSOR] Erro ao lançar excedente automático para ${tenantId}:`, overageErr.message);
@@ -307,18 +306,34 @@ function getPreviousMonthWindow(now = new Date()) {
   };
 }
 
-async function scheduleOverageChargeForNextCycle({
+function getOverageDueDateFromRefMonth(refMonth: string) {
+  const [yearStr, monthStr] = refMonth.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+    const fallback = new Date();
+    fallback.setDate(5);
+    fallback.setHours(0, 0, 0, 0);
+    return fallback;
+  }
+
+  // refMonth referencia o mes de consumo; vencimento fixo no dia 5 do mes seguinte.
+  const dueDate = new Date(year, month, 5, 0, 0, 0, 0);
+  return dueDate;
+}
+
+export async function scheduleMonthlyOverageChargeForTenant({
   holdingSupabase,
   glassSupabase,
   tenantId,
-  dueDate,
 }: {
   holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   tenantId: string;
-  dueDate: Date;
 }) {
   const { refMonth, startIso, endIso } = getPreviousMonthWindow();
+  const dueDate = getOverageDueDateFromRefMonth(refMonth);
 
   const { data: existingOverage } = await holdingSupabase
     .from('system_finance_records')
@@ -329,7 +344,7 @@ async function scheduleOverageChargeForNextCycle({
     .maybeSingle();
 
   if (existingOverage?.id) {
-    return;
+    return { created: false, reason: 'already_exists' as const };
   }
 
   const [
@@ -413,7 +428,7 @@ async function scheduleOverageChargeForNextCycle({
   const totalOverage = values.users + values.whatsappUsers + values.messages;
 
   if (totalOverage <= 0) {
-    return;
+    return { created: false, reason: 'no_overage' as const };
   }
 
   const itemLabels: string[] = [];
@@ -483,7 +498,7 @@ async function scheduleOverageChargeForNextCycle({
         },
       })
       .eq('id', overageRecord.id);
-    return;
+    return { created: true, reason: 'manual_required' as const, recordId: overageRecord.id };
   }
 
   const asaas = new AsaasClient({ apiKey: asaasApiKey, environment: asaasEnv });
@@ -535,6 +550,8 @@ async function scheduleOverageChargeForNextCycle({
       })
       .eq('id', overageRecord.id);
   }
+
+  return { created: true, reason: 'created' as const, recordId: overageRecord.id };
 }
 
 async function persistInvoiceFailure({

@@ -61,6 +61,7 @@ export default function PlanosGlassPage() {
     wppDevices: number;
     wppMessages: number;
   } | null>(null);
+  const [propagationMode, setPropagationMode] = useState<'none' | 'default' | 'all'>('none');
 
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [selectedBasicModules, setSelectedBasicModules] = useState<string[]>([]);
@@ -112,7 +113,11 @@ export default function PlanosGlassPage() {
 
       if (error) throw error;
 
-      if (loadedLimits) {
+      if (propagationMode !== 'none') {
+        if (propagationMode === 'default' && !loadedLimits) {
+          throw new Error('Nao foi possivel identificar os limites anteriores para aplicacao seletiva. Recarregue a pagina e tente novamente.');
+        }
+
         const { data: tenants, error: tenantsError } = await supabaseGlass
           .from('vidracarias')
           .select('id, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp');
@@ -126,15 +131,15 @@ export default function PlanosGlassPage() {
 
           const updatePayload: Record<string, number> = {};
 
-          if (tenantUsers == null || tenantUsers === loadedLimits.usersIncluded) {
+          if (propagationMode === 'all' || tenantUsers == null || tenantUsers === loadedLimits!.usersIncluded) {
             updatePayload.limite_usuarios = nextUsersIncluded;
           }
 
-          if (tenantWppDevices == null || tenantWppDevices === loadedLimits.wppDevices) {
+          if (propagationMode === 'all' || tenantWppDevices == null || tenantWppDevices === loadedLimits!.wppDevices) {
             updatePayload.limite_usuarios_whats = nextWppDevices;
           }
 
-          if (tenantWppMessages == null || tenantWppMessages === loadedLimits.wppMessages) {
+          if (propagationMode === 'all' || tenantWppMessages == null || tenantWppMessages === loadedLimits!.wppMessages) {
             updatePayload.limite_mensagens_whatsapp = nextWppMessages;
           }
 
@@ -156,7 +161,15 @@ export default function PlanosGlassPage() {
         wppDevices: nextWppDevices,
         wppMessages: nextWppMessages,
       });
-      alert("✅ Planos por Módulo salvos com sucesso!");
+
+      const propagationLabel =
+        propagationMode === 'none'
+          ? 'somente para novas vidracarias'
+          : propagationMode === 'default'
+            ? 'vidracarias padrao foram atualizadas'
+            : 'todas as vidracarias foram atualizadas';
+
+      alert(`✅ Plano salvo com sucesso! (${propagationLabel})`);
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
       alert(`❌ Erro ao salvar: ${err.message}`);
@@ -308,6 +321,18 @@ export default function PlanosGlassPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2 bg-white border border-slate-200 rounded-md px-3 h-[40px] shadow-sm">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Aplicacao</label>
+            <select
+              value={propagationMode}
+              onChange={(e) => setPropagationMode(e.target.value as 'none' | 'default' | 'all')}
+              className="bg-transparent text-[12px] font-semibold text-slate-700 focus:outline-none"
+            >
+              <option value="none">Somente novas vidracarias</option>
+              <option value="default">Atualizar vidracarias padrao</option>
+              <option value="all">Atualizar todas as vidracarias</option>
+            </select>
+          </div>
           <Link href="/" className="px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-md text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2 shadow-sm">
             <ArrowLeft size={16} /> Voltar
           </Link>
@@ -320,6 +345,19 @@ export default function PlanosGlassPage() {
             {saving ? 'Salvando...' : 'Salvar Configurações'}
           </button>
         </div>
+      </div>
+
+      <div className="md:hidden bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+        <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Aplicacao ao salvar</label>
+        <select
+          value={propagationMode}
+          onChange={(e) => setPropagationMode(e.target.value as 'none' | 'default' | 'all')}
+          className="w-full bg-white border border-slate-300 rounded-md h-[40px] px-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+        >
+          <option value="none">Somente novas vidracarias</option>
+          <option value="default">Atualizar vidracarias padrao</option>
+          <option value="all">Atualizar todas as vidracarias</option>
+        </select>
       </div>
 
       {errorMsg && (

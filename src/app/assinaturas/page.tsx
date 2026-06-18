@@ -557,7 +557,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
+                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
                             >
                               SIS {usage.usage.registeredUsers}/{usage.limits.users}
                             </button>
@@ -567,7 +567,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
+                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
                             >
                               WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
                             </button>
@@ -577,7 +577,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
+                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
                             >
                               MSG {usage.usage.messagesSent}/{usage.limits.messages}
                             </button>

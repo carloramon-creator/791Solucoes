@@ -191,6 +191,19 @@ export class PaymentProcessor {
 
       }
 
+        if (!error) {
+          try {
+            await scheduleOverageChargeForNextCycle({
+              holdingSupabase,
+              glassSupabase,
+              tenantId,
+              dueDate: nextExpiration,
+            });
+          } catch (overageErr: any) {
+            console.error(`[PAYMENT PROCESSOR] Erro ao lançar excedente automático para ${tenantId}:`, overageErr.message);
+          }
+        }
+
       // Emitir NF-e automaticamente após confirmar o pagamento
       try {
         await emitirNFeSaas({
@@ -278,6 +291,249 @@ export class PaymentProcessor {
   static async createInterPix(customerData: any, amount: number) {
     // Lógica para criar Pix/Boleto no Inter
     // ...
+  }
+}
+
+function getPreviousMonthWindow(now = new Date()) {
+  const currentStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const previousStart = new Date(currentStart);
+  previousStart.setMonth(previousStart.getMonth() - 1);
+
+  const refMonth = `${previousStart.getFullYear()}-${String(previousStart.getMonth() + 1).padStart(2, '0')}`;
+  return {
+    refMonth,
+    startIso: previousStart.toISOString(),
+    endIso: currentStart.toISOString(),
+  };
+}
+
+async function scheduleOverageChargeForNextCycle({
+  holdingSupabase,
+  glassSupabase,
+  tenantId,
+  dueDate,
+}: {
+  holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
+  glassSupabase: SupabaseClient<any, 'public', any, any, any>;
+  tenantId: string;
+  dueDate: Date;
+}) {
+  const { refMonth, startIso, endIso } = getPreviousMonthWindow();
+
+  const { data: existingOverage } = await holdingSupabase
+    .from('system_finance_records')
+    .select('id')
+    .eq('metadata->>tenant_id', tenantId)
+    .eq('metadata->>kind', 'overage')
+    .eq('metadata->>ref_month', refMonth)
+    .maybeSingle();
+
+  if (existingOverage?.id) {
+    return;
+  }
+
+  const [
+    { data: tenant, error: tenantErr },
+    { data: planConfig, error: planErr },
+    { count: registeredUsers, error: usersErr },
+    { data: sectorsData, error: sectorsErr },
+    { count: messagesSent, error: messagesErr },
+  ] = await Promise.all([
+    glassSupabase
+      .from('vidracarias')
+      .select('id, nome, email, cnpj, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp')
+      .eq('id', tenantId)
+      .single(),
+    holdingSupabase
+      .from('system_plans')
+      .select('system_limits')
+      .eq('sistema', '791glass')
+      .single(),
+    glassSupabase
+      .from('user_profiles')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('vidracaria_id', tenantId),
+    glassSupabase
+      .from('whatsapp_sectors')
+      .select('id')
+      .eq('vidracaria_id', tenantId),
+    glassSupabase
+      .from('whatsapp_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('vidracaria_id', tenantId)
+      .in('sender_type', ['user', 'system'])
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+  ]);
+
+  const firstError = tenantErr || planErr || usersErr || sectorsErr || messagesErr;
+  if (firstError) {
+    throw new Error(firstError.message);
+  }
+
+  const sectorIds = (sectorsData || []).map((row: any) => row.id).filter(Boolean);
+  let whatsappUsers = 0;
+
+  if (sectorIds.length > 0) {
+    const { data: sectorUsers, error: sectorUsersErr } = await glassSupabase
+      .from('whatsapp_sector_users')
+      .select('user_id')
+      .in('sector_id', sectorIds);
+
+    if (sectorUsersErr) {
+      throw new Error(sectorUsersErr.message);
+    }
+
+    whatsappUsers = new Set((sectorUsers || []).map((row: any) => row.user_id).filter(Boolean)).size;
+  }
+
+  const limits = {
+    users: Number(tenant?.limite_usuarios || 0),
+    whatsappUsers: Number(tenant?.limite_usuarios_whats || 0),
+    messages: Number(tenant?.limite_mensagens_whatsapp || 0),
+  };
+
+  const prices = {
+    extraUserPrice: Number((planConfig as any)?.system_limits?.extraUserPrice || 0),
+    extraDevicePrice: Number((planConfig as any)?.system_limits?.extraDevicePrice || 0),
+    extraMessagePrice: Number((planConfig as any)?.system_limits?.extraMessagePrice || (planConfig as any)?.system_limits?.wppMessagesPrice || 0),
+  };
+
+  const extras = {
+    users: Math.max(0, Number(registeredUsers || 0) - limits.users),
+    whatsappUsers: Math.max(0, whatsappUsers - limits.whatsappUsers),
+    messages: Math.max(0, Number(messagesSent || 0) - limits.messages),
+  };
+
+  const values = {
+    users: extras.users * prices.extraUserPrice,
+    whatsappUsers: extras.whatsappUsers * prices.extraDevicePrice,
+    messages: extras.messages * prices.extraMessagePrice,
+  };
+  const totalOverage = values.users + values.whatsappUsers + values.messages;
+
+  if (totalOverage <= 0) {
+    return;
+  }
+
+  const itemLabels: string[] = [];
+  if (extras.users > 0) itemLabels.push(`Usuários extras (${extras.users})`);
+  if (extras.whatsappUsers > 0) itemLabels.push(`Usuários WhatsApp extras (${extras.whatsappUsers})`);
+  if (extras.messages > 0) itemLabels.push(`Mensagens extras (${extras.messages})`);
+
+  const description = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
+
+  const baseMetadata = {
+    tenant_id: tenantId,
+    kind: 'overage',
+    ref_month: refMonth,
+    period_start: startIso,
+    period_end: endIso,
+    limits,
+    extras,
+    prices,
+    values: {
+      ...values,
+      total: totalOverage,
+    },
+    due_date: dueDate.toISOString().split('T')[0],
+  };
+
+  const { data: overageRecord, error: overageInsertErr } = await holdingSupabase
+    .from('system_finance_records')
+    .insert({
+      business_unit: 'glass',
+      type: 'revenue',
+      status: 'pending',
+      value: totalOverage,
+      description,
+      payment_method: 'Asaas',
+      bank_id: 'Asaas',
+      category: 'SaaS Overage',
+      metadata: baseMetadata,
+    })
+    .select('id')
+    .single();
+
+  if (overageInsertErr || !overageRecord?.id) {
+    throw new Error(overageInsertErr?.message || 'Falha ao criar lançamento de excedente');
+  }
+
+  const tenantDocument = String(tenant?.cnpj || '').replace(/\D/g, '');
+  const tenantEmail = String(tenant?.email || '').trim();
+
+  const { data: financeApiData } = await holdingSupabase
+    .from('system_settings')
+    .select('value')
+    .eq('id', 'finance_api')
+    .single();
+
+  const financeApiConfig = (financeApiData?.value || {}) as any;
+  const asaasApiKey = financeApiConfig.asaasApiKey;
+  const asaasEnv = financeApiConfig.asaasEnv || 'sandbox';
+
+  if (!asaasApiKey || !tenantDocument) {
+    await holdingSupabase
+      .from('system_finance_records')
+      .update({
+        metadata: {
+          ...baseMetadata,
+          charge_status: 'manual_required',
+          charge_reason: !asaasApiKey ? 'asaas_not_configured' : 'missing_tenant_document',
+        },
+      })
+      .eq('id', overageRecord.id);
+    return;
+  }
+
+  const asaas = new AsaasClient({ apiKey: asaasApiKey, environment: asaasEnv });
+
+  const effectiveEmail = tenantEmail && tenantEmail.includes('@')
+    ? tenantEmail
+    : `financeiro+${tenantId}@791solucoes.com.br`;
+
+  let customer = await asaas.getCustomerByEmail(effectiveEmail);
+  if (!customer) {
+    customer = await asaas.createCustomer({
+      name: tenant?.nome || `Cliente ${tenantId}`,
+      email: effectiveEmail,
+      cpfCnpj: tenantDocument,
+      notificationDisabled: false,
+    });
+  }
+
+  try {
+    const payment = await asaas.createPayment({
+      customer: customer.id,
+      billingType: 'UNDEFINED',
+      value: Number(totalOverage.toFixed(2)),
+      dueDate: dueDate.toISOString().split('T')[0],
+      description,
+      externalReference: `finance_record|${overageRecord.id}`,
+    });
+
+    await holdingSupabase
+      .from('system_finance_records')
+      .update({
+        metadata: {
+          ...baseMetadata,
+          charge_status: 'created',
+          asaas_payment_id: payment?.id || null,
+          invoice_url: payment?.invoiceUrl || null,
+        },
+      })
+      .eq('id', overageRecord.id);
+  } catch (chargeErr: any) {
+    await holdingSupabase
+      .from('system_finance_records')
+      .update({
+        metadata: {
+          ...baseMetadata,
+          charge_status: 'charge_error',
+          charge_error: chargeErr?.message || 'Falha ao gerar cobrança no Asaas',
+        },
+      })
+      .eq('id', overageRecord.id);
   }
 }
 

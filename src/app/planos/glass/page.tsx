@@ -119,7 +119,7 @@ export default function PlanosGlassPage() {
 
         if (tenantsError) throw tenantsError;
 
-        const syncPromises = (tenants || []).map((tenant: any) => {
+        for (const tenant of tenants || []) {
           const tenantUsers = tenant.limite_usuarios == null ? null : Number(tenant.limite_usuarios);
           const tenantWppDevices = tenant.limite_usuarios_whats == null ? null : Number(tenant.limite_usuarios_whats);
           const tenantWppMessages = tenant.limite_mensagens_whatsapp == null ? null : Number(tenant.limite_mensagens_whatsapp);
@@ -138,18 +138,16 @@ export default function PlanosGlassPage() {
             updatePayload.limite_mensagens_whatsapp = nextWppMessages;
           }
 
-          if (Object.keys(updatePayload).length === 0) return null;
+          if (Object.keys(updatePayload).length === 0) continue;
 
-          return supabaseGlass
+          const { error: syncError } = await supabaseGlass
             .from('vidracarias')
             .update(updatePayload)
             .eq('id', tenant.id);
-        }).filter(Boolean) as Promise<any>[];
 
-        if (syncPromises.length > 0) {
-          const results = await Promise.all(syncPromises);
-          const syncError = results.find((result: any) => result?.error)?.error;
-          if (syncError) throw syncError;
+          if (syncError) {
+            throw syncError;
+          }
         }
       }
 

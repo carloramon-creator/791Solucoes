@@ -56,10 +56,22 @@ export default function SponsorPortal() {
   const [loading, setLoading] = useState(true);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
+  // States para Solicitar Cotas
+  const [isQuotasModalOpen, setIsQuotasModalOpen] = useState(false);
+  const [quotasAmount, setQuotasAmount] = useState(5);
+  const [quotasCycle, setQuotasCycle] = useState('MONTHLY');
+  const [requestingQuotas, setRequestingQuotas] = useState(false);
+
   async function fetchPortalData() {
     if (!id) return;
     setLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+      
       // 1. Buscar os detalhes do patrocinador pela API existente
       const res = await fetch(`/api/sponsors/${id}/details`);
       const details = await res.json();
@@ -112,6 +124,32 @@ Para ativar o patrocínio:
 3. Pronto! Seu plano básico de vidraçaria será liberado sem custos.`;
 
     return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+  };
+
+  const handleRequestQuotas = async () => {
+    setRequestingQuotas(true);
+    try {
+      const res = await fetch('/api/payments/asaas/create-extra-quotas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sponsorId: id,
+          quantity: quotasAmount,
+          cycle: quotasCycle
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.invoiceUrl) {
+        window.open(data.invoiceUrl, '_blank');
+        setIsQuotasModalOpen(false);
+      } else {
+        alert('Erro ao gerar cobrança: ' + data.error);
+      }
+    } catch (err) {
+      alert('Erro ao solicitar cotas.');
+    } finally {
+      setRequestingQuotas(false);
+    }
   };
 
   if (loading) {
@@ -266,39 +304,39 @@ Para ativar o patrocínio:
                     {tokens.length > 0 ? (
                       tokens.map((t, idx) => (
                         <tr key={t.id} className={`transition-colors ${t.usado ? 'bg-emerald-50/5 hover:bg-emerald-50/10' : 'hover:bg-slate-50/50'}`}>
-                          <td className="px-5 py-4">
-                            <span className="text-[10px] font-black text-slate-400">#{idx + 1}</span>
+                          <td className="px-4 py-1.5">
+                            <span className="text-[9px] font-black text-slate-400">#{idx + 1}</span>
                           </td>
-                          <td className="px-5 py-4">
-                            <span className="text-[11px] font-bold text-slate-700 font-mono tracking-tight bg-slate-100 px-2 py-1 rounded">
+                          <td className="px-4 py-1.5">
+                            <span className="text-[10px] font-bold text-slate-700 font-mono tracking-tight bg-slate-100 px-2 py-0.5 rounded">
                               {t.codigo}
                             </span>
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-4 py-1.5">
                             {t.vidracaria_nome ? (
                               <div className="flex items-center gap-2">
                                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                                 <div className="flex flex-col">
                                   <span className="text-[11px] font-bold text-slate-700">{t.vidracaria_nome}</span>
                                   {t.vidracaria_email && (
-                                    <span className="text-[9px] text-slate-400">{t.vidracaria_email}</span>
+                                    <span className="text-[8px] text-slate-400">{t.vidracaria_email}</span>
                                   )}
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-[10px] text-slate-300 italic">Disponível para parceiro</span>
+                              <span className="text-[9px] text-slate-300 italic">Disponível para parceiro</span>
                             )}
                           </td>
-                          <td className="px-5 py-4 text-center">
+                          <td className="px-4 py-1.5 text-center">
                             {t.data_ativacao ? (
-                              <span className="text-[10px] font-bold text-slate-500">
+                              <span className="text-[9px] font-bold text-slate-500">
                                 {new Date(t.data_ativacao).toLocaleDateString('pt-BR')}
                               </span>
                             ) : (
-                              <span className="text-[10px] text-slate-300">—</span>
+                              <span className="text-[9px] text-slate-300">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-4 py-1.5">
                             <div className="flex items-center justify-center gap-1.5">
                               {t.usado ? (
                                 <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full">
@@ -399,20 +437,66 @@ Para ativar o patrocínio:
               <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
                 Você pode expandir seu plano de patrocínio a qualquer momento para gerar mais cotas de tokens. Entre em contato com o suporte da Holding.
               </p>
-              <a
-                href="https://wa.me/5548999999999?text=Olá,%20gostaria%20de%20solicitar%20mais%20cotas%20de%20licença%20para%20o%20patrocinador"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                onClick={() => setIsQuotasModalOpen(true)}
                 className="w-full bg-[#3b597b] hover:bg-[#2e4762] text-white py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm mt-2"
               >
-                Solicitar Cotas
-              </a>
+                Solicitar Mais Cotas
+              </button>
             </div>
 
           </div>
         </div>
 
       </div>
+
+      {isQuotasModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsQuotasModalOpen(false)} />
+          <div className="relative bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-[#1e293b] px-6 py-4 text-white flex justify-between items-center">
+              <h3 className="font-bold">Solicitar Mais Cotas</h3>
+              <button onClick={() => setIsQuotasModalOpen(false)} className="text-slate-400 hover:text-white"><LogOut size={16} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Quantidade de Cotas (Tokens)</label>
+                <input 
+                  type="number" min="1" 
+                  value={quotasAmount} onChange={(e) => setQuotasAmount(parseInt(e.target.value) || 1)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase">Ciclo de Pagamento</label>
+                <select 
+                  value={quotasCycle} onChange={(e) => setQuotasCycle(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+                >
+                  <option value="MONTHLY">Mensal</option>
+                  <option value="QUARTERLY">Trimestral (5% Desc)</option>
+                  <option value="SEMI_ANNUAL">Semestral (10% Desc)</option>
+                  <option value="YEARLY">Anual (15% Desc)</option>
+                </select>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal Estimado por Cota</span>
+                <span className="text-lg font-black text-[#3b597b]">
+                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((sponsor.valor_mensal / sponsor.total_licencas) || 0)}
+                </span>
+                <span className="text-[9px] text-slate-400 mt-1">O valor final pode ter descontos conforme o ciclo.</span>
+              </div>
+              <button 
+                disabled={requestingQuotas}
+                onClick={handleRequestQuotas}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow flex justify-center items-center"
+              >
+                {requestingQuotas ? <Loader2 size={20} className="animate-spin" /> : 'Confirmar e Pagar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

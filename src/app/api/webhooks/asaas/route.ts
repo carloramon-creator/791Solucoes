@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         
         const { data: financeRecord, error: financeRecordError } = await holdingService
           .from('system_finance_records')
-          .select('id, metadata')
+          .select('id, metadata, kind, tenant_id')
             .eq('id', recordId)
           .single();
 
@@ -129,13 +129,38 @@ export async function POST(req: Request) {
 
           if (error) console.error('[ASAAS WEBHOOK] Erro ao atualizar financeiro:', error.message);
 
-          if (String(existingMetadata.kind || '') === 'overage') {
+          if (String(existingMetadata.kind || '') === 'overage' || financeRecord.kind === 'overage') {
             await restoreWhatsappModulesIfNeeded({
               holdingSupabase: holdingService,
               glassSupabase: glassService,
               recordId,
               metadata: mergedMetadata,
             });
+          } else if (String(existingMetadata.kind || '') === 'extra_quotas' || financeRecord.kind === 'extra_quotas') {
+             const sponsorId = existingMetadata.sponsor_id || financeRecord.tenant_id;
+             const qty = Number(existingMetadata.quantity) || 0;
+             if (sponsorId && qty > 0) {
+                const { data: sponsor } = await holdingService.from('patrocinadores').select('total_licencas, nome').eq('id', sponsorId).single();
+                if (sponsor) {
+                    await holdingService.from('patrocinadores').update({
+                       total_licencas: Number(sponsor.total_licencas) + qty
+                    }).eq('id', sponsorId);
+                    
+                    const prefix = sponsor.nome.substring(0, 4).toUpperCase().replace(/\s/g, '');
+                    const vouchersToInsert = Array.from({ length: qty }, () => {
+                      const random = Math.floor(1000 + Math.random() * 9000);
+                      const suffix = Math.random().toString(36).substring(2, 4).toUpperCase();
+                      return {
+                        codigo: `791-${prefix}-${random}-${suffix}`,
+                        patrocinador_id: sponsorId
+                      };
+                    });
+                    if (vouchersToInsert.length > 0) {
+                      await holdingService.from('vouchers').insert(vouchersToInsert);
+                    }
+                    console.log(`[ASAAS WEBHOOK] ${qty} cotas extras criadas para patrocinador ${sponsorId}`);
+                }
+             }
           }
         }
       } 

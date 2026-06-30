@@ -179,22 +179,18 @@ export default function PatrocinadoresPage() {
         if (uError) throw uError;
         alert('✅ Patrocinador atualizado com sucesso!');
       } else {
-        // CRIAR NOVO PATROCINADOR
-        const { data: sponsor, error: sError } = await supabase
-          .from('patrocinadores')
-          .insert([{ ...payload, slug, status: 'ativo' }])
-          .select()
-          .single();
+        // CRIAR NOVO PATROCINADOR (via API para criar auth user e enviar email)
+        const resCreate = await fetch('/api/sponsors/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const createData = await resCreate.json();
+        
+        if (!createData.success) throw new Error(createData.error);
+        const sponsor = createData.sponsor;
+        const voucherCode = createData.voucherCode;
 
-        if (sError) throw sError;
-
-        // Gerar um token por cota de licença
-        const vouchersToInsert = Array.from({ length: formData.total_licencas }, () => ({
-          codigo: generateVoucherCode(formData.nome),
-          patrocinador_id: sponsor.id
-        }));
-        await supabase.from('vouchers').insert(vouchersToInsert);
-        const voucherCode = vouchersToInsert[0].codigo; // primeiro token para exibir no alerta
 
         // 🚀 DISPARAR COBRANÇA ASAAS AUTOMATICAMENTE
         try {

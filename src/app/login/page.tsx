@@ -31,6 +31,17 @@ export default function LoginPage() {
         return;
       }
 
+      // Verificar se é patrocinador
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user?.user_metadata?.role === 'sponsor') {
+         const { data: sp } = await supabase.from('patrocinadores').select('id').eq('email', email).single();
+         if (sp) {
+             router.push(`/portal/${sp.id}`);
+             router.refresh();
+             return;
+         }
+      }
+
       router.push('/');
       router.refresh();
     } catch (err) {

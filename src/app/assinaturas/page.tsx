@@ -219,11 +219,14 @@ export default function AssinaturasPage() {
     fetchData();
   }, []);
 
-  const getStatusBadge = (isAtiva: boolean) => {
-    if (isAtiva) {
-      return <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><CheckCircle2 size={10} /> ATIVA</span>;
+  const getStatusBadge = (tenant: Vidracaria) => {
+    if (tenant.status_assinatura === 'bloqueada') {
+      return <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> BLOQUEADA</span>;
     }
-    return <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> INATIVA</span>;
+    if (tenant.status_assinatura === 'inativa' || !tenant.ativa) {
+      return <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> INATIVA</span>;
+    }
+    return <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><CheckCircle2 size={10} /> ATIVA</span>;
   };
 
   const openModal = (vid: Vidracaria) => {
@@ -483,6 +486,18 @@ export default function AssinaturasPage() {
                     valorTotal = valorTotal * (1 - discount / 100);
                   }
 
+                  let diasRestantes: number | null = null;
+                  let vencimentoStr = '';
+                  if (tenant.vencimento_assinatura) {
+                    const [year, month, day] = tenant.vencimento_assinatura.split('T')[0].split('-');
+                    const vencimentoDate = new Date(Number(year), Number(month) - 1, Number(day));
+                    const today = new Date();
+                    today.setHours(0,0,0,0);
+                    const diffTime = vencimentoDate.getTime() - today.getTime();
+                    diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    vencimentoStr = vencimentoDate.toLocaleDateString('pt-BR');
+                  }
+
                   return (
                     <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors group">
                       <td className="px-6 py-4 text-slate-700">
@@ -531,17 +546,31 @@ export default function AssinaturasPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex justify-center">
-                          {getStatusBadge(tenant.ativa)}
+                          {getStatusBadge(tenant)}
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        <div className="flex flex-col items-center">
+                        <div className="flex flex-col items-center gap-1">
                           <span className="text-sm font-bold text-slate-700">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal)}
                           </span>
                           <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">
                             {tenant.ciclo_pagamento === 'annual' ? 'Anual' : tenant.ciclo_pagamento === 'semiannual' ? 'Semestral' : 'Mensal'}
                           </span>
+                          {tenant.vencimento_assinatura ? (
+                            <div className="mt-1 flex flex-col items-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
+                              <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
+                              <span className={`text-[9px] font-bold mt-0.5 ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                {diasRestantes! < 0 
+                                  ? `Atrasado ${Math.abs(diasRestantes!)} dias` 
+                                  : diasRestantes === 0 
+                                    ? 'Vence Hoje' 
+                                    : `Faltam ${diasRestantes} dias`}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[9px] text-slate-400 italic mt-1">Sem vencimento</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">

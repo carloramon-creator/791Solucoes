@@ -193,6 +193,12 @@ export default function PatrocinadoresPage() {
         const voucherCode = createData.voucherCode;
 
 
+        let inviteMsg = '';
+        if (createData.inviteLink) {
+          navigator.clipboard.writeText(createData.inviteLink);
+          inviteMsg = `\n\n🔑 LINK DE ACESSO/SENHA COPIADO PARA O CLIPBOARD! Envie ao patrocinador:\n${createData.inviteLink}`;
+        }
+
         // 🚀 DISPARAR COBRANÇA ASAAS AUTOMATICAMENTE
         try {
           const chargeRes = await fetch('/api/payments/asaas/create-sponsor-charge', {
@@ -218,14 +224,14 @@ export default function PatrocinadoresPage() {
           const chargeData = await chargeRes.json();
           
           if (chargeData.success) {
-            alert(`✅ Patrocinador criado!\n\nToken: ${voucherCode}\n\nLink de Pagamento Gerado: ${chargeData.invoiceUrl}`);
+            alert(`✅ Patrocinador criado!${inviteMsg}\n\nToken: ${voucherCode}\n\nLink de Pagamento Gerado: ${chargeData.invoiceUrl}`);
             window.open(chargeData.invoiceUrl, '_blank');
           } else {
-            alert(`✅ Patrocinador criado, mas houve um erro no Asaas: ${chargeData.error}`);
+            alert(`✅ Patrocinador criado, mas houve um erro no Asaas: ${chargeData.error}${inviteMsg}`);
           }
         } catch (asaasErr) {
           console.error('Erro Asaas:', asaasErr);
-          alert('✅ Patrocinador criado, mas falhou ao gerar link no Asaas.');
+          alert(`✅ Patrocinador criado, mas falhou ao gerar link no Asaas.${inviteMsg}`);
         }
       }
 
@@ -306,7 +312,7 @@ export default function PatrocinadoresPage() {
       alert("Este patrocinador não possui um e-mail cadastrado.");
       return;
     }
-    if (!confirm(`Deseja reenviar o e-mail de acesso para ${email}? O patrocinador receberá um link seguro para definir sua senha.`)) return;
+    if (!confirm(`Deseja gerar um link seguro de definição de senha para ${email}?`)) return;
     try {
       const res = await fetch('/api/sponsors/resend-invite', {
         method: 'POST',
@@ -315,9 +321,14 @@ export default function PatrocinadoresPage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
-      alert('✅ E-mail de acesso reenviado com sucesso!');
+      if (data.link) {
+        navigator.clipboard.writeText(data.link);
+        alert(`✅ Link de redefinição de senha / ativação copiado para a área de transferência!\n\nEnvie este link para o patrocinador:\n${data.link}`);
+      } else {
+        alert('✅ Link de acesso gerado com sucesso!');
+      }
     } catch (err: any) {
-      alert(`Erro ao reenviar e-mail: ${err.message}`);
+      alert(`Erro ao gerar link de acesso: ${err.message}`);
     }
   }
 

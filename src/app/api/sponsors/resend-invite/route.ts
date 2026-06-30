@@ -13,8 +13,13 @@ export async function POST(req: Request) {
     const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabaseAdmin = createClient(holdingUrl, holdingServiceKey);
 
-    // Enviar e-mail de recuperação de senha (funciona como reenvio de acesso)
-    const { error } = await supabaseAdmin.auth.resetPasswordForEmail(email);
+    // Gerar link de recuperação de senha (funciona como link de ativação/primeiro acesso)
+    const origin = req.headers.get('origin') || 'http://localhost:3000';
+    const { data: linkData, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      redirectTo: `${origin}/login`
+    });
 
     if (error) {
       throw error;
@@ -22,7 +27,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'E-mail de acesso reenviado com sucesso!'
+      link: linkData?.properties?.action_link || null,
+      message: 'Link de acesso gerado com sucesso!'
     });
 
   } catch (err: any) {

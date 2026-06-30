@@ -41,7 +41,33 @@ export async function POST(req: Request) {
       environment: environment as any
     });
 
-    // 3. Preparar valor
+    // 3. Verificar se o patrocinador tem customer_id no Asaas
+    let customerId = sponsor.asaas_customer_id;
+
+    if (!customerId) {
+      // Criar ou buscar customer no Asaas
+      const cleanCpfCnpj = (sponsor.cpf_cnpj || '').replace(/\D/g, '');
+      let customer = await asaas.getCustomerByCpfCnpj(cleanCpfCnpj);
+      if (!customer) {
+        customer = await asaas.getCustomerByEmail(sponsor.email);
+      }
+      if (!customer) {
+        customer = await asaas.createCustomer({
+          name: sponsor.nome,
+          email: sponsor.email,
+          cpfCnpj: cleanCpfCnpj,
+        });
+      }
+      customerId = customer.id;
+
+      // Salvar para próxima vez
+      await supabaseHolding
+        .from('patrocinadores')
+        .update({ asaas_customer_id: customerId })
+        .eq('id', sponsorId);
+    }
+
+    // 4. Preparar valor
     const valorMensalAtual = Number(sponsor.valor_mensal) || 0;
     const licencasAtuais = Number(sponsor.total_licencas) || 1;
     const valorPorCotaMensal = valorMensalAtual / licencasAtuais;
@@ -65,35 +91,23 @@ export async function POST(req: Request) {
     const discountAmount = subtotal * (discountPercent / 100);
     const totalValue = subtotal - discountAmount;
 
-    // 4. Criar registro pendente no BD
-    const { data: record, error: recordError } = await supabaseHolding
-      .from('system_finance_records')
-      .insert([{
-        status: 'pending',
-        value: totalValue,
-        description: `Cotas extras de Patrocínio: ${quantity} unidades`,
-        metadata: {
-           kind: 'extra_quotas',
-           sponsor_id: sponsorId,
-           quantity: Number(quantity),
-           cycle: cycle
-        }
-      }])
-      .select()
-      .single();
-
-    if (recordError) throw recordError;
+    if (totalValue <= 0) {
+      throw new Error('Valor total da cobrança é zero ou negativo. Verifique o valor mensal do patrocinador.');
+    }
 
     // 5. Criar o Checkout V3
+    // Codificamos sponsor_id e quantity diretamente no externalReference
+    const externalRef = `extra_quotas|${sponsorId}|${quantity}`;
+
     const checkoutPayload: any = {
-        customer: sponsor.asaas_customer_id,
+        customer: customerId,
         name: `Solicitação de Cotas Extras - ${sponsor.nome}`,
         description: `Adicional de ${quantity} cotas de patrocínio`,
         value: totalValue,
         billingTypes: ['BOLETO', 'CREDIT_CARD', 'PIX'],
         chargeType: 'DETACHED',
         dueDateLimitDays: 3,
-        externalReference: `finance_record|${record.id}`,
+        externalReference: externalRef,
         items: [{
             name: `Cotas Extras (${quantity}x)`,
             description: `Expansão do plano para suportar mais vidraçarias.`,
@@ -118,7 +132,8 @@ export async function POST(req: Request) {
     });
 
   } catch (err: any) {
-    console.error('[EXTRA QUOTAS ERROR]:', err.message);
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    const asaasError = err.response?.data?.errors?.[0]?.description || err.message;
+    console.error('[EXTRA QUOTAS ERROR]:', asaasError, err.response?.data);
+    return NextResponse.json({ success: false, error: asaasError }, { status: 500 });
   }
 }

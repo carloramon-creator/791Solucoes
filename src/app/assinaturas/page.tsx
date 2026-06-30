@@ -219,9 +219,14 @@ export default function AssinaturasPage() {
     fetchData();
   }, []);
 
-  const getStatusBadge = (tenant: Vidracaria) => {
-    if (tenant.status_assinatura === 'bloqueada') {
+  const getStatusBadge = (tenant: Vidracaria, diasRestantes: number | null) => {
+    // Se no banco já está bloqueada, ou se passou de 5 dias de atraso (regra de bloqueio automático do Glass)
+    if (tenant.status_assinatura === 'bloqueada' || (diasRestantes !== null && diasRestantes <= -5)) {
       return <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> BLOQUEADA</span>;
+    }
+    // Se está apenas atrasada, mas ainda não deu o prazo de bloqueio (opcional, vamos mostrar um alerta)
+    if (diasRestantes !== null && diasRestantes < 0) {
+      return <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> ATRASADA</span>;
     }
     if (tenant.status_assinatura === 'inativa' || !tenant.ativa) {
       return <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> INATIVA</span>;
@@ -422,7 +427,7 @@ export default function AssinaturasPage() {
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest">Vidraçaria / Cliente</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest">Plano / Módulos</th>
+                <th className="px-6 py-4 text-[11px] uppercase tracking-widest max-w-[200px]">Plano / Módulos</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Status</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Assinatura</th>
                 <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Consumo</th>
@@ -521,7 +526,7 @@ export default function AssinaturasPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 max-w-[200px]">
                         <div className="flex flex-col">
                            <div className="flex items-center gap-2 mb-1">
                               <span className="text-[12px] font-bold text-slate-700 uppercase tracking-tight">Plano Básico</span>
@@ -545,20 +550,10 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex justify-center">
-                          {getStatusBadge(tenant)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-sm font-bold text-slate-700">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal)}
-                          </span>
-                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">
-                            {tenant.ciclo_pagamento === 'annual' ? 'Anual' : tenant.ciclo_pagamento === 'semiannual' ? 'Semestral' : 'Mensal'}
-                          </span>
+                        <div className="flex flex-col items-center gap-2">
+                          {getStatusBadge(tenant, diasRestantes)}
                           {tenant.vencimento_assinatura ? (
-                            <div className="mt-1 flex flex-col items-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
+                            <div className="flex flex-col items-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
                               <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
                               <span className={`text-[9px] font-bold mt-0.5 ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
                                 {diasRestantes! < 0 
@@ -569,8 +564,18 @@ export default function AssinaturasPage() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-[9px] text-slate-400 italic mt-1">Sem vencimento</span>
+                            <span className="text-[9px] text-slate-400 italic">Sem vencimento</span>
                           )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-sm font-bold text-slate-700">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal)}
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">
+                            {tenant.ciclo_pagamento === 'annual' ? 'Anual' : tenant.ciclo_pagamento === 'semiannual' ? 'Semestral' : 'Mensal'}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4">

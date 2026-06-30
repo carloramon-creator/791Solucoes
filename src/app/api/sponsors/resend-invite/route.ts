@@ -13,9 +13,34 @@ export async function POST(req: Request) {
     const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabaseAdmin = createClient(holdingUrl, holdingServiceKey);
 
-    // Gerar link de recuperação de senha (funciona como link de ativação/primeiro acesso)
-    const origin = req.headers.get('origin') || 'http://localhost:3000';
-    const { data: linkData, error } = await supabaseAdmin.auth.admin.generateLink({
+    // 1. Verificar se o usuário já existe no Auth
+    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    const existingUser = listData?.users?.find(u => u.email === email);
+
+    if (!existingUser) {
+      // Criar o usuário pela primeira vez (patrocinador antigo, sem acesso ainda)
+      const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          role: 'sponsor'
+        }
+      });
+
+      if (createError) {
+        throw new Error(`Falha ao criar usuário no Auth: ${createError.message}`);
+      }
+
+      console.log(`[RESEND-INVITE] Usuário criado no Supabase Auth: ${newUser.user?.id}`);
+    } else {
+      console.log(`[RESEND-INVITE] Usuário já existe no Auth: ${existingUser.id}`);
+    }
+
+    // 2. Gerar link de ativação/recuperação de senha
+    const origin = req.headers.get('origin') || 'https://admin.791solucoes.com.br';
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'recovery',
       email,
       options: {
@@ -23,8 +48,8 @@ export async function POST(req: Request) {
       }
     });
 
-    if (error) {
-      throw error;
+    if (linkError) {
+      throw linkError;
     }
 
     return NextResponse.json({

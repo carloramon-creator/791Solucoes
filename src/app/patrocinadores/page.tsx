@@ -312,7 +312,7 @@ export default function PatrocinadoresPage() {
       alert("Este patrocinador não possui um e-mail cadastrado.");
       return;
     }
-    if (!confirm(`Deseja gerar um link seguro de definição de senha para ${email}?`)) return;
+    if (!confirm(`Enviar e-mail de acesso ao portal para ${email}?`)) return;
     try {
       const res = await fetch('/api/sponsors/resend-invite', {
         method: 'POST',
@@ -322,13 +322,15 @@ export default function PatrocinadoresPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       if (data.link) {
+        // Fallback: SMTP indisponível, copiar link manualmente
         navigator.clipboard.writeText(data.link);
-        alert(`✅ Link de redefinição de senha / ativação copiado para a área de transferência!\n\nEnvie este link para o patrocinador:\n${data.link}`);
+        alert(`⚠️ E-mail não pôde ser enviado automaticamente (SMTP indisponível). O link de acesso foi copiado para a área de transferência!\n\nEnvie este link ao patrocinador:\n${data.link}`);
       } else {
-        alert('✅ Link de acesso gerado com sucesso!');
+        // Sucesso: e-mail enviado automaticamente pelo Supabase
+        alert(`✅ E-mail de acesso enviado para ${email}!\n\nO patrocinador receberá um e-mail com o link para definir sua senha e acessar o portal.`);
       }
     } catch (err: any) {
-      alert(`Erro ao gerar link de acesso: ${err.message}`);
+      alert(`Erro ao enviar e-mail: ${err.message}`);
     }
   }
 

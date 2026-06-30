@@ -21,7 +21,9 @@ import {
   DollarSign,
   Pencil,
   Trash2,
-  Wallet
+  Wallet,
+  Share2,
+  ExternalLink
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -643,6 +645,17 @@ export default function PatrocinadoresPage() {
                           {chargingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
                         </button>
                         <button 
+                          onClick={() => {
+                            const link = `${window.location.origin}/portal/${p.id}`;
+                            navigator.clipboard.writeText(link);
+                            alert('✅ Link do portal do patrocinador copiado para a área de transferência!');
+                          }}
+                          className="p-3 hover:bg-slate-100 hover:text-blue-600 rounded-xl text-slate-400 transition-all" 
+                          title="Copiar Link do Portal do Patrocinador"
+                        >
+                          <Share2 size={18} />
+                        </button>
+                        <button 
                           onClick={() => handleEdit(p)}
                           className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" 
                           title="Editar Patrocinador"
@@ -906,7 +919,46 @@ export default function PatrocinadoresPage() {
 
               {/* COLUNA 2: Tokens & Detalhes (Sidebar) */}
               {editingSponsor ? (
-                <div className="flex-1 bg-slate-50 p-6 overflow-y-auto space-y-8">
+                <div className="flex-1 bg-slate-50 p-6 overflow-y-auto space-y-6">
+
+                  {/* Portal do Patrocinador Card */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-black text-xs uppercase tracking-tight text-slate-800 flex items-center gap-1.5">
+                        <Share2 size={14} className="text-blue-500" />
+                        Portal do Patrocinador
+                      </h5>
+                      <span className="text-[8px] font-black text-slate-400 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded">CONTA</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                      Compartilhe este link com o patrocinador para que ele faça login e acesse seu portal exclusivo.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}/portal/${editingSponsor.id}`;
+                          navigator.clipboard.writeText(link);
+                          alert('✅ Link do portal copiado!');
+                        }}
+                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 border border-slate-200"
+                      >
+                        <Copy size={11} />
+                        Copiar Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const link = `${window.location.origin}/portal/${editingSponsor.id}`;
+                          window.open(link, '_blank');
+                        }}
+                        className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 py-2 rounded-xl font-bold text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1 border border-blue-100"
+                      >
+                        <ExternalLink size={11} />
+                        Visualizar
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Tokens de Licença */}
                   <div>

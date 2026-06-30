@@ -32,15 +32,29 @@ export async function GET(
     // 2. Buscar nomes das vidraçarias no Glass (para enriquecer os tokens)
     let vidracariaMap: Record<string, { nome: string; email: string; valor_plano: number }> = {};
     if (usedVoucherIds.length > 0) {
-      const { data: glassTenants } = await glassSupabase
+      const { data: glassTenants, error: gtError } = await glassSupabase
         .from('vidracarias')
         .select('id, nome, email, valor_plano')
         .in('id', usedVoucherIds);
+
+      if (gtError) console.error('[GLASS TENANTS BY ID ERROR]', gtError);
 
       (glassTenants || []).forEach(v => {
         vidracariaMap[v.id] = { nome: v.nome, email: v.email, valor_plano: v.valor_plano };
       });
     }
+
+    // Fallback: buscar vidraçarias pelo patrocinador_id no Glass (caso voucher ID != vidraçaria ID)
+    const { data: glassPatrTenants } = await glassSupabase
+      .from('vidracarias')
+      .select('id, nome, email, valor_plano')
+      .eq('patrocinador_id', sponsorId);
+
+    (glassPatrTenants || []).forEach(v => {
+      if (!vidracariaMap[v.id]) {
+        vidracariaMap[v.id] = { nome: v.nome, email: v.email, valor_plano: v.valor_plano };
+      }
+    });
 
     // Montar lista de tokens enriquecida
     const tokens = (allVouchers || []).map(v => ({
@@ -50,7 +64,7 @@ export async function GET(
       data_ativacao: v.usado_em || null,
       created_at: v.created_at,
       vidracaria_id: v.usado_por_vidracaria_id || null,
-      vidracaria_nome: v.usado_por_vidracaria_id ? (vidracariaMap[v.usado_por_vidracaria_id]?.nome || 'Desconhecida') : null,
+      vidracaria_nome: v.usado_por_vidracaria_id ? (vidracariaMap[v.usado_por_vidracaria_id]?.nome || null) : null,
       vidracaria_email: v.usado_por_vidracaria_id ? (vidracariaMap[v.usado_por_vidracaria_id]?.email || null) : null,
     }));
 

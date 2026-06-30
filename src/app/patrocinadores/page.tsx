@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Users, 
   Plus, 
@@ -64,6 +65,7 @@ interface SponsorToken {
 
 export default function PatrocinadoresPage() {
   const supabase = createSupabaseBrowser();
+  const router = useRouter();
   const [patrocinadores, setPatrocinadores] = useState<Patrocinador[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -581,15 +583,15 @@ export default function PatrocinadoresPage() {
                     <td className="px-8 py-6">
                       <div className="w-full max-w-[160px]">
                         <div className="flex justify-between text-[10px] font-black text-slate-500 mb-2">
-                          <span className="text-emerald-600">{p.vouchers?.filter((v: any) => v.usado).length || 0} ATIVOS</span>
+                          <span className="text-emerald-600">{p.vouchers?.filter((v: any) => !!v.usado_por_vidracaria_id).length || 0} ATIVOS</span>
                           <span>{p.vouchers?.length || 0}/{p.total_licencas} TOKENS</span>
                         </div>
                         <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                           <div 
                             className={`h-full transition-all duration-1000 ${
-                              ((p.vouchers?.filter((v: any) => v.usado).length || 0) / p.total_licencas) > 0.9 ? 'bg-amber-500' : 'bg-blue-500'
+                              ((p.vouchers?.filter((v: any) => !!v.usado_por_vidracaria_id).length || 0) / p.total_licencas) > 0.9 ? 'bg-amber-500' : 'bg-blue-500'
                             }`}
-                            style={{ width: `${Math.min(((p.vouchers?.filter((v: any) => v.usado).length || 0) / p.total_licencas) * 100, 100)}%` }}
+                            style={{ width: `${Math.min(((p.vouchers?.filter((v: any) => !!v.usado_por_vidracaria_id).length || 0) / p.total_licencas) * 100, 100)}%` }}
                           />
                         </div>
                       </div>
@@ -940,7 +942,12 @@ export default function PatrocinadoresPage() {
                               <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-400" size={20} /></td></tr>
                             ) : currentTokens.length > 0 ? (
                               currentTokens.map((t, idx) => (
-                                <tr key={t.id} className={`transition-colors group ${t.usado ? 'hover:bg-emerald-50/30' : 'hover:bg-slate-50/80'}`}>
+                                <tr
+                                  key={t.id}
+                                  className={`transition-colors group ${!!t.vidracaria_id ? 'hover:bg-emerald-50/50' : 'hover:bg-slate-50/80'} ${!!t.vidracaria_id ? 'cursor-pointer' : ''}`}
+                                  onClick={() => !!t.vidracaria_id && router.push(`/assinaturas/${t.vidracaria_id}/configurar`)}
+                                  title={!!t.vidracaria_id ? `Abrir assinatura de ${t.vidracaria_nome}` : ''}
+                                >
                                   <td className="px-3 py-2">
                                     <span className="text-[10px] font-black text-slate-400">#{idx + 1}</span>
                                   </td>
@@ -952,7 +959,7 @@ export default function PatrocinadoresPage() {
                                       <div className="flex items-center gap-1.5">
                                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                                         <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold text-slate-700 leading-tight">{t.vidracaria_nome}</span>
+                                          <span className="text-[10px] font-bold text-slate-700 leading-tight group-hover:text-blue-600 transition-colors underline-offset-2 group-hover:underline">{t.vidracaria_nome}</span>
                                           {t.vidracaria_email && <span className="text-[9px] text-slate-400">{t.vidracaria_email}</span>}
                                         </div>
                                       </div>
@@ -970,7 +977,7 @@ export default function PatrocinadoresPage() {
                                     )}
                                   </td>
                                   <td className="px-3 py-2 text-center">
-                                    {t.usado ? (
+                                    {!!t.vidracaria_id ? (
                                       <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full">
                                         <CheckCircle2 size={9} /> ATIVO
                                       </span>

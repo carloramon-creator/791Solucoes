@@ -427,10 +427,9 @@ export default function AssinaturasPage() {
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidraçaria / Cliente</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano / Módulos</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano, Módulos & Consumo</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center">Consumo</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -527,16 +526,14 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-4 py-2">
-                        <div className="flex flex-col">
-                           <div className="flex items-center gap-2 mb-1">
-                              <span className="text-[12px] font-bold text-slate-700 uppercase tracking-tight">Plano Básico</span>
-                           </div>
-                           <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-col gap-2">
+                           {/* Linha 1: Plano e Módulos */}
+                           <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Plano Básico</span>
                               {(tenant.modulos_ativos || []).length > 0 ? tenant.modulos_ativos?.map(modRef => {
                                 const mod = modules.find(m => m.slug === modRef || m.id === modRef);
                                 if (!mod || mod.parent_slug) return null;
                                 
-                                // Se o módulo é básico, não mostramos como tag de adicional
                                 const isBasic = basicIds.includes(mod.id) || basicIds.includes(mod.slug || '');
                                 if (isBasic) return null;
 
@@ -545,17 +542,56 @@ export default function AssinaturasPage() {
                                     + {mod.nome}
                                   </span>
                                 );
-                              }) : <span className="text-[10px] text-slate-300 font-medium uppercase tracking-widest italic">Sem adicionais</span>}
+                              }) : <span className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem adicionais</span>}
                            </div>
+                           
+                           {/* Linha 2: Consumo */}
+                           {usage ? (
+                             <div className="flex flex-wrap items-center gap-2">
+                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mr-1">Consumo:</span>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
+                               >
+                                 SIS {usage.usage.registeredUsers}/{usage.limits.users}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
+                               >
+                                 WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
+                               >
+                                 MSG {usage.usage.messagesSent}/{usage.limits.messages}
+                               </button>
+                             </div>
+                           ) : (
+                             <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
+                           )}
                         </div>
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex flex-col items-center gap-2">
                           {getStatusBadge(tenant, diasRestantes)}
                           {tenant.vencimento_assinatura ? (
-                            <div className="flex flex-col items-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
-                              <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
-                              <span className={`text-[9px] font-bold mt-0.5 ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                            <div className="flex flex-col items-center justify-center text-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
+                              <span className="text-[9px] font-black uppercase text-slate-500 text-center">Vence {vencimentoStr}</span>
+                              <span className={`text-[9px] font-bold mt-0.5 text-center ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
                                 {diasRestantes! < 0 
                                   ? `Atrasado ${Math.abs(diasRestantes!)} dias` 
                                   : diasRestantes === 0 
@@ -564,7 +600,7 @@ export default function AssinaturasPage() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-[9px] text-slate-400 italic">Sem vencimento</span>
+                            <span className="text-[9px] text-slate-400 italic text-center">Sem vencimento</span>
                           )}
                         </div>
                       </td>
@@ -578,44 +614,7 @@ export default function AssinaturasPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-2">
-                        {usage ? (
-                          <div className="space-y-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedUsage(usage);
-                                setSelectedUsageTenant(tenant);
-                              }}
-                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
-                            >
-                              SIS {usage.usage.registeredUsers}/{usage.limits.users}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedUsage(usage);
-                                setSelectedUsageTenant(tenant);
-                              }}
-                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
-                            >
-                              WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedUsage(usage);
-                                setSelectedUsageTenant(tenant);
-                              }}
-                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
-                            >
-                              MSG {usage.usage.messagesSent}/{usage.limits.messages}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="text-center text-[11px] text-slate-400 font-medium">Sem consumo</div>
-                        )}
-                      </td>
+
                     <td className="px-4 py-2 text-right whitespace-nowrap">
                       <div className="flex justify-end gap-2">
                         <button 

@@ -23,7 +23,8 @@ import {
   Trash2,
   Wallet,
   Share2,
-  ExternalLink
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 

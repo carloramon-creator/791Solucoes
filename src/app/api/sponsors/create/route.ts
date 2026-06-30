@@ -9,58 +9,74 @@ export async function POST(req: Request) {
     const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabaseAdmin = createClient(holdingUrl, holdingServiceKey);
 
-    // 1. Criar Usuário via Supabase Auth
-    // Para evitar erros de SMTP embutido do Supabase, criamos o usuário e geramos o link de definição de senha (recovery) manualmente.
+    const origin = 'https://admin.791solucoes.com.br';
     let authId = null;
     let inviteLink = null;
-    
-    // Senha aleatória temporária segura
-    const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
 
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: payload.email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: {
-        role: 'sponsor',
-        name: payload.nome
-      }
-    });
-
-    if (authError) {
-      if (authError.message.includes('already exists') || authError.message.includes('already registered') || authError.message.includes('already been invited')) {
-        console.log(`Usuário ${payload.email} já existe no Auth.`);
-        // Procurar o id caso já exista
-        const { data: searchUser } = await supabaseAdmin.auth.admin.listUsers();
-        const existing = searchUser.users.find(u => u.email === payload.email);
-        if (existing) authId = existing.id;
-      } else {
-         throw authError;
-      }
-    } else {
-      authId = authData?.user?.id;
-      console.log(`[SUPABASE] Usuário de autenticação criado para ${payload.email}`);
-    }
-
-    // Gerar link de recuperação de senha (funciona como link de ativação/primeiro acesso)
+    // 1. Convidar Usuário via Supabase Auth (Envia e-mail automático via SMTP)
     try {
-      const origin = req.headers.get('origin') || 'http://localhost:3000';
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
+      console.log(`[SPONSOR CREATE] Enviando convite para ${payload.email}...`);
+      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+        payload.email,
+        {
+          redirectTo: `${origin}/login`,
+          data: {
+            role: 'sponsor',
+            name: payload.nome
+          }
+        }
+      );
+
+      if (inviteError) throw inviteError;
+      
+      authId = inviteData?.user?.id;
+      console.log(`[SPONSOR CREATE] Convite enviado via SMTP com ID: ${authId}`);
+    } catch (err: any) {
+      console.warn('[SPONSOR CREATE] Falha no convite direto (SMTP/Geral), usando fallback de criação manual:', err.message);
+
+      // Fallback: Criar usuário manualmente sem e-mail e gerar link para copiar
+      const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
+      const { data: authData, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: payload.email,
-        options: {
-          redirectTo: `${origin}/login`
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {
+          role: 'sponsor',
+          name: payload.nome
         }
       });
 
-      if (!linkError && linkData?.properties?.action_link) {
-        inviteLink = linkData.properties.action_link;
+      if (createError) {
+        if (createError.message.includes('already')) {
+          const { data: searchUser } = await supabaseAdmin.auth.admin.listUsers();
+          const existing = searchUser.users.find(u => u.email === payload.email);
+          if (existing) authId = existing.id;
+        } else {
+          throw createError;
+        }
+      } else {
+        authId = authData?.user?.id;
       }
-    } catch (linkErr) {
-      console.error('Erro ao gerar link de convite:', linkErr);
+
+      // Gerar o link de recuperação manualmente para copiar
+      try {
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email: payload.email,
+          options: {
+            redirectTo: `${origin}/login`
+          }
+        });
+
+        if (!linkError && linkData?.properties?.action_link) {
+          inviteLink = linkData.properties.action_link;
+        }
+      } catch (linkErr) {
+        console.error('Erro ao gerar link de fallback:', linkErr);
+      }
     }
 
-    // 2. Inserir Patrocinador
+    // 2. Inserir Patrocinador no Banco
     const slug = payload.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
     const sponsorToInsert: any = {
@@ -97,7 +113,9 @@ export async function POST(req: Request) {
       sponsor,
       voucherCode: vouchersToInsert.length > 0 ? vouchersToInsert[0].codigo : null,
       inviteLink,
-      message: 'Patrocinador criado e link de ativação gerado!'
+      message: inviteLink 
+        ? 'Patrocinador criado! Copie o link abaixo para enviar manualmente.'
+        : 'Patrocinador criado e e-mail de acesso enviado com sucesso!'
     });
 
   } catch (err: any) {

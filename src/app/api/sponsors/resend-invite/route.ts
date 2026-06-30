@@ -19,56 +19,81 @@ export async function POST(req: Request) {
     const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
     const existingUser = listData?.users?.find(u => u.email === email);
 
-    if (!existingUser) {
-      // Criar usuário primeiro para garantir que existe
-      const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
-      const { error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: { role: 'sponsor' }
-      });
-      if (createError && !createError.message.includes('already')) {
-        throw new Error(`Falha ao criar usuário: ${createError.message}`);
-      }
-      console.log(`[RESEND-INVITE] Usuário criado para ${email}`);
-    } else {
-      console.log(`[RESEND-INVITE] Usuário já existe: ${existingUser.id}`);
-    }
-
-    // Gerar link de ativação/recuperação de senha com a URL de produção
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: {
+    if (existingUser) {
+      // Caso 1: Usuário já existe -> Enviar e-mail de redefinição de senha (recuperação) via Supabase SMTP
+      console.log(`[RESEND-INVITE] Usuário já existe (${existingUser.id}). Enviando e-mail de recuperação...`);
+      
+      const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
         redirectTo: `${PRODUCTION_URL}/login`
-      }
-    });
-
-    if (linkError) throw linkError;
-
-    const link = linkData?.properties?.action_link || null;
-    console.log(`[RESEND-INVITE] Link gerado para ${email}: ${link}`);
-
-    // Tentar enviar via inviteUserByEmail (usa SMTP configurado no Supabase)
-    try {
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${PRODUCTION_URL}/login`,
-        data: { role: 'sponsor' }
       });
-      // Se chegou aqui, o email foi enviado com sucesso
+
+      if (resetError) {
+        console.error('[RESEND-INVITE] Erro ao enviar resetPasswordForEmail:', resetError.message);
+        
+        // Fallback: gerar link manualmente se o SMTP falhar
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email,
+          options: { redirectTo: `${PRODUCTION_URL}/login` }
+        });
+
+        if (linkError) throw linkError;
+
+        return NextResponse.json({
+          success: true,
+          link: linkData?.properties?.action_link || null,
+          message: 'SMTP indisponível. Copie o link abaixo para enviar manualmente.'
+        });
+      }
+
       return NextResponse.json({
         success: true,
         link: null,
-        message: `E-mail de acesso enviado com sucesso para ${email}!`
+        message: `✅ E-mail de redefinição de senha enviado com sucesso para ${email}!`
       });
-    } catch (smtpErr: any) {
-      // SMTP falhou — retornar o link para o admin enviar manualmente
-      console.warn('[RESEND-INVITE] SMTP falhou:', smtpErr.message);
+
+    } else {
+      // Caso 2: Usuário não existe -> Enviar convite (cria o usuário + envia e-mail) via Supabase SMTP
+      console.log(`[RESEND-INVITE] Usuário não existe. Enviando convite para ${email}...`);
+
+      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${PRODUCTION_URL}/login`,
+        data: { role: 'sponsor' }
+      });
+
+      if (inviteError) {
+        console.error('[RESEND-INVITE] Erro ao enviar convite por e-mail:', inviteError.message);
+
+        // Fallback: criar usuário e gerar link manualmente
+        const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
+        const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password: tempPassword,
+          email_confirm: true,
+          user_metadata: { role: 'sponsor' }
+        });
+
+        if (createError && !createError.message.includes('already')) throw createError;
+
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email,
+          options: { redirectTo: `${PRODUCTION_URL}/login` }
+        });
+
+        if (linkError) throw linkError;
+
+        return NextResponse.json({
+          success: true,
+          link: linkData?.properties?.action_link || null,
+          message: 'SMTP indisponível. Copie o link abaixo para enviar manualmente.'
+        });
+      }
+
       return NextResponse.json({
         success: true,
-        link,
-        message: 'SMTP indisponível. Use o link abaixo para enviar manualmente ao patrocinador.'
+        link: null,
+        message: `✅ Convite enviado com sucesso para ${email}!`
       });
     }
 

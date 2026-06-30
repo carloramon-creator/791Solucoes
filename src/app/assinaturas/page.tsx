@@ -452,7 +452,7 @@ export default function AssinaturasPage() {
                     { id: 'fiscal',    slugs: ['fiscal','notas-fiscais','notas-fiscais-configuracoes','nf-lista','aliquotas'] },
                   ];
 
-                  let valorTotal = Number(systemPlan?.base_price || 0);
+                  let valorTotal = sponsorMap[tenant.id] ? 0 : Number(systemPlan?.base_price || 0);
                   const ativosSet = new Set(tenant.modulos_ativos || []);
 
                   COMBOS.forEach(combo => {
@@ -514,7 +514,7 @@ export default function AssinaturasPage() {
                            <div className="flex flex-wrap gap-1">
                               {(tenant.modulos_ativos || []).length > 0 ? tenant.modulos_ativos?.map(modRef => {
                                 const mod = modules.find(m => m.slug === modRef || m.id === modRef);
-                                if (!mod || mod.parent_slug === 'configuracoes') return null;
+                                if (!mod || mod.parent_slug) return null;
                                 
                                 // Se o módulo é básico, não mostramos como tag de adicional
                                 const isBasic = basicIds.includes(mod.id) || basicIds.includes(mod.slug || '');
@@ -589,7 +589,7 @@ export default function AssinaturasPage() {
                             setVidracariaToEmit(tenant);
                             
                             // Cálculo dinâmico do valor baseado no plano e módulos
-                            let valorTotal = systemPlan?.base_price || 0;
+                            let valorTotal = sponsorMap[tenant.id] ? 0 : Number(systemPlan?.base_price || 0);
                             
                             // Opcionais
                             const basicIdsLocal = systemPlan?.included_modules || [];
@@ -631,7 +631,7 @@ export default function AssinaturasPage() {
                             // Remover duplicatas de nomes
                             const uniqueModNames = Array.from(new Set(modNames));
                             
-                            let desc = `Mensalidade 791Glass - Plano Base`;
+                            let desc = sponsorMap[tenant.id] ? `Mensalidade 791Glass - Plano Base (Patrocinado)` : `Mensalidade 791Glass - Plano Base`;
                             if (uniqueModNames.length > 0) desc += ` + Adicionais (${uniqueModNames.join(', ')})`;
                             if (extraUsers > 0) desc += ` + ${extraUsers} Usuários Extras`;
                             if (extraWpp > 0) desc += ` + ${extraWpp} Aparelhos Extras`;

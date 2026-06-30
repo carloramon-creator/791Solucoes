@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       .from('vouchers')
       .update({
         usado_por_vidracaria_id: vidracariaId,
-        data_uso: new Date().toISOString()
+        usado_em: new Date().toISOString()
       })
       .eq('id', voucher.id);
 

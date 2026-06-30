@@ -21,7 +21,7 @@ export async function GET(
     // Buscar TODOS os vouchers do patrocinador (usados e não usados)
     const { data: allVouchers } = await holdingSupabase
       .from('vouchers')
-      .select('id, codigo, usado_por_vidracaria_id, data_uso, created_at')
+      .select('id, codigo, usado_por_vidracaria_id, usado_em, created_at')
       .eq('patrocinador_id', sponsorId)
       .order('created_at', { ascending: true });
 
@@ -47,7 +47,7 @@ export async function GET(
       id: v.id,
       codigo: v.codigo,
       usado: !!v.usado_por_vidracaria_id,
-      data_ativacao: v.data_uso || null,
+      data_ativacao: v.usado_em || null,
       created_at: v.created_at,
       vidracaria_id: v.usado_por_vidracaria_id || null,
       vidracaria_nome: v.usado_por_vidracaria_id ? (vidracariaMap[v.usado_por_vidracaria_id]?.nome || 'Desconhecida') : null,

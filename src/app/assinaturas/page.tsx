@@ -427,13 +427,13 @@ export default function AssinaturasPage() {
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidraçaria / Cliente</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano, Módulos & Consumo</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-right whitespace-nowrap">Ações</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Ações</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano, Módulos & Consumo</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
@@ -503,7 +503,7 @@ export default function AssinaturasPage() {
                   }
 
                   return (
-                    <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors group">
+                    <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-200 group">
                       <td className="px-4 py-2 text-slate-700 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center text-[#3b597b]">
@@ -523,66 +523,6 @@ export default function AssinaturasPage() {
                               </span>
                             )}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex flex-col gap-2">
-                           {/* Linha 1: Plano e Módulos */}
-                           <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Plano Básico</span>
-                              {(tenant.modulos_ativos || []).length > 0 ? tenant.modulos_ativos?.map(modRef => {
-                                const mod = modules.find(m => m.slug === modRef || m.id === modRef);
-                                if (!mod || mod.parent_slug) return null;
-                                
-                                const isBasic = basicIds.includes(mod.id) || basicIds.includes(mod.slug || '');
-                                if (isBasic) return null;
-
-                                return (
-                                  <span key={modRef} className="text-[9px] font-medium text-[#3b597b] bg-blue-50 px-1.5 py-0.5 rounded uppercase tracking-tighter border border-blue-100">
-                                    + {mod.nome}
-                                  </span>
-                                );
-                              }) : <span className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem adicionais</span>}
-                           </div>
-                           
-                           {/* Linha 2: Consumo */}
-                           {usage ? (
-                             <div className="flex flex-wrap items-center gap-2">
-                               <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mr-1">Consumo:</span>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
-                               >
-                                 SIS {usage.usage.registeredUsers}/{usage.limits.users}
-                               </button>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
-                               >
-                                 WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
-                               </button>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
-                               >
-                                 MSG {usage.usage.messagesSent}/{usage.limits.messages}
-                               </button>
-                             </div>
-                           ) : (
-                             <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
-                           )}
                         </div>
                       </td>
                       <td className="px-4 py-2">
@@ -614,12 +554,11 @@ export default function AssinaturasPage() {
                           </span>
                         </div>
                       </td>
-
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      <div className="flex justify-end gap-2">
-                        <button 
-                          onClick={() => {
-                            setVidracariaToEmit(tenant);
+                      <td className="px-4 py-2 text-center whitespace-nowrap">
+                        <div className="flex justify-center gap-2">
+                          <button 
+                            onClick={() => {
+                              setVidracariaToEmit(tenant);
                             
                             // Cálculo dinâmico do valor baseado no plano e módulos
                             let valorTotal = sponsorMap[tenant.id] ? 0 : Number(systemPlan?.base_price || 0);
@@ -691,7 +630,67 @@ export default function AssinaturasPage() {
                            <CreditCard size={18} />
                          </button>
                        </div>
-                    </td>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-2">
+                           {/* Linha 1: Plano e Módulos */}
+                           <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Plano Básico</span>
+                              {(tenant.modulos_ativos || []).length > 0 ? tenant.modulos_ativos?.map(modRef => {
+                                const mod = modules.find(m => m.slug === modRef || m.id === modRef);
+                                if (!mod || mod.parent_slug) return null;
+                                
+                                const isBasic = basicIds.includes(mod.id) || basicIds.includes(mod.slug || '');
+                                if (isBasic) return null;
+
+                                return (
+                                  <span key={modRef} className="text-[9px] font-medium text-[#3b597b] bg-blue-50 px-1.5 py-0.5 rounded uppercase tracking-tighter border border-blue-100">
+                                    + {mod.nome}
+                                  </span>
+                                );
+                              }) : <span className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem adicionais</span>}
+                           </div>
+                           
+                           {/* Linha 2: Consumo */}
+                           {usage ? (
+                             <div className="flex flex-wrap items-center gap-2">
+                               <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Consumo:</span>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
+                               >
+                                 SIS {usage.usage.registeredUsers}/{usage.limits.users}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
+                               >
+                                 WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
+                               >
+                                 MSG {usage.usage.messagesSent}/{usage.limits.messages}
+                               </button>
+                             </div>
+                           ) : (
+                             <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
+                           )}
+                        </div>
+                      </td>
                   </tr>
                 );
               }))}

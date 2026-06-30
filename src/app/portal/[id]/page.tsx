@@ -58,7 +58,7 @@ export default function SponsorPortal() {
 
   // States para Solicitar Cotas
   const [isQuotasModalOpen, setIsQuotasModalOpen] = useState(false);
-  const [quotasAmount, setQuotasAmount] = useState(5);
+  const [quotasAmount, setQuotasAmount] = useState<number | string>(5);
   const [quotasCycle, setQuotasCycle] = useState('MONTHLY');
   const [requestingQuotas, setRequestingQuotas] = useState(false);
 
@@ -134,7 +134,7 @@ Para ativar o patrocínio:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sponsorId: id,
-          quantity: quotasAmount,
+          quantity: Number(quotasAmount) || 1,
           cycle: quotasCycle
         })
       });
@@ -463,7 +463,7 @@ Para ativar o patrocínio:
                 <label className="text-[10px] font-bold text-slate-500 uppercase">Quantidade de Cotas (Tokens)</label>
                 <input 
                   type="number" min="1" 
-                  value={quotasAmount} onChange={(e) => setQuotasAmount(parseInt(e.target.value) || 1)}
+                  value={quotasAmount} onChange={(e) => setQuotasAmount(e.target.value === '' ? '' : parseInt(e.target.value))}
                   className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500" 
                 />
               </div>
@@ -481,8 +481,9 @@ Para ativar o patrocínio:
               </div>
               
               {(() => {
+                const amount = Number(quotasAmount) || 0;
                 const baseValuePerQuota = sponsor ? (sponsor.valor_mensal / sponsor.total_licencas) || 0 : 0;
-                const baseTotal = baseValuePerQuota * quotasAmount;
+                const baseTotal = baseValuePerQuota * amount;
                 
                 let months = 1;
                 let discountPercent = 0;

@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         
         const { data: financeRecord, error: financeRecordError } = await holdingService
           .from('system_finance_records')
-          .select('id, metadata, tenant_id')
+          .select('id, metadata')
             .eq('id', recordId)
           .single();
 
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
               metadata: mergedMetadata,
             });
           } else if (String(existingMetadata.kind || '') === 'extra_quotas') {
-             const sponsorId = existingMetadata.sponsor_id || financeRecord.tenant_id;
+             const sponsorId = existingMetadata.sponsor_id;
              const qty = Number(existingMetadata.quantity) || 0;
              if (sponsorId && qty > 0) {
                 const { data: sponsor } = await holdingService.from('patrocinadores').select('total_licencas, nome').eq('id', sponsorId).single();

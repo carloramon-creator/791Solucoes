@@ -69,7 +69,6 @@ export async function POST(req: Request) {
     const { data: record, error: recordError } = await supabaseHolding
       .from('system_finance_records')
       .insert([{
-        tenant_id: sponsorId, // Aqui usamos tenant_id como sponsorId
         status: 'pending',
         value: totalValue,
         description: `Cotas extras de Patrocínio: ${quantity} unidades`,

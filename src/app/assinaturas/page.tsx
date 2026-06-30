@@ -426,12 +426,12 @@ export default function AssinaturasPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest">Vidraçaria / Cliente</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest max-w-[200px]">Plano / Módulos</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Status</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Assinatura</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-center">Consumo</th>
-                <th className="px-6 py-4 text-[11px] uppercase tracking-widest text-right pr-8">Ações</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidraçaria / Cliente</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano / Módulos</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center">Consumo</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-right whitespace-nowrap">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -505,7 +505,7 @@ export default function AssinaturasPage() {
 
                   return (
                     <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors group">
-                      <td className="px-6 py-4 text-slate-700">
+                      <td className="px-4 py-2 text-slate-700 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center text-[#3b597b]">
                             <Building2 size={20} />
@@ -526,7 +526,7 @@ export default function AssinaturasPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 max-w-[200px]">
+                      <td className="px-4 py-2">
                         <div className="flex flex-col">
                            <div className="flex items-center gap-2 mb-1">
                               <span className="text-[12px] font-bold text-slate-700 uppercase tracking-tight">Plano Básico</span>
@@ -549,7 +549,7 @@ export default function AssinaturasPage() {
                            </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2">
                         <div className="flex flex-col items-center gap-2">
                           {getStatusBadge(tenant, diasRestantes)}
                           {tenant.vencimento_assinatura ? (
@@ -568,7 +568,7 @@ export default function AssinaturasPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-4 py-2 text-center whitespace-nowrap">
                         <div className="flex flex-col items-center gap-1">
                           <span className="text-sm font-bold text-slate-700">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal)}
@@ -578,7 +578,7 @@ export default function AssinaturasPage() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2">
                         {usage ? (
                           <div className="space-y-2">
                             <button
@@ -587,7 +587,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
+                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
                             >
                               SIS {usage.usage.registeredUsers}/{usage.limits.users}
                             </button>
@@ -597,7 +597,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
+                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
                             >
                               WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
                             </button>
@@ -607,7 +607,7 @@ export default function AssinaturasPage() {
                                 setSelectedUsage(usage);
                                 setSelectedUsageTenant(tenant);
                               }}
-                              className={`w-full whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
+                              className={`w-[110px] mx-auto whitespace-nowrap rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
                             >
                               MSG {usage.usage.messagesSent}/{usage.limits.messages}
                             </button>
@@ -616,7 +616,7 @@ export default function AssinaturasPage() {
                           <div className="text-center text-[11px] text-slate-400 font-medium">Sem consumo</div>
                         )}
                       </td>
-                    <td className="px-6 py-4 text-right pr-8">
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
                       <div className="flex justify-end gap-2">
                         <button 
                           onClick={() => {

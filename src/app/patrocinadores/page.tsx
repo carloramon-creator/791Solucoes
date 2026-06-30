@@ -741,7 +741,7 @@ export default function PatrocinadoresPage() {
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                       <div className="w-4 h-0.5 bg-blue-500" /> Identificação
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">Nome Fantasia</label>
                         <input 
@@ -760,6 +760,16 @@ export default function PatrocinadoresPage() {
                           className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
                           value={formData.razao_social}
                           onChange={(e) => setFormData({...formData, razao_social: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 ml-1 uppercase">E-mail de Acesso</label>
+                        <input 
+                          required
+                          type="email" 
+                          className="w-full px-4 py-2 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold text-slate-700 text-sm outline-none"
+                          value={formData.email}
+                          onChange={(e) => setFormData({...formData, email: e.target.value})}
                         />
                       </div>
                     </div>

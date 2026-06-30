@@ -30,31 +30,19 @@ export async function GET(
       .map(v => v.usado_por_vidracaria_id);
 
     // 2. Buscar nomes das vidraçarias no Glass (para enriquecer os tokens)
-    let vidracariaMap: Record<string, { nome: string; email: string; valor_plano: number }> = {};
+    let vidracariaMap: Record<string, { nome: string; email: string }> = {};
     if (usedVoucherIds.length > 0) {
       const { data: glassTenants, error: gtError } = await glassSupabase
         .from('vidracarias')
-        .select('id, nome, email, valor_plano')
+        .select('id, nome, email')
         .in('id', usedVoucherIds);
 
       if (gtError) console.error('[GLASS TENANTS BY ID ERROR]', gtError);
 
       (glassTenants || []).forEach(v => {
-        vidracariaMap[v.id] = { nome: v.nome, email: v.email, valor_plano: v.valor_plano };
+        vidracariaMap[v.id] = { nome: v.nome, email: v.email };
       });
     }
-
-    // Fallback: buscar vidraçarias pelo patrocinador_id no Glass (caso voucher ID != vidraçaria ID)
-    const { data: glassPatrTenants } = await glassSupabase
-      .from('vidracarias')
-      .select('id, nome, email, valor_plano')
-      .eq('patrocinador_id', sponsorId);
-
-    (glassPatrTenants || []).forEach(v => {
-      if (!vidracariaMap[v.id]) {
-        vidracariaMap[v.id] = { nome: v.nome, email: v.email, valor_plano: v.valor_plano };
-      }
-    });
 
     // Montar lista de tokens enriquecida
     const tokens = (allVouchers || []).map(v => ({
@@ -69,19 +57,15 @@ export async function GET(
     }));
 
     // 3. Buscar Vidraçarias do Patrocinador (compatibilidade)
-    let query = glassSupabase
-      .from('vidracarias')
-      .select('id, nome, valor_plano, email');
-
+    let vidracarias: any[] = [];
     if (usedVoucherIds.length > 0) {
-      const idsString = usedVoucherIds.map(id => `"${id}"`).join(',');
-      query = query.or(`patrocinador_id.eq.${sponsorId},id.in.(${idsString})`);
-    } else {
-      query = query.eq('patrocinador_id', sponsorId);
+      const { data, error: vError } = await glassSupabase
+        .from('vidracarias')
+        .select('id, nome, email')
+        .in('id', usedVoucherIds);
+      if (vError) console.error('Erro vidracarias:', vError);
+      else vidracarias = data || [];
     }
-
-    const { data: vidracarias, error: vError } = await query;
-    if (vError) console.error('Erro vidracarias:', vError);
 
     // 4. Buscar Templates do Patrocinador
     const { data: templates, error: tError } = await glassSupabase
@@ -94,7 +78,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       tokens: tokens,
-      vidracarias: vidracarias || [],
+      vidracarias: vidracarias,
       templates: templates || []
     });
 

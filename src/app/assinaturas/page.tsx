@@ -164,6 +164,8 @@ export default function AssinaturasPage() {
       setUsageByTenant(mapped);
       setUsageTotals(payload.totals || null);
       setMessagesPeriodStart(payload.messagesPeriodStart || '');
+      // Use the tenants returned by the API which includes all vidracaria fields
+      setTenants(payload.tenants || []);
     } catch (err: any) {
       setUsageError(err?.message || 'Falha ao carregar consumo de assinatura');
     } finally {
@@ -174,13 +176,7 @@ export default function AssinaturasPage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const { data: vData, error: vError } = await supabaseGlass
-        .from('vidracarias')
-        .select('*')
-        .order('nome');
-
-      if (vError) throw vError;
-      setTenants(vData || []);
+      // Tenants are now fetched via fetchUsageSummary() to bypass RLS
 
       const { data: mData } = await supabaseGlass
         .from('modules')

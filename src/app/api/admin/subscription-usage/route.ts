@@ -38,7 +38,7 @@ export async function GET() {
     ] = await Promise.all([
       glass
         .from('vidracarias')
-        .select('id, nome, slug, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp')
+        .select('*')
         .order('nome'),
       glass
         .from('user_profiles')
@@ -160,9 +160,8 @@ export async function GET() {
       const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage;
 
       return {
+        ...tenant,
         vidracariaId: tenantId,
-        nome: tenant.nome,
-        slug: tenant.slug,
         usage: {
           registeredUsers,
           activeUsers,

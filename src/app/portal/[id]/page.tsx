@@ -479,13 +479,51 @@ Para ativar o patrocínio:
                   <option value="YEARLY">Anual (15% Desc)</option>
                 </select>
               </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Valor Mensal Estimado por Cota</span>
-                <span className="text-lg font-black text-[#3b597b]">
-                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format((sponsor.valor_mensal / sponsor.total_licencas) || 0)}
-                </span>
-                <span className="text-[9px] text-slate-400 mt-1">O valor final pode ter descontos conforme o ciclo.</span>
-              </div>
+              
+              {(() => {
+                const baseValuePerQuota = sponsor ? (sponsor.valor_mensal / sponsor.total_licencas) || 0 : 0;
+                const baseTotal = baseValuePerQuota * quotasAmount;
+                
+                let months = 1;
+                let discountPercent = 0;
+                let cycleName = 'Mensal';
+
+                if (quotasCycle === 'QUARTERLY') {
+                  months = 3;
+                  discountPercent = 5;
+                  cycleName = 'Trimestral';
+                } else if (quotasCycle === 'SEMI_ANNUAL') {
+                  months = 6;
+                  discountPercent = 10;
+                  cycleName = 'Semestral';
+                } else if (quotasCycle === 'YEARLY') {
+                  months = 12;
+                  discountPercent = 15;
+                  cycleName = 'Anual';
+                }
+
+                const subtotal = baseTotal * months;
+                const discountAmount = subtotal * (discountPercent / 100);
+                const totalValue = subtotal - discountAmount;
+
+                return (
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Valor Total Estimado ({cycleName})</span>
+                    <span className="text-2xl font-black text-[#3b597b]">
+                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValue)}
+                    </span>
+                    {discountPercent > 0 && (
+                      <span className="text-[10px] font-bold text-emerald-500 mt-1 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        -{discountPercent}% de desconto aplicado
+                      </span>
+                    )}
+                    <span className="text-[9px] text-slate-400 mt-2 text-center">
+                      Cálculo: {quotasAmount} cotas x {months} mes(es) <br/> Base por cota: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(baseValuePerQuota)}
+                    </span>
+                  </div>
+                );
+              })()}
+
               <button 
                 disabled={requestingQuotas}
                 onClick={handleRequestQuotas}

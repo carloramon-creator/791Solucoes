@@ -70,11 +70,11 @@ export async function POST(req: Request) {
       .from('system_finance_records')
       .insert([{
         tenant_id: sponsorId, // Aqui usamos tenant_id como sponsorId
-        kind: 'extra_quotas',
         status: 'pending',
         value: totalValue,
         description: `Cotas extras de Patrocínio: ${quantity} unidades`,
         metadata: {
+           kind: 'extra_quotas',
            sponsor_id: sponsorId,
            quantity: Number(quantity),
            cycle: cycle

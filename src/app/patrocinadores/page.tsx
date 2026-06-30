@@ -24,7 +24,8 @@ import {
   Wallet,
   Share2,
   ExternalLink,
-  Copy
+  Copy,
+  Mail
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -297,6 +298,26 @@ export default function PatrocinadoresPage() {
       fetchPatrocinadores();
     } catch (err: any) {
       alert(`Erro ao gerar voucher: ${err.message}`);
+    }
+  }
+
+  async function handleResendInvite(email: string) {
+    if (!email) {
+      alert("Este patrocinador não possui um e-mail cadastrado.");
+      return;
+    }
+    if (!confirm(`Deseja reenviar o e-mail de acesso para ${email}? O patrocinador receberá um link seguro para definir sua senha.`)) return;
+    try {
+      const res = await fetch('/api/sponsors/resend-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      alert('✅ E-mail de acesso reenviado com sucesso!');
+    } catch (err: any) {
+      alert(`Erro ao reenviar e-mail: ${err.message}`);
     }
   }
 
@@ -611,6 +632,13 @@ export default function PatrocinadoresPage() {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => handleResendInvite(p.email)}
+                          className="p-3 hover:bg-slate-100 hover:text-slate-600 rounded-xl text-slate-400 transition-all" 
+                          title="Reenviar Acesso / Recuperar Senha"
+                        >
+                          <Mail size={18} />
+                        </button>
                         <button 
                           onClick={() => handleSyncTokens(p)}
                           className="p-3 hover:bg-purple-50 hover:text-purple-600 rounded-xl text-slate-400 transition-all" 

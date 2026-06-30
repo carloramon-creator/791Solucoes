@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         
         const { data: financeRecord, error: financeRecordError } = await holdingService
           .from('system_finance_records')
-          .select('id, metadata, kind, tenant_id')
+          .select('id, metadata, tenant_id')
             .eq('id', recordId)
           .single();
 
@@ -129,14 +129,14 @@ export async function POST(req: Request) {
 
           if (error) console.error('[ASAAS WEBHOOK] Erro ao atualizar financeiro:', error.message);
 
-          if (String(existingMetadata.kind || '') === 'overage' || financeRecord.kind === 'overage') {
+          if (String(existingMetadata.kind || '') === 'overage') {
             await restoreWhatsappModulesIfNeeded({
               holdingSupabase: holdingService,
               glassSupabase: glassService,
               recordId,
               metadata: mergedMetadata,
             });
-          } else if (String(existingMetadata.kind || '') === 'extra_quotas' || financeRecord.kind === 'extra_quotas') {
+          } else if (String(existingMetadata.kind || '') === 'extra_quotas') {
              const sponsorId = existingMetadata.sponsor_id || financeRecord.tenant_id;
              const qty = Number(existingMetadata.quantity) || 0;
              if (sponsorId && qty > 0) {

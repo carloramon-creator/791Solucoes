@@ -51,6 +51,17 @@ interface Patrocinador {
   projeto_templates?: any[];
 }
 
+interface SponsorToken {
+  id: string;
+  codigo: string;
+  usado: boolean;
+  data_ativacao: string | null;
+  created_at: string;
+  vidracaria_id: string | null;
+  vidracaria_nome: string | null;
+  vidracaria_email: string | null;
+}
+
 export default function PatrocinadoresPage() {
   const supabase = createSupabaseBrowser();
   const [patrocinadores, setPatrocinadores] = useState<Patrocinador[]>([]);
@@ -62,6 +73,7 @@ export default function PatrocinadoresPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [currentVidracarias, setCurrentVidracarias] = useState<any[]>([]);
   const [currentTemplates, setCurrentTemplates] = useState<any[]>([]);
+  const [currentTokens, setCurrentTokens] = useState<SponsorToken[]>([]);
 
   // Estados do formulário
   const [formData, setFormData] = useState({
@@ -94,7 +106,7 @@ export default function PatrocinadoresPage() {
         .from('patrocinadores')
         .select(`
           *,
-          vouchers (codigo, usado_por_vidracaria_id)
+          vouchers (id, codigo, usado_por_vidracaria_id)
         `)
         .order('created_at', { ascending: false });
 
@@ -102,7 +114,9 @@ export default function PatrocinadoresPage() {
 
       const processed = data?.map(p => ({
         ...p,
-        licencas_usadas: p.vouchers?.filter((v: any) => v.usado_por_vidracaria_id).length || 0
+        licencas_usadas: p.vouchers?.filter((v: any) => v.usado_por_vidracaria_id).length || 0,
+        // Override total_licencas to reflect actual tokens generated
+        total_tokens: p.vouchers?.length || 0,
       }));
 
       setPatrocinadores(processed || []);
@@ -169,14 +183,13 @@ export default function PatrocinadoresPage() {
 
         if (sError) throw sError;
 
-        // Gerar o primeiro voucher automático
-        const voucherCode = generateVoucherCode(formData.nome);
-        await supabase
-          .from('vouchers')
-          .insert([{
-            codigo: voucherCode,
-            patrocinador_id: sponsor.id
-          }]);
+        // Gerar um token por cota de licença
+        const vouchersToInsert = Array.from({ length: formData.total_licencas }, () => ({
+          codigo: generateVoucherCode(formData.nome),
+          patrocinador_id: sponsor.id
+        }));
+        await supabase.from('vouchers').insert(vouchersToInsert);
+        const voucherCode = vouchersToInsert[0].codigo; // primeiro token para exibir no alerta
 
         // 🚀 DISPARAR COBRANÇA ASAAS AUTOMATICAMENTE
         try {
@@ -240,6 +253,29 @@ export default function PatrocinadoresPage() {
       alert(`❌ Erro ao salvar patrocinador: ${errorMsg}\n\nVerifique se o nome já existe ou se há campos inválidos.`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSyncTokens(p: Patrocinador) {
+    const existingCount = p.vouchers?.length || 0;
+    const needed = p.total_licencas - existingCount;
+    if (needed <= 0) {
+      alert(`✅ ${p.nome} já possui ${existingCount} tokens gerados (cota: ${p.total_licencas}). Nada a sincronizar.`);
+      return;
+    }
+    if (!confirm(`Gerar ${needed} token(s) faltante(s) para ${p.nome}? (possui ${existingCount} de ${p.total_licencas})`)) return;
+
+    try {
+      const vouchersToInsert = Array.from({ length: needed }, () => ({
+        codigo: generateVoucherCode(p.nome),
+        patrocinador_id: p.id
+      }));
+      const { error } = await supabase.from('vouchers').insert(vouchersToInsert);
+      if (error) throw error;
+      alert(`✅ ${needed} token(s) gerado(s) com sucesso para ${p.nome}!`);
+      fetchPatrocinadores();
+    } catch (err: any) {
+      alert(`Erro ao gerar tokens: ${err.message}`);
     }
   }
 
@@ -349,12 +385,14 @@ export default function PatrocinadoresPage() {
     setLoadingDetails(true);
     setCurrentVidracarias([]);
     setCurrentTemplates([]);
+    setCurrentTokens([]);
     try {
       const res = await fetch(`/api/sponsors/${id}/details`);
       const data = await res.json();
       if (data.success) {
-        setCurrentVidracarias(data.vidracarias);
-        setCurrentTemplates(data.templates);
+        setCurrentVidracarias(data.vidracarias || []);
+        setCurrentTemplates(data.templates || []);
+        setCurrentTokens(data.tokens || []);
       }
     } catch (err) {
       console.error('Erro detalhes extras:', err);
@@ -535,23 +573,23 @@ export default function PatrocinadoresPage() {
                           <div className="font-black text-slate-700">{p.nome}</div>
                           <div className="text-xs text-slate-400 font-bold flex items-center gap-1 mt-1">
                             <Key size={12} />
-                            {p.vouchers?.[0]?.codigo || 'Nenhum Voucher'}
+                            <span>{p.vouchers?.length || 0} tokens gerados</span>
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <div className="w-full max-w-[140px]">
+                      <div className="w-full max-w-[160px]">
                         <div className="flex justify-between text-[10px] font-black text-slate-500 mb-2">
-                          <span>{p.licencas_usadas || 0} USADAS</span>
-                          <span>{p.total_licencas} TOTAL</span>
+                          <span className="text-emerald-600">{p.vouchers?.filter((v: any) => v.usado).length || 0} ATIVOS</span>
+                          <span>{p.vouchers?.length || 0}/{p.total_licencas} TOKENS</span>
                         </div>
                         <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                           <div 
                             className={`h-full transition-all duration-1000 ${
-                              ((p.licencas_usadas || 0) / p.total_licencas) > 0.9 ? 'bg-amber-500' : 'bg-blue-500'
+                              ((p.vouchers?.filter((v: any) => v.usado).length || 0) / p.total_licencas) > 0.9 ? 'bg-amber-500' : 'bg-blue-500'
                             }`}
-                            style={{ width: `${((p.licencas_usadas || 0) / p.total_licencas) * 100}%` }}
+                            style={{ width: `${Math.min(((p.vouchers?.filter((v: any) => v.usado).length || 0) / p.total_licencas) * 100, 100)}%` }}
                           />
                         </div>
                       </div>
@@ -573,9 +611,16 @@ export default function PatrocinadoresPage() {
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
+                          onClick={() => handleSyncTokens(p)}
+                          className="p-3 hover:bg-purple-50 hover:text-purple-600 rounded-xl text-slate-400 transition-all" 
+                          title="Sincronizar/Gerar Tokens Faltantes"
+                        >
+                          <Zap size={18} />
+                        </button>
+                        <button 
                           onClick={() => handleGenerateVoucher(p.id, p.nome)}
                           className="p-3 hover:bg-blue-50 hover:text-blue-600 rounded-xl text-slate-400 transition-all" 
-                          title="Gerar Novo Voucher"
+                          title="Gerar Token Avulso"
                         >
                           <Key size={18} />
                         </button>
@@ -857,58 +902,92 @@ export default function PatrocinadoresPage() {
                 </form>
               </div>
 
-              {/* COLUNA 2: Inteligência Compacta (Sidebar) */}
+              {/* COLUNA 2: Tokens & Detalhes (Sidebar) */}
               {editingSponsor ? (
                 <div className="flex-1 bg-slate-50 p-6 overflow-y-auto space-y-8">
-                  
-                  {/* Vidraçarias - Estilo Excel */}
+
+                  {/* Tokens de Licença */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2 text-slate-800">
-                        <Users size={14} className="text-blue-500" />
-                        <h5 className="font-black text-xs uppercase tracking-tight">Vidraçarias Parceiras</h5>
+                        <Key size={14} className="text-blue-500" />
+                        <h5 className="font-black text-xs uppercase tracking-tight">Tokens de Licença</h5>
                       </div>
-                      <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                        {loadingDetails ? '...' : currentVidracarias.length}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                          {loadingDetails ? '...' : `${currentTokens.filter(t => t.usado).length} USADOS`}
+                        </span>
+                        <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                          {loadingDetails ? '...' : `${currentTokens.length} TOTAL`}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200">
-                            <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Loja / Unidade</th>
-                            <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Faturamento</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {loadingDetails ? (
-                            <tr>
-                              <td colSpan={2} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-400" size={20} /></td>
+                      <div className="max-h-[420px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead className="sticky top-0 z-10">
+                            <tr className="bg-slate-100 border-b border-slate-200">
+                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">#</th>
+                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Token</th>
+                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest">Vidraçaria Licenciada</th>
+                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Ativado em</th>
+                              <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Status</th>
                             </tr>
-                          ) : currentVidracarias.length > 0 ? (
-                            currentVidracarias.map((v: any) => (
-                              <tr key={v.id} className="hover:bg-blue-50/30 transition-colors group">
-                                <td className="px-3 py-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                    <span className="text-[11px] font-bold text-slate-700">{v.nome}</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-1.5 text-right">
-                                  <span className="text-[11px] font-black text-slate-600">
-                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor_plano || 0)}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={2} className="p-4 text-center text-[10px] text-slate-400 italic">Nenhuma loja vinculada.</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {loadingDetails ? (
+                              <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-400" size={20} /></td></tr>
+                            ) : currentTokens.length > 0 ? (
+                              currentTokens.map((t, idx) => (
+                                <tr key={t.id} className={`transition-colors group ${t.usado ? 'hover:bg-emerald-50/30' : 'hover:bg-slate-50/80'}`}>
+                                  <td className="px-3 py-2">
+                                    <span className="text-[10px] font-black text-slate-400">#{idx + 1}</span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span className="text-[10px] font-bold text-slate-600 font-mono tracking-tighter">{t.codigo}</span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {t.vidracaria_nome ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold text-slate-700 leading-tight">{t.vidracaria_nome}</span>
+                                          {t.vidracaria_email && <span className="text-[9px] text-slate-400">{t.vidracaria_email}</span>}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-300 italic">— disponível —</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    {t.data_ativacao ? (
+                                      <span className="text-[9px] font-bold text-slate-500">
+                                        {new Date(t.data_ativacao).toLocaleDateString('pt-BR')}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] text-slate-300">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    {t.usado ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                        <CheckCircle2 size={9} /> ATIVO
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase bg-slate-100 text-slate-400 border border-slate-200 px-2 py-0.5 rounded-full">
+                                        <Key size={9} /> LIVRE
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr><td colSpan={5} className="p-6 text-center text-[10px] text-slate-400 italic">Nenhum token gerado.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
 

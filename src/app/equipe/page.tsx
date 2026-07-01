@@ -357,8 +357,7 @@ export default function EquipePage() {
               </tr>
             ) : (
               members.map((member) => {
-                const selectedProfileId = profileByEmail[member.email] || '';
-                const selectedProfileName = profiles.find((profile) => profile.id === selectedProfileId)?.name || member.cargo || 'Sem perfil';
+                const selectedProfileName = member.cargo || 'Sem perfil';
 
                 return (
                   <tr key={member.id} className="hover:bg-slate-50/50 transition-colors group">

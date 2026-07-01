@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import { Users, UserPlus, Mail, Shield, Trash2, Loader2, Check, X, Save, KeyRound } from 'lucide-react';
+import Link from 'next/link';
+import { Users, UserPlus, Mail, Shield, Trash2, Loader2, Check, X, Save, KeyRound, PencilLine, ArrowRight } from 'lucide-react';
 
 type TeamMember = {
   id: string;
@@ -37,10 +38,11 @@ export default function EquipePage() {
   const supabase = createSupabaseBrowser();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [profiles, setProfiles] = useState<PermissionProfile[]>([]);
-  const [profileByEmail, setProfileByEmail] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [savingUserEmail, setSavingUserEmail] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState('');
 
   const [showForm, setShowForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -104,15 +106,6 @@ export default function EquipePage() {
       .map((profile) => ({ id: profile.id, name: profile.name, active: profile.active }));
     setProfiles(activeProfiles);
 
-    const map: Record<string, string> = {};
-    for (const profile of permissionsResult.profiles || []) {
-      for (const email of profile.userEmails || []) {
-        if (!map[email]) {
-          map[email] = profile.id;
-        }
-      }
-    }
-    setProfileByEmail(map);
   }, [api, supabase]);
 
   useEffect(() => {
@@ -168,21 +161,39 @@ export default function EquipePage() {
     }
   };
 
-  const handleSaveUserProfile = async (member: TeamMember) => {
-    setSavingUserEmail(member.email);
+  const openEditUser = (member: TeamMember) => {
+    const currentProfile = profiles.find((profile) =>
+      profile.active && (
+        profile.name === member.cargo ||
+        profile.name.toLowerCase() === String(member.cargo || '').toLowerCase()
+      )
+    );
+    setEditingMember(member);
+    setEditingProfileId(currentProfile?.id || '');
+  };
+
+  const closeEditUser = () => {
+    setEditingMember(null);
+    setEditingProfileId('');
+  };
+
+  const handleSaveUserProfile = async () => {
+    if (!editingMember) return;
+
+    setSavingUserEmail(editingMember.email);
     setFeedback(null);
 
     try {
-      const selectedProfileId = profileByEmail[member.email] || '';
-      const selectedProfile = permissionProfileOptions.find((profile) => profile.id === selectedProfileId) || null;
+      const selectedProfile = permissionProfileOptions.find((profile) => profile.id === editingProfileId) || null;
 
-      await api(`/api/admin/permissions/users/${encodeURIComponent(member.email.toLowerCase())}`, {
+      await api(`/api/admin/permissions/users/${encodeURIComponent(editingMember.email.toLowerCase())}`, {
         method: 'PATCH',
         body: JSON.stringify({ profileIds: selectedProfile && !selectedProfile.id.startsWith('fallback-') ? [selectedProfile.id] : [] }),
       });
 
       await refresh();
-      setFeedback({ type: 'success', msg: `Permissões de ${member.email} atualizadas.` });
+      setFeedback({ type: 'success', msg: `Permissões de ${editingMember.email} atualizadas.` });
+      closeEditUser();
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.message });
     } finally {
@@ -202,13 +213,23 @@ export default function EquipePage() {
             Gerencie os colaboradores, perfis de permissão e acessos ao Command Center.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#3b597b] text-white text-sm font-bold rounded-xl hover:bg-[#2e4763] transition-all shadow-sm shadow-[#3b597b]/30 hover:shadow-md hover:-translate-y-0.5"
-        >
-          <UserPlus size={16} />
-          Adicionar Colaborador
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/configuracoes/permissoes"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all"
+          >
+            <Shield size={16} />
+            Gerenciar perfis
+            <ArrowRight size={14} />
+          </Link>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#3b597b] text-white text-sm font-bold rounded-xl hover:bg-[#2e4763] transition-all shadow-sm shadow-[#3b597b]/30 hover:shadow-md hover:-translate-y-0.5"
+          >
+            <UserPlus size={16} />
+            Adicionar Colaborador
+          </button>
+        </div>
       </div>
 
       {feedback && (
@@ -354,16 +375,6 @@ export default function EquipePage() {
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <select
-                          value={selectedProfileId}
-                          onChange={(e) => setProfileByEmail((prev) => ({ ...prev, [member.email]: e.target.value }))}
-                          className="min-w-[220px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#3b597b]"
-                        >
-                          <option value="">Sem perfil</option>
-                          {permissionProfileOptions.map((profile) => (
-                            <option key={profile.id} value={profile.id}>{profile.name}</option>
-                          ))}
-                        </select>
                         <span className="px-2.5 py-1 bg-[#3b597b]/10 text-[#3b597b] text-[10px] font-bold uppercase tracking-wider rounded-full">
                           {selectedProfileName}
                         </span>
@@ -378,12 +389,12 @@ export default function EquipePage() {
                     <td className="p-4 pr-6 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => handleSaveUserProfile(member)}
+                          onClick={() => openEditUser(member)}
                           disabled={savingUserEmail === member.email}
                           className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#3b597b] text-white text-[11px] font-bold rounded-md hover:bg-[#2e4763] disabled:opacity-60"
                         >
-                          {savingUserEmail === member.email ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                          Salvar perfil
+                          <PencilLine size={14} />
+                          Editar usuário
                         </button>
                         <button className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
                           <Trash2 size={14} />
@@ -397,6 +408,58 @@ export default function EquipePage() {
           </tbody>
         </table>
       </div>
+
+      {editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight">Editar usuário</h2>
+                <p className="text-sm text-slate-500">Escolha o perfil de permissão deste colaborador.</p>
+              </div>
+              <button onClick={closeEditUser} className="text-slate-400 hover:text-slate-700">×</button>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-bold text-slate-800">{editingMember.nome || '—'}</div>
+              <div className="text-xs text-slate-500">{editingMember.email}</div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cargo / Perfil de permissão</label>
+              <select
+                value={editingProfileId}
+                onChange={(e) => setEditingProfileId(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:border-[#3b597b]"
+              >
+                <option value="">Sem perfil</option>
+                {permissionProfileOptions.map((profile) => (
+                  <option key={profile.id} value={profile.id}>{profile.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeEditUser}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveUserProfile}
+                disabled={savingUserEmail === editingMember.email}
+                className="px-5 py-2 bg-[#3b597b] text-white text-sm font-bold rounded-lg hover:bg-[#2e4763] transition-colors flex items-center gap-2 disabled:opacity-60"
+              >
+                {savingUserEmail === editingMember.email ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Salvar perfil
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

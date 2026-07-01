@@ -104,6 +104,22 @@ interface UsageResponse {
   tenants: UsageTenantRow[];
 }
 
+interface GlassUserRow {
+  userId: string;
+  email: string | null;
+  nomeExibicao: string;
+  pessoaNome: string | null;
+  perfilId: string | null;
+  ativo: boolean;
+  isMaster: boolean;
+  createdAt: string | null;
+  lastSignInAt: string | null;
+  vidracariaId: string | null;
+  vidracariaNome: string;
+  vidracariaSlug: string | null;
+  vidracariaAtiva: boolean | null;
+}
+
 import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
@@ -137,6 +153,14 @@ export default function AssinaturasPage() {
   const [showAuthCleanupModal, setShowAuthCleanupModal] = useState(false);
   const [orphanAuthUserId, setOrphanAuthUserId] = useState('');
   const [isCleaningAuthUser, setIsCleaningAuthUser] = useState(false);
+  const [showGlassUsersModal, setShowGlassUsersModal] = useState(false);
+  const [glassUsersLoading, setGlassUsersLoading] = useState(false);
+  const [glassUsersError, setGlassUsersError] = useState('');
+  const [glassUsers, setGlassUsers] = useState<GlassUserRow[]>([]);
+  const [glassUsersSearch, setGlassUsersSearch] = useState('');
+  const [glassUsersTenantFilter, setGlassUsersTenantFilter] = useState('all');
+  const [glassUsersStatusFilter, setGlassUsersStatusFilter] = useState<'all' | 'active' | 'inactive' | 'tenant-inactive'>('all');
+  const [glassUsersSort, setGlassUsersSort] = useState<'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc'>('last-access-desc');
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -221,6 +245,45 @@ export default function AssinaturasPage() {
       console.error('Erro ao buscar dados:', err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchGlassUsers() {
+    setGlassUsersLoading(true);
+    setGlassUsersError('');
+
+    try {
+      let accessToken = '';
+
+      const { data: sessionData } = await authClient.auth.getSession();
+      accessToken = sessionData.session?.access_token || '';
+
+      if (!accessToken) {
+        const { data: refreshed } = await authClient.auth.refreshSession();
+        accessToken = refreshed.session?.access_token || '';
+      }
+
+      if (!accessToken) {
+        throw new Error('Sessao nao encontrada. Faca login novamente.');
+      }
+
+      const response = await fetch('/api/admin/glass-users', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: 'no-store',
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Falha ao carregar usuarios do Glass.');
+      }
+
+      setGlassUsers(payload.users || []);
+    } catch (err: any) {
+      setGlassUsersError(err?.message || 'Falha ao carregar usuarios do Glass.');
+    } finally {
+      setGlassUsersLoading(false);
     }
   }
 
@@ -381,10 +444,14 @@ export default function AssinaturasPage() {
     }
   };
 
-  const handleCleanupAuthUser = async () => {
-    const normalizedUserId = orphanAuthUserId.trim();
+  const handleCleanupAuthUser = async (userIdArg?: string) => {
+    const normalizedUserId = String(userIdArg || orphanAuthUserId).trim();
     if (!normalizedUserId) {
       alert('Informe o userId do usuario que deve ser removido do Auth.');
+      return;
+    }
+
+    if (!window.confirm(`Confirma remover do Auth o usuario ${normalizedUserId}?`)) {
       return;
     }
 
@@ -465,6 +532,60 @@ export default function AssinaturasPage() {
     (v.slug || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const glassUsersTenantOptions = useMemo(() => {
+    const unique = new Map<string, string>();
+    glassUsers.forEach((user) => {
+      const key = user.vidracariaId || 'sem-vidracaria';
+      const label = user.vidracariaNome || 'Sem vidracaria';
+      if (!unique.has(key)) unique.set(key, label);
+    });
+
+    return Array.from(unique.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+  }, [glassUsers]);
+
+  const filteredGlassUsers = glassUsers.filter((user) => {
+    const term = glassUsersSearch.trim().toLowerCase();
+    const matchesTerm = !term || [
+      user.nomeExibicao,
+      user.pessoaNome || '',
+      user.email || '',
+      user.vidracariaNome || '',
+      user.vidracariaSlug || '',
+      user.userId,
+      user.perfilId || '',
+    ].some((value) => String(value || '').toLowerCase().includes(term));
+
+    const tenantKey = user.vidracariaId || 'sem-vidracaria';
+    const matchesTenant = glassUsersTenantFilter === 'all' || tenantKey === glassUsersTenantFilter;
+
+    const isTenantInactive = user.vidracariaAtiva === false || !user.vidracariaId;
+    const matchesStatus = glassUsersStatusFilter === 'all'
+      || (glassUsersStatusFilter === 'active' && user.ativo)
+      || (glassUsersStatusFilter === 'inactive' && !user.ativo)
+      || (glassUsersStatusFilter === 'tenant-inactive' && isTenantInactive);
+
+    return matchesTerm && matchesTenant && matchesStatus;
+  }).sort((left, right) => {
+    if (glassUsersSort === 'name-asc') {
+      return String(left.nomeExibicao || '').localeCompare(String(right.nomeExibicao || ''), 'pt-BR');
+    }
+
+    if (glassUsersSort === 'tenant-asc') {
+      return String(left.vidracariaNome || '').localeCompare(String(right.vidracariaNome || ''), 'pt-BR');
+    }
+
+    const leftTime = left.lastSignInAt ? new Date(left.lastSignInAt).getTime() : 0;
+    const rightTime = right.lastSignInAt ? new Date(right.lastSignInAt).getTime() : 0;
+
+    if (glassUsersSort === 'last-access-asc') {
+      return leftTime - rightTime;
+    }
+
+    return rightTime - leftTime;
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
       
@@ -480,6 +601,17 @@ export default function AssinaturasPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setShowGlassUsersModal(true);
+              if (glassUsers.length === 0) {
+                await fetchGlassUsers();
+              }
+            }}
+            className="bg-white border border-blue-200 text-blue-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-50 transition-all"
+          >
+            <Users size={16} /> Usuarios do Glass
+          </button>
           <button
             onClick={() => {
               setShowAuthCleanupModal(true);
@@ -1084,6 +1216,187 @@ export default function AssinaturasPage() {
                 {isCleaningAuthUser ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 Remover do Auth
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGlassUsersModal && (
+        <div className="fixed inset-0 z-[123] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Usuarios 791glass</p>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Usuarios vinculados por vidracaria</h3>
+                <p className="text-[12px] text-slate-600 mt-1">
+                  Use esta lista para localizar rapidamente um usuario e remover do Auth quando necessario.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGlassUsersModal(false)}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 transition"
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-slate-100 bg-white flex flex-col gap-3">
+              <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+                <div className="relative flex-1 max-w-xl">
+                  <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nome, email, vidracaria, perfil ou user ID..."
+                    value={glassUsersSearch}
+                    onChange={(e) => setGlassUsersSearch(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-10 pr-4 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+                    {filteredGlassUsers.length} usuario(s)
+                  </span>
+                  <button
+                    onClick={() => fetchGlassUsers()}
+                    className="bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
+                  >
+                    <RefreshCw size={15} className={glassUsersLoading ? 'animate-spin' : ''} /> Atualizar
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-3 md:items-center">
+                <select
+                  value={glassUsersTenantFilter}
+                  onChange={(e) => setGlassUsersTenantFilter(e.target.value)}
+                  className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">Todas as vidracarias</option>
+                  {glassUsersTenantOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={glassUsersStatusFilter}
+                  onChange={(e) => setGlassUsersStatusFilter(e.target.value as 'all' | 'active' | 'inactive' | 'tenant-inactive')}
+                  className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="all">Todos os status</option>
+                  <option value="active">Usuarios ativos</option>
+                  <option value="inactive">Usuarios inativos</option>
+                  <option value="tenant-inactive">Vidracaria inativa/excluida</option>
+                </select>
+
+                <select
+                  value={glassUsersSort}
+                  onChange={(e) => setGlassUsersSort(e.target.value as 'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc')}
+                  className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="last-access-desc">Ultimo acesso: mais recente</option>
+                  <option value="last-access-asc">Ultimo acesso: mais antigo</option>
+                  <option value="name-asc">Nome do usuario</option>
+                  <option value="tenant-asc">Nome da vidracaria</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              {glassUsersError && (
+                <div className="m-6 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 font-medium">
+                  {glassUsersError}
+                </div>
+              )}
+
+              {glassUsersLoading ? (
+                <div className="px-6 py-16 text-center text-slate-400">
+                  <RefreshCw className="animate-spin mx-auto mb-2" size={24} />
+                  Carregando usuarios do 791glass...
+                </div>
+              ) : filteredGlassUsers.length === 0 ? (
+                <div className="px-6 py-16 text-center text-slate-400">
+                  Nenhum usuario encontrado.
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse min-w-[1100px]">
+                  <thead>
+                    <tr className="bg-slate-50/60 border-b border-slate-100 text-slate-500">
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Usuario</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidracaria</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Perfil</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Status</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Ultimo Acesso</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">User ID</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Acoes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredGlassUsers.map((user) => (
+                      <tr key={user.userId} className="border-b border-slate-100 hover:bg-slate-50/50">
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-sm font-bold text-slate-800">{user.nomeExibicao || user.pessoaNome || 'Sem nome'}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">{user.email || 'E-mail nao encontrado'}</div>
+                          {user.pessoaNome && user.pessoaNome !== user.nomeExibicao && (
+                            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mt-1">
+                              Pessoa: {user.pessoaNome}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-sm font-bold text-slate-800">{user.vidracariaNome}</div>
+                          <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mt-1">
+                            {user.vidracariaSlug ? `/${user.vidracariaSlug}` : 'Sem slug'}
+                          </div>
+                          {(!user.vidracariaId || user.vidracariaAtiva === false) && (
+                            <div className="mt-1 inline-flex rounded-full bg-red-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-700">
+                              {!user.vidracariaId ? 'SEM VIDRACARIA' : 'VIDRACARIA INATIVA'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-sm text-slate-700 font-semibold whitespace-nowrap">
+                          {user.perfilId || 'sem perfil'}
+                          {user.isMaster && (
+                            <div className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-600 mt-1">MASTER</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top whitespace-nowrap">
+                          <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${user.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {user.ativo ? 'ATIVO' : 'INATIVO'}
+                          </span>
+                          {(!user.vidracariaId || user.vidracariaAtiva === false) && (
+                            <div className="text-[10px] font-black uppercase tracking-[0.12em] text-red-500 mt-1">
+                              {!user.vidracariaId ? 'USUARIO ORFAO' : 'TENANT BLOQUEADO'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-sm text-slate-600 whitespace-nowrap">
+                          {user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString('pt-BR') : 'Nunca'}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-[11px] font-mono text-slate-600 break-all max-w-[280px]">{user.userId}</div>
+                        </td>
+                        <td className="px-4 py-3 align-top text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              setShowAuthCleanupModal(false);
+                              setOrphanAuthUserId(user.userId);
+                              await handleCleanupAuthUser(user.userId);
+                              await fetchGlassUsers();
+                            }}
+                            disabled={isCleaningAuthUser}
+                            className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-red-700 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            {isCleaningAuthUser && orphanAuthUserId.trim() === user.userId ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                            Remover do Auth
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

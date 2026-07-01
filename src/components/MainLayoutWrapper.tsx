@@ -88,9 +88,15 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setSponsorId(null);
-        router.push('/login');
-      } else if (event === 'SIGNED_IN') {
-        checkAuth();
+        window.location.href = '/login';
+      } else if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
+        const hash = typeof window !== 'undefined' ? window.location.hash : '';
+        if (event === 'PASSWORD_RECOVERY' || (hash && (hash.includes('type=recovery') || hash.includes('type=invite')))) {
+          // Redireciona imediatamente para a tela de definir senha com o hash
+          router.push('/set-password' + hash);
+        } else {
+          checkAuth();
+        }
       }
     });
 

@@ -113,11 +113,19 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const isPortal = pathname.startsWith('/portal/');
   const isLogin = pathname === '/login';
   const isSetPassword = pathname === '/set-password';
+  const isSponsor = user?.user_metadata?.role === 'sponsor';
 
-  if (isLogin || isPortal || isSetPassword) {
+  if (isLogin || isPortal || isSetPassword || isSponsor) {
     return (
       <div className="h-screen w-screen overflow-y-auto bg-slate-50">
-        {children}
+        {isSponsor && !isPortal && !isSetPassword ? (
+          <div className="flex h-screen w-screen flex-col items-center justify-center bg-slate-50 gap-3">
+            <Loader2 className="animate-spin text-[#3b597b]" size={40} />
+            <span className="text-sm font-bold text-slate-500 uppercase tracking-widest animate-pulse">Redirecionando para o Portal...</span>
+          </div>
+        ) : (
+          children
+        )}
       </div>
     );
   }

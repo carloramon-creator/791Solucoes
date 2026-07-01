@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { Loader2, Lock, Mail, Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
@@ -19,6 +19,14 @@ export default function LoginPage() {
 
   const router = useRouter();
   const supabase = createSupabaseBrowser();
+
+  // Redirecionar automaticamente para a rota dedicada /set-password se vier um token de recuperação/convite no hash
+  useEffect(() => {
+    const hash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (hash && (hash.includes('type=recovery') || hash.includes('type=invite'))) {
+      router.push('/set-password' + hash);
+    }
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

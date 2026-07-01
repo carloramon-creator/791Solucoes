@@ -49,9 +49,9 @@ export default function ConfiguracoesPage() {
       bg: 'bg-purple-50'
     },
     {
-      title: 'Equipe e Permissões',
-      desc: 'Controle quem pode acessar o painel da Holding.',
-      href: '/configuracoes/permissoes',
+      title: 'Usuários',
+      desc: 'Gestão completa de dados, acessos e documentos dos colaboradores.',
+      href: '/equipe',
       resourceCode: 'submenu.configuracoes.permissoes',
       icon: Users,
       color: 'text-[#3b597b]',

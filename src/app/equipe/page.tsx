@@ -1,9 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import Link from 'next/link';
-import { Users, UserPlus, Mail, Shield, Trash2, Loader2, Check, X, Save, KeyRound, PencilLine, ArrowRight } from 'lucide-react';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
+import {
+  ArrowRight,
+  Check,
+  Clock,
+  ExternalLink,
+  FileText,
+  KeyRound,
+  Loader2,
+  Mail,
+  MapPin,
+  PencilLine,
+  Save,
+  Shield,
+  Upload,
+  UserPlus,
+  Users,
+  Wallet,
+  X,
+} from 'lucide-react';
 
 type TeamMember = {
   id: string;
@@ -12,6 +30,20 @@ type TeamMember = {
   cargo: string | null;
   created_at: string;
   last_sign_in_at?: string;
+  cpf?: string | null;
+  whatsapp?: string | null;
+  cep?: string | null;
+  endereco_rua?: string | null;
+  endereco_numero?: string | null;
+  endereco_complemento?: string | null;
+  endereco_bairro?: string | null;
+  endereco_cidade?: string | null;
+  endereco_uf?: string | null;
+  salario_mensal?: number | null;
+  periodo_trabalho_inicio?: string | null;
+  periodo_trabalho_fim?: string | null;
+  jornada_inicio?: string | null;
+  jornada_fim?: string | null;
 };
 
 type PermissionProfile = {
@@ -32,7 +64,120 @@ type PermissionProfileResponse = {
   }>;
 };
 
-const fallbackCargos = ['Dono', 'Gerente', 'Financeiro', 'Suporte', 'Operações'];
+type UserDocument = {
+  id: string;
+  fileName: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  createdAt: string;
+  uploadedBy: string | null;
+  signedUrl: string | null;
+};
+
+type UserDetailsForm = {
+  nome: string;
+  cpf: string;
+  email: string;
+  whatsapp: string;
+  cep: string;
+  enderecoRua: string;
+  enderecoNumero: string;
+  enderecoComplemento: string;
+  enderecoBairro: string;
+  enderecoCidade: string;
+  enderecoUf: string;
+  salarioMensal: string;
+  periodoTrabalhoInicio: string;
+  periodoTrabalhoFim: string;
+  jornadaInicio: string;
+  jornadaFim: string;
+};
+
+const fallbackCargos = ['Dono', 'Gerente', 'Financeiro', 'Suporte', 'Operacoes'];
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function maskCpf(value: string): string {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function maskWhatsapp(value: string): string {
+  const digits = onlyDigits(value).slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function maskCep(value: string): string {
+  const digits = onlyDigits(value).slice(0, 8);
+  if (digits.length <= 5) return digits;
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+function formatMoneyFromNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '';
+  return Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatMoneyInput(value: string): string {
+  const digits = onlyDigits(value);
+  if (!digits) return '';
+  const parsed = Number(digits) / 100;
+  return parsed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function parseMoneyInput(value: string): number | null {
+  const normalized = value.replace(/\./g, '').replace(',', '.').trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (Number.isNaN(parsed)) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return '0 KB';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function toTimeInput(value: string | null | undefined): string {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return '';
+  return String(value).slice(0, 10);
+}
+
+function buildForm(member: TeamMember | null): UserDetailsForm {
+  return {
+    nome: member?.nome || '',
+    cpf: member?.cpf || '',
+    email: member?.email || '',
+    whatsapp: member?.whatsapp || '',
+    cep: member?.cep || '',
+    enderecoRua: member?.endereco_rua || '',
+    enderecoNumero: member?.endereco_numero || '',
+    enderecoComplemento: member?.endereco_complemento || '',
+    enderecoBairro: member?.endereco_bairro || '',
+    enderecoCidade: member?.endereco_cidade || '',
+    enderecoUf: member?.endereco_uf || '',
+    salarioMensal: formatMoneyFromNumber(member?.salario_mensal),
+    periodoTrabalhoInicio: toDateInput(member?.periodo_trabalho_inicio),
+    periodoTrabalhoFim: toDateInput(member?.periodo_trabalho_fim),
+    jornadaInicio: toTimeInput(member?.jornada_inicio),
+    jornadaFim: toTimeInput(member?.jornada_fim),
+  };
+}
 
 export default function EquipePage() {
   const supabase = createSupabaseBrowser();
@@ -43,6 +188,11 @@ export default function EquipePage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [editingProfileId, setEditingProfileId] = useState('');
+  const [editingDetails, setEditingDetails] = useState<UserDetailsForm>(buildForm(null));
+  const [documents, setDocuments] = useState<UserDocument[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [generatingResetLink, setGeneratingResetLink] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -58,6 +208,12 @@ export default function EquipePage() {
     return fallbackCargos.map((name, index) => ({ id: `fallback-${index}`, name, active: true }));
   }, [profiles]);
 
+  useEffect(() => {
+    if (!inviteProfileId && permissionProfileOptions.length > 0) {
+      setInviteProfileId(permissionProfileOptions[0].id);
+    }
+  }, [inviteProfileId, permissionProfileOptions]);
+
   const getToken = useCallback(async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token || null;
@@ -67,13 +223,22 @@ export default function EquipePage() {
     const token = await getToken();
     if (!token) throw new Error('Sessao expirada.');
 
+    const isFormDataBody = init?.body instanceof FormData;
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token}`,
+    };
+
+    if (!isFormDataBody) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    if (init?.headers && typeof init.headers === 'object') {
+      Object.assign(headers, init.headers as Record<string, string>);
+    }
+
     const response = await fetch(path, {
       ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        ...(init?.headers || {}),
-      },
+      headers,
       cache: 'no-store',
     });
 
@@ -85,8 +250,8 @@ export default function EquipePage() {
   }, [getToken]);
 
   const refresh = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    setCurrentUser(user);
+    const { data: userData } = await supabase.auth.getUser();
+    setCurrentUser(userData.user);
 
     const [teamResult, permissionsResult] = await Promise.all([
       supabase
@@ -97,15 +262,14 @@ export default function EquipePage() {
     ]);
 
     if (!teamResult.error) {
-      const teamMembers = (teamResult.data || []) as TeamMember[];
-      setMembers(teamMembers);
+      setMembers((teamResult.data || []) as TeamMember[]);
     }
 
     const activeProfiles = (permissionsResult.profiles || [])
       .filter((profile) => profile.active)
       .map((profile) => ({ id: profile.id, name: profile.name, active: profile.active }));
-    setProfiles(activeProfiles);
 
+    setProfiles(activeProfiles);
   }, [api, supabase]);
 
   useEffect(() => {
@@ -113,7 +277,7 @@ export default function EquipePage() {
       try {
         await refresh();
       } catch (err: any) {
-        setFeedback({ type: 'error', msg: err?.message || 'Falha ao carregar equipe.' });
+        setFeedback({ type: 'error', msg: err?.message || 'Falha ao carregar usuarios.' });
       } finally {
         setLoading(false);
       }
@@ -132,7 +296,7 @@ export default function EquipePage() {
       const cargo = selectedProfile?.name || 'Suporte';
 
       const { error } = await supabase.from('equipe_791').insert({
-        email: inviteEmail,
+        email: inviteEmail.toLowerCase().trim(),
         nome: inviteName,
         cargo,
         criado_por: currentUser?.id,
@@ -141,13 +305,13 @@ export default function EquipePage() {
       if (error) throw error;
 
       if (selectedProfile && !selectedProfile.id.startsWith('fallback-')) {
-        await api(`/api/admin/permissions/users/${encodeURIComponent(inviteEmail.toLowerCase())}`, {
+        await api(`/api/admin/permissions/users/${encodeURIComponent(inviteEmail.toLowerCase().trim())}`, {
           method: 'PATCH',
           body: JSON.stringify({ profileIds: [selectedProfile.id] }),
         });
       }
 
-      setFeedback({ type: 'success', msg: `${inviteName} adicionado à equipe com sucesso!` });
+      setFeedback({ type: 'success', msg: `${inviteName} adicionado com sucesso.` });
       setInviteEmail('');
       setInviteName('');
       setInvitePassword('');
@@ -161,6 +325,21 @@ export default function EquipePage() {
     }
   };
 
+  const loadUserDetails = useCallback(async (member: TeamMember) => {
+    setLoadingDetails(true);
+    try {
+      const result = await api(`/api/admin/users/${encodeURIComponent(member.email.toLowerCase())}`);
+      const mergedMember = ({ ...member, ...(result.member || {}) } as TeamMember);
+      setEditingDetails(buildForm(mergedMember));
+      setDocuments(Array.isArray(result.documents) ? result.documents : []);
+    } catch {
+      setEditingDetails(buildForm(member));
+      setDocuments([]);
+    } finally {
+      setLoadingDetails(false);
+    }
+  }, [api]);
+
   const openEditUser = (member: TeamMember) => {
     const currentProfile = profiles.find((profile) =>
       profile.active && (
@@ -168,16 +347,22 @@ export default function EquipePage() {
         profile.name.toLowerCase() === String(member.cargo || '').toLowerCase()
       )
     );
+
     setEditingMember(member);
     setEditingProfileId(currentProfile?.id || '');
+    setEditingDetails(buildForm(member));
+    setDocuments([]);
+    void loadUserDetails(member);
   };
 
   const closeEditUser = () => {
     setEditingMember(null);
     setEditingProfileId('');
+    setEditingDetails(buildForm(null));
+    setDocuments([]);
   };
 
-  const handleSaveUserProfile = async () => {
+  const handleSaveUser = async () => {
     if (!editingMember) return;
 
     setSavingUserEmail(editingMember.email);
@@ -191,13 +376,88 @@ export default function EquipePage() {
         body: JSON.stringify({ profileIds: selectedProfile && !selectedProfile.id.startsWith('fallback-') ? [selectedProfile.id] : [] }),
       });
 
+      await api(`/api/admin/users/${encodeURIComponent(editingMember.email.toLowerCase())}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          nome: editingDetails.nome,
+          cpf: editingDetails.cpf,
+          whatsapp: editingDetails.whatsapp,
+          cep: editingDetails.cep,
+          enderecoRua: editingDetails.enderecoRua,
+          enderecoNumero: editingDetails.enderecoNumero,
+          enderecoComplemento: editingDetails.enderecoComplemento,
+          enderecoBairro: editingDetails.enderecoBairro,
+          enderecoCidade: editingDetails.enderecoCidade,
+          enderecoUf: editingDetails.enderecoUf,
+          salarioMensal: parseMoneyInput(editingDetails.salarioMensal),
+          periodoTrabalhoInicio: editingDetails.periodoTrabalhoInicio || null,
+          periodoTrabalhoFim: editingDetails.periodoTrabalhoFim || null,
+          jornadaInicio: editingDetails.jornadaInicio || null,
+          jornadaFim: editingDetails.jornadaFim || null,
+        }),
+      });
+
       await refresh();
-      setFeedback({ type: 'success', msg: `Permissões de ${editingMember.email} atualizadas.` });
-      closeEditUser();
+      setFeedback({ type: 'success', msg: `Dados de ${editingMember.email} atualizados.` });
+      await loadUserDetails(editingMember);
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.message });
     } finally {
       setSavingUserEmail(null);
+    }
+  };
+
+  const handleGenerateResetLink = async () => {
+    if (!editingMember) return;
+    setGeneratingResetLink(true);
+    setFeedback(null);
+
+    try {
+      const result = await api(`/api/admin/users/${encodeURIComponent(editingMember.email.toLowerCase())}/password-reset-link`, {
+        method: 'POST',
+      });
+
+      const link = result?.actionLink;
+      if (link) {
+        try {
+          await navigator.clipboard.writeText(link);
+        } catch {
+          // ignore clipboard failure
+        }
+        window.open(link, '_blank', 'noopener,noreferrer');
+      }
+
+      setFeedback({ type: 'success', msg: 'Link de redefinicao de senha gerado e aberto em nova aba.' });
+    } catch (err: any) {
+      setFeedback({ type: 'error', msg: err.message || 'Falha ao gerar link de senha.' });
+    } finally {
+      setGeneratingResetLink(false);
+    }
+  };
+
+  const handleUploadDocument = async (file: File | null) => {
+    if (!editingMember || !file) return;
+    setUploadingDocument(true);
+    setFeedback(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const result = await api(`/api/admin/users/${encodeURIComponent(editingMember.email.toLowerCase())}/documents`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (result?.document) {
+        setDocuments((prev) => [result.document as UserDocument, ...prev]);
+      }
+
+      setFeedback({ type: 'success', msg: 'Documento enviado com sucesso.' });
+    } catch (err: any) {
+      setFeedback({ type: 'error', msg: err.message || 'Falha ao enviar documento.' });
+    } finally {
+      setUploadingDocument(false);
     }
   };
 
@@ -207,10 +467,10 @@ export default function EquipePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight uppercase flex items-center gap-2">
             <Users className="text-[#3b597b]" size={24} />
-            Equipe 791
+            Usuarios
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Gerencie os colaboradores, perfis de permissão e acessos ao Command Center.
+            Lista completa de usuarios com dados pessoais, jornada, salario, senha e documentos.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -227,7 +487,7 @@ export default function EquipePage() {
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#3b597b] text-white text-sm font-bold rounded-xl hover:bg-[#2e4763] transition-all shadow-sm shadow-[#3b597b]/30 hover:shadow-md hover:-translate-y-0.5"
           >
             <UserPlus size={16} />
-            Adicionar Colaborador
+            Adicionar Usuario
           </button>
         </div>
       </div>
@@ -245,7 +505,7 @@ export default function EquipePage() {
 
       {showForm && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 animate-in fade-in slide-in-from-top-2 duration-300">
-          <h2 className="text-[13px] font-bold text-slate-700 uppercase tracking-wider mb-5">Novo Colaborador</h2>
+          <h2 className="text-[13px] font-bold text-slate-700 uppercase tracking-wider mb-5">Novo Usuario</h2>
           <form onSubmit={handleInvite} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nome Completo</label>
@@ -275,7 +535,7 @@ export default function EquipePage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cargo / Perfil de Permissão</label>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Perfil de Permissao</label>
               <div className="relative">
                 <Shield size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <select
@@ -300,7 +560,7 @@ export default function EquipePage() {
                   type="password"
                   value={invitePassword}
                   onChange={(e) => setInvitePassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Opcional"
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
                 />
               </div>
@@ -331,11 +591,11 @@ export default function EquipePage() {
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-100 text-[11px] uppercase tracking-wider font-bold text-slate-500">
-              <th className="p-4 pl-6 text-left">Colaborador</th>
-              <th className="p-4 text-left">Cargo / Perfil</th>
+              <th className="p-4 pl-6 text-left">Usuario</th>
+              <th className="p-4 text-left">Perfil</th>
               <th className="p-4 text-left">Desde</th>
-              <th className="p-4 text-left">Último Acesso</th>
-              <th className="p-4 pr-6 text-right">Ações</th>
+              <th className="p-4 text-left">Ultimo Acesso</th>
+              <th className="p-4 pr-6 text-right">Acoes</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -347,74 +607,59 @@ export default function EquipePage() {
               </tr>
             ) : members.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-12 text-center">
-                  <div className="flex flex-col items-center gap-3 text-slate-400">
-                    <Users size={40} className="text-slate-200" />
-                    <p className="text-sm font-medium">Nenhum colaborador cadastrado ainda.</p>
-                    <p className="text-[12px]">Clique em "Adicionar Colaborador" para começar.</p>
-                  </div>
+                <td colSpan={5} className="p-12 text-center text-slate-500 text-sm">
+                  Nenhum usuario cadastrado.
                 </td>
               </tr>
             ) : (
-              members.map((member) => {
-                const selectedProfileName = member.cargo || 'Sem perfil';
-
-                return (
-                  <tr key={member.id} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="p-4 pl-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-[#3b597b] flex items-center justify-center text-white text-[11px] font-black shrink-0">
-                          {(member.nome || member.email || 'U').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-[13px] font-bold text-slate-800">{member.nome || '—'}</div>
-                          <div className="text-[11px] text-slate-500">{member.email}</div>
-                        </div>
+              members.map((member) => (
+                <tr key={member.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="p-4 pl-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-[#3b597b] flex items-center justify-center text-white text-[11px] font-black shrink-0">
+                        {(member.nome || member.email || 'U').slice(0, 2).toUpperCase()}
                       </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 bg-[#3b597b]/10 text-[#3b597b] text-[10px] font-bold uppercase tracking-wider rounded-full">
-                          {selectedProfileName}
-                        </span>
+                      <div>
+                        <div className="text-[13px] font-bold text-slate-800">{member.nome || '—'}</div>
+                        <div className="text-[11px] text-slate-500">{member.email}</div>
                       </div>
-                    </td>
-                    <td className="p-4 text-[12px] text-slate-500 font-medium">
-                      {member.created_at ? new Date(member.created_at).toLocaleDateString('pt-BR') : '—'}
-                    </td>
-                    <td className="p-4 text-[12px] text-slate-500 font-medium">
-                      {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleDateString('pt-BR') : '—'}
-                    </td>
-                    <td className="p-4 pr-6 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => openEditUser(member)}
-                          disabled={savingUserEmail === member.email}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#3b597b] text-white text-[11px] font-bold rounded-md hover:bg-[#2e4763] disabled:opacity-60"
-                        >
-                          <PencilLine size={14} />
-                          Editar usuário
-                        </button>
-                        <button className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className="px-2.5 py-1 bg-[#3b597b]/10 text-[#3b597b] text-[10px] font-bold uppercase tracking-wider rounded-full">
+                      {member.cargo || 'Sem perfil'}
+                    </span>
+                  </td>
+                  <td className="p-4 text-[12px] text-slate-500 font-medium">
+                    {member.created_at ? new Date(member.created_at).toLocaleDateString('pt-BR') : '—'}
+                  </td>
+                  <td className="p-4 text-[12px] text-slate-500 font-medium">
+                    {member.last_sign_in_at ? new Date(member.last_sign_in_at).toLocaleDateString('pt-BR') : '—'}
+                  </td>
+                  <td className="p-4 pr-6 text-right">
+                    <button
+                      onClick={() => openEditUser(member)}
+                      disabled={savingUserEmail === member.email}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#3b597b] text-white text-[11px] font-bold rounded-md hover:bg-[#2e4763] disabled:opacity-60"
+                    >
+                      <PencilLine size={14} />
+                      Editar usuario
+                    </button>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
 
       {editingMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
-          <div className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6 overflow-y-auto">
+          <div className="w-full max-w-4xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight">Editar usuário</h2>
-                <p className="text-sm text-slate-500">Escolha o perfil de permissão deste colaborador.</p>
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight">Editar usuario</h2>
+                <p className="text-sm text-slate-500">Dados completos, permissao, salario, jornada, senha e documentos.</p>
               </div>
               <button onClick={closeEditUser} className="text-slate-400 hover:text-slate-700">×</button>
             </div>
@@ -424,19 +669,263 @@ export default function EquipePage() {
               <div className="text-xs text-slate-500">{editingMember.email}</div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cargo / Perfil de permissão</label>
-              <select
-                value={editingProfileId}
-                onChange={(e) => setEditingProfileId(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:border-[#3b597b]"
-              >
-                <option value="">Sem perfil</option>
-                {permissionProfileOptions.map((profile) => (
-                  <option key={profile.id} value={profile.id}>{profile.name}</option>
-                ))}
-              </select>
-            </div>
+            {loadingDetails ? (
+              <div className="py-10 text-center text-slate-500 text-sm">
+                <Loader2 className="animate-spin mx-auto mb-2" />
+                Carregando detalhes do usuario...
+              </div>
+            ) : (
+              <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-2">
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nome completo</label>
+                    <input
+                      value={editingDetails.nome}
+                      onChange={(e) => setEditingDetails((prev) => ({ ...prev, nome: e.target.value }))}
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Perfil de permissao</label>
+                    <select
+                      value={editingProfileId}
+                      onChange={(e) => setEditingProfileId(e.target.value)}
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    >
+                      <option value="">Sem perfil</option>
+                      {permissionProfileOptions.map((profile) => (
+                        <option key={profile.id} value={profile.id}>{profile.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">CPF</label>
+                    <input
+                      value={editingDetails.cpf}
+                      onChange={(e) => setEditingDetails((prev) => ({ ...prev, cpf: maskCpf(e.target.value) }))}
+                      placeholder="000.000.000-00"
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">E-mail</label>
+                    <input
+                      value={editingDetails.email}
+                      readOnly
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-100 text-sm text-slate-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">WhatsApp</label>
+                    <input
+                      value={editingDetails.whatsapp}
+                      onChange={(e) => setEditingDetails((prev) => ({ ...prev, whatsapp: maskWhatsapp(e.target.value) }))}
+                      placeholder="(00) 00000-0000"
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center gap-2 text-slate-700 mb-3">
+                    <MapPin size={14} />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">Endereco completo</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">CEP</label>
+                      <input
+                        value={editingDetails.cep}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, cep: maskCep(e.target.value) }))}
+                        placeholder="00000-000"
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Rua</label>
+                      <input
+                        value={editingDetails.enderecoRua}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoRua: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Numero</label>
+                      <input
+                        value={editingDetails.enderecoNumero}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoNumero: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Complemento</label>
+                      <input
+                        value={editingDetails.enderecoComplemento}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoComplemento: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bairro</label>
+                      <input
+                        value={editingDetails.enderecoBairro}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoBairro: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cidade</label>
+                      <input
+                        value={editingDetails.enderecoCidade}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoCidade: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">UF</label>
+                      <input
+                        value={editingDetails.enderecoUf}
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoUf: e.target.value.toUpperCase().slice(0, 2) }))}
+                        className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm uppercase"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 text-slate-700 mb-3">
+                      <Wallet size={14} />
+                      <h3 className="text-xs font-bold uppercase tracking-wider">Salario</h3>
+                    </div>
+                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Salario mensal (R$)</label>
+                    <input
+                      value={editingDetails.salarioMensal}
+                      onChange={(e) => setEditingDetails((prev) => ({ ...prev, salarioMensal: formatMoneyInput(e.target.value) }))}
+                      placeholder="0,00"
+                      className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-center gap-2 text-slate-700 mb-3">
+                      <Clock size={14} />
+                      <h3 className="text-xs font-bold uppercase tracking-wider">Periodos de trabalho</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Inicio contrato</label>
+                        <input
+                          type="date"
+                          value={editingDetails.periodoTrabalhoInicio}
+                          onChange={(e) => setEditingDetails((prev) => ({ ...prev, periodoTrabalhoInicio: e.target.value }))}
+                          className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Fim contrato</label>
+                        <input
+                          type="date"
+                          value={editingDetails.periodoTrabalhoFim}
+                          onChange={(e) => setEditingDetails((prev) => ({ ...prev, periodoTrabalhoFim: e.target.value }))}
+                          className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Jornada inicio</label>
+                        <input
+                          type="time"
+                          value={editingDetails.jornadaInicio}
+                          onChange={(e) => setEditingDetails((prev) => ({ ...prev, jornadaInicio: e.target.value }))}
+                          className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Jornada fim</label>
+                        <input
+                          type="time"
+                          value={editingDetails.jornadaFim}
+                          onChange={(e) => setEditingDetails((prev) => ({ ...prev, jornadaFim: e.target.value }))}
+                          className="mt-1 w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Senha e documentos</h3>
+                    <button
+                      type="button"
+                      onClick={handleGenerateResetLink}
+                      disabled={generatingResetLink}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {generatingResetLink ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+                      Gerar link de nova senha
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-3 md:items-center mb-3">
+                    <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                      <Upload size={14} />
+                      Upload de documento
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          void handleUploadDocument(file);
+                          e.currentTarget.value = '';
+                        }}
+                        disabled={uploadingDocument}
+                      />
+                    </label>
+                    {uploadingDocument && (
+                      <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+                        <Loader2 size={12} className="animate-spin" />
+                        Enviando arquivo...
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {documents.length === 0 ? (
+                      <p className="text-xs text-slate-500">Nenhum documento enviado.</p>
+                    ) : (
+                      documents.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-700 truncate flex items-center gap-2">
+                              <FileText size={12} />
+                              {doc.fileName}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              {formatBytes(doc.sizeBytes)} • {new Date(doc.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                          {doc.signedUrl && (
+                            <a
+                              href={doc.signedUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-xs font-bold text-[#3b597b] hover:text-[#2e4763]"
+                            >
+                              Abrir
+                              <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -444,16 +933,16 @@ export default function EquipePage() {
                 onClick={closeEditUser}
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-50 transition-colors"
               >
-                Cancelar
+                Fechar
               </button>
               <button
                 type="button"
-                onClick={handleSaveUserProfile}
-                disabled={savingUserEmail === editingMember.email}
+                onClick={handleSaveUser}
+                disabled={savingUserEmail === editingMember.email || loadingDetails}
                 className="px-5 py-2 bg-[#3b597b] text-white text-sm font-bold rounded-lg hover:bg-[#2e4763] transition-colors flex items-center gap-2 disabled:opacity-60"
               >
                 {savingUserEmail === editingMember.email ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Salvar perfil
+                Salvar usuario
               </button>
             </div>
           </div>

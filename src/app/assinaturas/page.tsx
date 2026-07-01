@@ -134,6 +134,9 @@ export default function AssinaturasPage() {
   const [tenantToDelete, setTenantToDelete] = useState<Vidracaria | null>(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
   const [isDeletingTenant, setIsDeletingTenant] = useState(false);
+  const [showAuthCleanupModal, setShowAuthCleanupModal] = useState(false);
+  const [orphanAuthUserId, setOrphanAuthUserId] = useState('');
+  const [isCleaningAuthUser, setIsCleaningAuthUser] = useState(false);
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -378,6 +381,51 @@ export default function AssinaturasPage() {
     }
   };
 
+  const handleCleanupAuthUser = async () => {
+    const normalizedUserId = orphanAuthUserId.trim();
+    if (!normalizedUserId) {
+      alert('Informe o userId do usuario que deve ser removido do Auth.');
+      return;
+    }
+
+    setIsCleaningAuthUser(true);
+    try {
+      let accessToken = '';
+
+      const { data: sessionData } = await authClient.auth.getSession();
+      accessToken = sessionData.session?.access_token || '';
+
+      if (!accessToken) {
+        const { data: refreshed } = await authClient.auth.refreshSession();
+        accessToken = refreshed.session?.access_token || '';
+      }
+
+      if (!accessToken) {
+        throw new Error('Sessao nao encontrada. Faca login novamente.');
+      }
+
+      const response = await fetch(`/api/admin/auth-users/${encodeURIComponent(normalizedUserId)}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Falha ao excluir usuario no Auth.');
+      }
+
+      alert('Usuario removido do Auth com sucesso.');
+      setOrphanAuthUserId('');
+      setShowAuthCleanupModal(false);
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir usuario do Auth.');
+    } finally {
+      setIsCleaningAuthUser(false);
+    }
+  };
+
   const toggleModule = (mod: Module) => {
     setModalModules(prev => {
       const isSelected = prev.includes(mod.id) || !!(mod.slug && prev.includes(mod.slug));
@@ -432,6 +480,15 @@ export default function AssinaturasPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setShowAuthCleanupModal(true);
+              setOrphanAuthUserId('');
+            }}
+            className="bg-white border border-amber-200 text-amber-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-amber-50 transition-all"
+          >
+            <Trash2 size={16} /> Remover Usuario Auth
+          </button>
           <button 
             onClick={() => fetchData()}
             className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 transition-all"
@@ -975,6 +1032,57 @@ export default function AssinaturasPage() {
               >
                 {isDeletingTenant ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 Excluir Definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAuthCleanupModal && (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-3xl border border-amber-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-amber-100 bg-amber-50/60">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Manutencao Auth</p>
+              <h3 className="text-lg font-black text-slate-900 mt-1">Remover usuario orfao do Auth</h3>
+              <p className="text-[12px] text-slate-600 mt-1">
+                Use esta acao quando a vidracaria ja foi apagada, mas o usuario ficou preso por referencias legadas no banco.
+              </p>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <label className="block">
+                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">User ID do Supabase Auth</span>
+                <input
+                  type="text"
+                  value={orphanAuthUserId}
+                  onChange={(e) => setOrphanAuthUserId(e.target.value)}
+                  placeholder="Cole aqui o UUID do usuario"
+                  className="mt-2 w-full bg-white border border-slate-300 rounded-xl px-4 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
+                />
+              </label>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                A rotina limpa referencias legadas em pessoas e conversas do WhatsApp antes de tentar excluir o usuario no Auth.
+              </p>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowAuthCleanupModal(false);
+                  setOrphanAuthUserId('');
+                }}
+                disabled={isCleaningAuthUser}
+                className="px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCleanupAuthUser}
+                disabled={isCleaningAuthUser || !orphanAuthUserId.trim()}
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-amber-600 disabled:opacity-50"
+              >
+                {isCleaningAuthUser ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Remover do Auth
               </button>
             </div>
           </div>

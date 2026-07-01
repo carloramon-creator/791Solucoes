@@ -164,6 +164,28 @@ async function safeDeleteStoragePrefix(admin: SupabaseClient, bucket: string, pr
   }
 }
 
+async function releaseAuthUserReferences(admin: SupabaseClient, userId: string) {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return;
+
+  const tablesToNullify = [
+    { table: 'pessoas', column: 'user_id' },
+    { table: 'whatsapp_conversations', column: 'responsible_user_id' },
+    { table: 'whatsapp_conversations', column: 'transferred_from_id' },
+  ] as const;
+
+  for (const target of tablesToNullify) {
+    const { error } = await admin
+      .from(target.table)
+      .update({ [target.column]: null })
+      .eq(target.column, normalizedUserId);
+
+    if (!error) continue;
+    if (isMissingSchemaObjectError(error)) continue;
+    throw new Error(`[${target.table}.${target.column}] ${error.message || 'erro ao liberar referencia do usuario'}`);
+  }
+}
+
 async function authenticateHoldingAdmin(req: Request): Promise<AuthResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -349,6 +371,7 @@ export async function DELETE(req: Request) {
 
     const authDeleteFailures: Array<{ userId: string; reason: string }> = [];
     for (const userId of userIdsToDelete) {
+      await releaseAuthUserReferences(glass, userId);
       const { error } = await glass.auth.admin.deleteUser(userId);
       if (error) {
         if (isIgnorableAuthDeleteError(error)) {

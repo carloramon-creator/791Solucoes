@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Scissors, Building2, CreditCard, Receipt, Settings, Users, Percent, ChevronRight, ChevronDown, PanelLeftClose, LogOut, Loader2, FileCheck, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Scissors, Building2, CreditCard, Receipt, Settings, Users, Percent, ChevronRight, ChevronDown, PanelLeftClose, LogOut, Loader2, FileCheck, ShieldCheck, LifeBuoy } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
 const navigationItems = [
   { name: 'Painel', href: '/', icon: LayoutDashboard },
   { name: 'FINANCEIRO', href: '/financeiro', icon: Receipt },
   { name: 'NOTAS FISCAIS', href: '/notas-fiscais', icon: FileCheck },
+  { name: 'SUPORTE', href: '/suporte', icon: LifeBuoy },
   { name: 'ASSINATURAS', href: '/assinaturas', icon: Users, hasSubmenu: true },
   { name: 'PATROCINADORES', href: '/patrocinadores', icon: ShieldCheck },
   {

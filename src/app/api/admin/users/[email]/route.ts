@@ -3,6 +3,7 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 const DOCUMENT_BUCKET = 'equipe-documentos';
+const AVATAR_BUCKET = 'equipe-avatars';
 
 type RouteContext = {
   params: Promise<{ email: string }>;
@@ -74,9 +75,20 @@ export async function GET(req: Request, context: RouteContext) {
       };
     }));
 
+    let avatarUrl: string | null = null;
+    const fotoPath = member?.foto_path ? String(member.foto_path).trim() : '';
+
+    if (fotoPath) {
+      const { data: signedAvatar } = await supabaseServer.storage
+        .from(AVATAR_BUCKET)
+        .createSignedUrl(fotoPath, 60 * 60);
+      avatarUrl = signedAvatar?.signedUrl || null;
+    }
+
     return NextResponse.json({
       member: member || null,
       documents,
+      avatarUrl,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Falha ao carregar usuario.' }, { status: 500 });

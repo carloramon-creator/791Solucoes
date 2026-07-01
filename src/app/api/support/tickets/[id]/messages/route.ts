@@ -2,6 +2,52 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
+const AVATAR_BUCKET = 'equipe-avatars';
+
+async function withAuthorAvatar(messages: any[]) {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  const emails = Array.from(new Set(messages
+    .map((msg) => String(msg.author_email || '').trim().toLowerCase())
+    .filter(Boolean)));
+
+  if (emails.length === 0) {
+    return messages.map((msg) => ({ ...msg, author_avatar_url: null }));
+  }
+
+  const { data: members } = await supabaseServer
+    .from('equipe_791')
+    .select('email, foto_path')
+    .in('email', emails);
+
+  const avatarByEmail = new Map<string, string | null>();
+
+  for (const row of members || []) {
+    const email = String(row.email || '').trim().toLowerCase();
+    if (!email) continue;
+
+    const fotoPath = row.foto_path ? String(row.foto_path).trim() : '';
+    if (!fotoPath) {
+      avatarByEmail.set(email, null);
+      continue;
+    }
+
+    const { data: signedAvatar } = await supabaseServer.storage
+      .from(AVATAR_BUCKET)
+      .createSignedUrl(fotoPath, 60 * 60);
+
+    avatarByEmail.set(email, signedAvatar?.signedUrl || null);
+  }
+
+  return messages.map((msg) => {
+    const email = String(msg.author_email || '').trim().toLowerCase();
+    return {
+      ...msg,
+      author_avatar_url: email ? (avatarByEmail.get(email) ?? null) : null,
+    };
+  });
+}
+
 export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem visualizar mensagens do ticket.');
   if (!auth.ok) {
@@ -25,9 +71,11 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     return NextResponse.json({ error: error.message || 'Falha ao carregar mensagens.' }, { status: 500 });
   }
 
+  const messages = await withAuthorAvatar(data || []);
+
   return NextResponse.json({
     total: (data || []).length,
-    messages: data || [],
+    messages,
   });
 }
 
@@ -112,9 +160,11 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
         .eq('id', ticketId);
     }
 
+    const messagesWithAvatar = await withAuthorAvatar([created]);
+
     return NextResponse.json({
       ok: true,
-      message: created,
+      message: messagesWithAvatar[0] || created,
       sentBy: auth.user.email,
     });
   } catch (error: any) {

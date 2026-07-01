@@ -44,6 +44,7 @@ type TeamMember = {
   periodo_trabalho_fim?: string | null;
   jornada_inicio?: string | null;
   jornada_fim?: string | null;
+  foto_path?: string | null;
 };
 
 type PermissionProfile = {
@@ -192,7 +193,9 @@ export default function EquipePage() {
   const [documents, setDocuments] = useState<UserDocument[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [generatingResetLink, setGeneratingResetLink] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -332,9 +335,11 @@ export default function EquipePage() {
       const mergedMember = ({ ...member, ...(result.member || {}) } as TeamMember);
       setEditingDetails(buildForm(mergedMember));
       setDocuments(Array.isArray(result.documents) ? result.documents : []);
+      setAvatarUrl(result?.avatarUrl ? String(result.avatarUrl) : null);
     } catch {
       setEditingDetails(buildForm(member));
       setDocuments([]);
+      setAvatarUrl(null);
     } finally {
       setLoadingDetails(false);
     }
@@ -352,6 +357,7 @@ export default function EquipePage() {
     setEditingProfileId(currentProfile?.id || '');
     setEditingDetails(buildForm(member));
     setDocuments([]);
+    setAvatarUrl(null);
     void loadUserDetails(member);
   };
 
@@ -360,6 +366,32 @@ export default function EquipePage() {
     setEditingProfileId('');
     setEditingDetails(buildForm(null));
     setDocuments([]);
+    setAvatarUrl(null);
+  };
+
+  const handleUploadPhoto = async (file: File | null) => {
+    if (!editingMember || !file) return;
+
+    setUploadingPhoto(true);
+    setFeedback(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const result = await api(`/api/admin/users/${encodeURIComponent(editingMember.email.toLowerCase())}/photo`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      setAvatarUrl(result?.avatarUrl ? String(result.avatarUrl) : null);
+      setFeedback({ type: 'success', msg: 'Foto do usuario atualizada com sucesso.' });
+      await refresh();
+    } catch (err: any) {
+      setFeedback({ type: 'error', msg: err.message || 'Falha ao enviar foto do usuario.' });
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const handleSaveUser = async () => {
@@ -677,6 +709,44 @@ export default function EquipePage() {
             ) : (
               <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-3 rounded-xl border border-slate-200 p-4">
+                    <div className="flex flex-col md:flex-row md:items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-[#3b597b] text-white flex items-center justify-center text-sm font-black overflow-hidden shrink-0">
+                        {avatarUrl ? (
+                          <img src={avatarUrl} alt="Foto do usuario" className="w-full h-full object-cover" />
+                        ) : (
+                          (editingDetails.nome || editingDetails.email || 'U').slice(0, 2).toUpperCase()
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Foto do usuario</p>
+                        <div className="flex items-center gap-3">
+                          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                            <Upload size={14} />
+                            Upload de foto
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                void handleUploadPhoto(file);
+                                e.currentTarget.value = '';
+                              }}
+                              disabled={uploadingPhoto}
+                            />
+                          </label>
+                          {uploadingPhoto && (
+                            <span className="inline-flex items-center gap-2 text-xs text-slate-500">
+                              <Loader2 size={12} className="animate-spin" />
+                              Enviando foto...
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="md:col-span-2">
                     <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Nome completo</label>
                     <input

@@ -20,6 +20,7 @@ alter table if exists public.equipe_791
   add column if not exists periodo_trabalho_fim date,
   add column if not exists jornada_inicio time,
   add column if not exists jornada_fim time,
+  add column if not exists foto_path text,
   add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists public.equipe_791_documentos (
@@ -55,6 +56,20 @@ values (
     'image/jpeg',
     'image/webp',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]::text[]
+)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'equipe-avatars',
+  'equipe-avatars',
+  false,
+  5242880,
+  array[
+    'image/png',
+    'image/jpeg',
+    'image/webp'
   ]::text[]
 )
 on conflict (id) do nothing;

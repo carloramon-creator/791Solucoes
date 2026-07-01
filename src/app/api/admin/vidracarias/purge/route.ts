@@ -98,6 +98,13 @@ function isMissingSchemaObjectError(error: unknown): boolean {
   );
 }
 
+function isIgnorableAuthDeleteError(error: unknown): boolean {
+  const candidate = error as { message?: string; status?: number };
+  const msg = String(candidate?.message || '').toLowerCase();
+  // Supabase may return not-found style errors when the auth user was already removed.
+  return candidate?.status === 404 || msg.includes('not found') || msg.includes('user not found');
+}
+
 async function safeDeleteByTenant(admin: SupabaseClient, table: string, vidracariaId: string) {
   const { error } = await admin
     .from(table)
@@ -344,6 +351,9 @@ export async function DELETE(req: Request) {
     for (const userId of userIdsToDelete) {
       const { error } = await glass.auth.admin.deleteUser(userId);
       if (error) {
+        if (isIgnorableAuthDeleteError(error)) {
+          continue;
+        }
         authDeleteFailures.push({ userId, reason: error.message || 'erro ao excluir usuario no Auth' });
       }
     }

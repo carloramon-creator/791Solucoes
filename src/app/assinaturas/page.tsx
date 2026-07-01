@@ -357,8 +357,14 @@ export default function AssinaturasPage() {
       }
 
       const falhasAuthCount = Array.isArray(payload?.falhasAuth) ? payload.falhasAuth.length : 0;
+      const detalhesFalhas = falhasAuthCount > 0
+        ? payload.falhasAuth
+            .slice(0, 3)
+            .map((f: { userId?: string; reason?: string }, idx: number) => `${idx + 1}. ${f.userId || 'sem-user-id'}: ${f.reason || 'erro desconhecido'}`)
+            .join('\n')
+        : '';
       const resumoFalhas = falhasAuthCount > 0
-        ? `\n\nAtencao: ${falhasAuthCount} usuario(s) nao foram removidos do Auth.`
+        ? `\n\nAtencao: ${falhasAuthCount} usuario(s) nao foram removidos do Auth.\n${detalhesFalhas}`
         : '';
 
       alert(`Vidracaria excluida definitivamente com sucesso.${resumoFalhas}`);

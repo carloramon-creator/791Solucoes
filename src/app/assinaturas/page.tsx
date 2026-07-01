@@ -1209,7 +1209,9 @@ export default function AssinaturasPage() {
                 Cancelar
               </button>
               <button
-                onClick={handleCleanupAuthUser}
+                onClick={() => {
+                  void handleCleanupAuthUser();
+                }}
                 disabled={isCleaningAuthUser || !orphanAuthUserId.trim()}
                 className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-amber-600 disabled:opacity-50"
               >

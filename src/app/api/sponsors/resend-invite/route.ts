@@ -24,7 +24,7 @@ export async function POST(req: Request) {
       console.log(`[RESEND-INVITE] Usuário já existe (${existingUser.id}). Enviando e-mail de recuperação...`);
       
       const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
-        redirectTo: `${PRODUCTION_URL}/login`
+        redirectTo: `${PRODUCTION_URL}/set-password`
       });
 
       if (resetError) {
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
           type: 'recovery',
           email,
-          options: { redirectTo: `${PRODUCTION_URL}/login` }
+          options: { redirectTo: `${PRODUCTION_URL}/set-password` }
         });
 
         if (linkError) throw linkError;
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       console.log(`[RESEND-INVITE] Usuário não existe. Enviando convite para ${email}...`);
 
       const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${PRODUCTION_URL}/login`,
+        redirectTo: `${PRODUCTION_URL}/set-password`,
         data: { role: 'sponsor' }
       });
 

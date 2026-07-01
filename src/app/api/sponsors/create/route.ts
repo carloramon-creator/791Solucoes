@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const supabaseAdmin = createClient(holdingUrl, holdingServiceKey);
 
-    const origin = 'https://admin.791solucoes.com.br';
+    const origin = 'https://admin.791solucoes.com.br/set-password';
     let authId = null;
     let inviteLink = null;
 
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         payload.email,
         {
-          redirectTo: `${origin}/login`,
+          redirectTo: origin,
           data: {
             role: 'sponsor',
             name: payload.nome
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
           type: 'recovery',
           email: payload.email,
           options: {
-            redirectTo: `${origin}/login`
+            redirectTo: origin
           }
         });
 

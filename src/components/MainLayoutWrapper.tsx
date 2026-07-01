@@ -26,7 +26,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
         if (!authUser) {
           setUser(null);
           setSponsorId(null);
-          if (pathname !== '/login') {
+          if (pathname !== '/login' && pathname !== '/set-password') {
             router.push('/login');
           }
           setLoading(false);
@@ -46,8 +46,11 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
 
         if (sponsorData) {
           setSponsorId(sponsorData.id);
-          // Se for patrocinador e tentar acessar rotas admin, redireciona para o portal dele
-          if (!pathname.startsWith('/portal/')) {
+          // Nunca redirecionar da página de criar senha
+          if (pathname === '/set-password') {
+            // Deixar o usuário criar a senha sem interrupção
+          } else if (!pathname.startsWith('/portal/')) {
+            // Se for patrocinador e tentar acessar rotas admin, redireciona para o portal dele
             router.push(`/portal/${sponsorData.id}`);
           } else {
             // Se estiver no portal, garantir que está acessando o portal correto dele (prevenir id de outro)
@@ -98,11 +101,12 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Rotas limpas em tela cheia (Login ou Portal do Patrocinador)
+  // Rotas limpas em tela cheia (Login, Set Password ou Portal do Patrocinador)
   const isPortal = pathname.startsWith('/portal/');
   const isLogin = pathname === '/login';
+  const isSetPassword = pathname === '/set-password';
 
-  if (isLogin || isPortal) {
+  if (isLogin || isPortal || isSetPassword) {
     return (
       <div className="h-screen w-screen overflow-y-auto bg-slate-50">
         {children}

@@ -16,6 +16,16 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const [sponsorId, setSponsorId] = useState<string | null>(null);
 
   useEffect(() => {
+    // 1. Interceptação imediata de hash na montagem (para convites e recuperações de senha)
+    const initialHash = typeof window !== 'undefined' ? window.location.hash : '';
+    if (initialHash && (initialHash.includes('type=recovery') || initialHash.includes('type=invite'))) {
+      if (pathname !== '/set-password') {
+        router.push('/set-password' + initialHash);
+        setLoading(false);
+        return;
+      }
+    }
+
     let active = true;
 
     async function checkAuth() {
@@ -91,7 +101,9 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
         window.location.href = '/login';
       } else if (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') {
         const hash = typeof window !== 'undefined' ? window.location.hash : '';
-        if (event === 'PASSWORD_RECOVERY' || (hash && (hash.includes('type=recovery') || hash.includes('type=invite')))) {
+        const isResetFlow = event === 'PASSWORD_RECOVERY' || (hash && (hash.includes('type=recovery') || hash.includes('type=invite')));
+        
+        if (isResetFlow && pathname !== '/set-password') {
           // Redireciona imediatamente para a tela de definir senha com o hash
           router.push('/set-password' + hash);
         } else {

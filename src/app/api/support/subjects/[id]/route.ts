@@ -11,6 +11,15 @@ function normalizeEmails(value: unknown): string[] {
   ));
 }
 
+function normalizeProfileIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value
+      .map((profileId) => String(profileId || '').trim())
+      .filter(Boolean)
+  ));
+}
+
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem atualizar assuntos de suporte.');
   if (!auth.ok) {
@@ -79,7 +88,35 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       }
     }
 
-    const [{ data: subject, error: subjectError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+    if (body?.profileIds !== undefined) {
+      const profileIds = normalizeProfileIds(body.profileIds);
+
+      const { error: deleteError } = await supabaseServer
+        .from('support_subject_permission_profiles')
+        .delete()
+        .eq('subject_id', subjectId);
+
+      if (deleteError) {
+        return NextResponse.json({ error: deleteError.message || 'Falha ao atualizar perfis do assunto.' }, { status: 500 });
+      }
+
+      if (profileIds.length > 0) {
+        const payload = profileIds.map((profileId) => ({ subject_id: subjectId, profile_id: profileId }));
+        const { error: insertError } = await supabaseServer
+          .from('support_subject_permission_profiles')
+          .insert(payload);
+
+        if (insertError) {
+          return NextResponse.json({ error: insertError.message || 'Falha ao atualizar perfis do assunto.' }, { status: 500 });
+        }
+      }
+    }
+
+    const [
+      { data: subject, error: subjectError },
+      { data: assignments, error: assignmentsError },
+      { data: profileLinks, error: profileLinksError },
+    ] = await Promise.all([
       supabaseServer
         .from('support_subjects')
         .select('id, name, description, active, created_at, updated_at')
@@ -89,11 +126,15 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
         .from('support_subject_assignments')
         .select('assignee_email')
         .eq('subject_id', subjectId),
+      supabaseServer
+        .from('support_subject_permission_profiles')
+        .select('profile_id')
+        .eq('subject_id', subjectId),
     ]);
 
-    if (subjectError || assignmentsError || !subject) {
+    if (subjectError || assignmentsError || profileLinksError || !subject) {
       return NextResponse.json({
-        error: subjectError?.message || assignmentsError?.message || 'Assunto nao encontrado.',
+        error: subjectError?.message || assignmentsError?.message || profileLinksError?.message || 'Assunto nao encontrado.',
       }, { status: 404 });
     }
 
@@ -102,6 +143,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       subject: {
         ...subject,
         assigneeEmails: (assignments || []).map((row) => String(row.assignee_email || '').trim().toLowerCase()).filter(Boolean),
+        profileIds: (profileLinks || []).map((row) => String(row.profile_id || '').trim()).filter(Boolean),
       },
       updatedBy: auth.user.email,
     });

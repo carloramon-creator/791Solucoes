@@ -1,6 +1,8 @@
 "use client";
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { 
   Settings, 
   ShieldCheck, 
@@ -15,11 +17,16 @@ import {
 } from 'lucide-react';
 
 export default function ConfiguracoesPage() {
+  const supabase = createSupabaseBrowser();
+  const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
+  const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
+
   const configSections = [
     {
       title: 'Financeiro e API',
       desc: 'Gerencie as chaves do Asaas, Inter e faturamento.',
       href: '/configuracoes/financeiro',
+      resourceCode: 'submenu.configuracoes.financeiro',
       icon: ShieldCheck,
       color: 'text-blue-600',
       bg: 'bg-blue-50'
@@ -28,6 +35,7 @@ export default function ConfiguracoesPage() {
       title: 'Contas Bancárias',
       desc: 'Gerencie saldos, limites e cartões da Holding.',
       href: '/configuracoes/contas',
+      resourceCode: 'submenu.configuracoes.contas',
       icon: Wallet,
       color: 'text-emerald-600',
       bg: 'bg-emerald-50'
@@ -36,6 +44,7 @@ export default function ConfiguracoesPage() {
       title: 'Notas Fiscais',
       desc: 'Servidor de NFS-e, certificados e impostos.',
       href: '/configuracoes/nfs',
+      resourceCode: 'submenu.configuracoes.nfs',
       icon: Receipt,
       color: 'text-purple-600',
       bg: 'bg-purple-50'
@@ -43,7 +52,8 @@ export default function ConfiguracoesPage() {
     {
       title: 'Equipe e Permissões',
       desc: 'Controle quem pode acessar o painel da Holding.',
-      href: '/equipe',
+      href: '/configuracoes/permissoes',
+      resourceCode: 'submenu.configuracoes.permissoes',
       icon: Users,
       color: 'text-[#3b597b]',
       bg: 'bg-slate-100'
@@ -52,6 +62,7 @@ export default function ConfiguracoesPage() {
       title: 'Mapa DRE / Categorias',
       desc: 'Plano de contas e árvore de categorias.',
       href: '/configuracoes/categorias',
+      resourceCode: 'submenu.configuracoes.categorias',
       icon: Tag,
       color: 'text-amber-600',
       bg: 'bg-amber-50'
@@ -60,11 +71,67 @@ export default function ConfiguracoesPage() {
       title: 'Notificações',
       desc: 'Configure avisos de pagamentos e webhooks.',
       href: '/configuracoes/notificacoes',
+      resourceCode: 'submenu.configuracoes.notificacoes',
       icon: Bell,
       color: 'text-rose-600',
       bg: 'bg-rose-50'
     }
   ];
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPermissions() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          if (active) {
+            setPermissionCodes(new Set());
+            setUnrestrictedFallback(true);
+          }
+          return;
+        }
+
+        const res = await fetch('/api/admin/permissions/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: 'no-store',
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (active) {
+            setPermissionCodes(new Set());
+            setUnrestrictedFallback(true);
+          }
+          return;
+        }
+
+        if (active) {
+          const codes = Array.isArray(json.permissionCodes) ? json.permissionCodes : [];
+          setPermissionCodes(new Set(codes));
+          setUnrestrictedFallback(Boolean(json.unrestrictedFallback));
+        }
+      } catch {
+        if (active) {
+          setPermissionCodes(new Set());
+          setUnrestrictedFallback(true);
+        }
+      }
+    }
+
+    loadPermissions();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const visibleSections = unrestrictedFallback
+    ? configSections
+    : configSections.filter((section) => permissionCodes.has(section.resourceCode));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -82,7 +149,7 @@ export default function ConfiguracoesPage() {
 
       {/* Grid de Configurações */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {configSections.map((section) => (
+        {visibleSections.map((section) => (
           <Link 
             key={section.title} 
             href={section.href}

@@ -7,24 +7,25 @@ import { LayoutDashboard, Scissors, Building2, CreditCard, Receipt, Settings, Us
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
 const navigationItems = [
-  { name: 'Painel', href: '/', icon: LayoutDashboard },
-  { name: 'FINANCEIRO', href: '/financeiro', icon: Receipt },
-  { name: 'NOTAS FISCAIS', href: '/notas-fiscais', icon: FileCheck },
-  { name: 'SUPORTE', href: '/suporte', icon: LifeBuoy },
-  { name: 'ASSINATURAS', href: '/assinaturas', icon: Users, hasSubmenu: true },
-  { name: 'PATROCINADORES', href: '/patrocinadores', icon: ShieldCheck },
+  { name: 'Painel', href: '/', icon: LayoutDashboard, resourceCode: 'menu.dashboard' },
+  { name: 'FINANCEIRO', href: '/financeiro', icon: Receipt, resourceCode: 'menu.financeiro' },
+  { name: 'NOTAS FISCAIS', href: '/notas-fiscais', icon: FileCheck, resourceCode: 'menu.notas_fiscais' },
+  { name: 'SUPORTE', href: '/suporte', icon: LifeBuoy, resourceCode: 'menu.suporte' },
+  { name: 'ASSINATURAS', href: '/assinaturas', icon: Users, hasSubmenu: true, resourceCode: 'menu.assinaturas' },
+  { name: 'PATROCINADORES', href: '/patrocinadores', icon: ShieldCheck, resourceCode: 'menu.patrocinadores' },
   {
     name: 'PLANOS',
     href: '/planos',
     icon: CreditCard,
+    resourceCode: 'menu.planos',
     hasSubmenu: true,
     subItems: [
-      { name: 'Glass', href: '/planos/glass' },
-      { name: 'Barber', href: '/planos/barber' }
+      { name: 'Glass', href: '/planos/glass', resourceCode: 'submenu.planos.glass' },
+      { name: 'Barber', href: '/planos/barber', resourceCode: 'submenu.planos.barber' }
     ]
   },
-  { name: 'CUPONS', href: '/cupons', icon: Percent },
-  { name: 'CONFIGURAÇÕES', href: '/configuracoes', icon: Settings, hasSubmenu: false },
+  { name: 'CUPONS', href: '/cupons', icon: Percent, resourceCode: 'menu.cupons' },
+  { name: 'CONFIGURAÇÕES', href: '/configuracoes', icon: Settings, hasSubmenu: false, resourceCode: 'menu.configuracoes' },
 ];
 
 export function Sidebar() {
@@ -37,6 +38,8 @@ export function Sidebar() {
   const [displayName, setDisplayName] = useState('ADMIN');
   const [displayEmail, setDisplayEmail] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [permissionCodes, setPermissionCodes] = useState<Set<string> | null>(null);
+  const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -50,6 +53,64 @@ export function Sidebar() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPermissions() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) {
+          if (active) {
+            setUnrestrictedFallback(true);
+            setPermissionCodes(new Set());
+          }
+          return;
+        }
+
+        const res = await fetch('/api/admin/permissions/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: 'no-store',
+        });
+
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (active) {
+            setUnrestrictedFallback(true);
+            setPermissionCodes(new Set());
+          }
+          return;
+        }
+
+        if (active) {
+          const codes = Array.isArray(json.permissionCodes) ? json.permissionCodes : [];
+          setPermissionCodes(new Set(codes));
+          setUnrestrictedFallback(Boolean(json.unrestrictedFallback));
+        }
+      } catch {
+        if (active) {
+          setUnrestrictedFallback(true);
+          setPermissionCodes(new Set());
+        }
+      }
+    }
+
+    loadPermissions();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const canAccess = (resourceCode?: string) => {
+    if (!resourceCode) return true;
+    if (unrestrictedFallback) return true;
+    if (!permissionCodes) return true;
+    return permissionCodes.has(resourceCode);
+  };
 
   const toggleMenu = (e: React.MouseEvent, name: string, hasSubItems: boolean) => {
     if (hasSubItems) {
@@ -82,16 +143,18 @@ export function Sidebar() {
 
       <div className="flex-1 overflow-y-auto py-4">
         <nav className="flex flex-col gap-1 px-3">
-          {navigationItems.map((item) => {
+          {navigationItems.filter((item) => canAccess(item.resourceCode)).map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || (item.subItems && item.subItems.some(sub => pathname.startsWith(sub.href)));
+            const visibleSubItems = item.subItems?.filter((sub) => canAccess((sub as any).resourceCode));
+            const hasVisibleSubItems = Boolean(visibleSubItems && visibleSubItems.length > 0);
+            const isActive = pathname === item.href || (visibleSubItems && visibleSubItems.some(sub => pathname.startsWith(sub.href)));
             const isOpen = openMenus[item.name];
 
             return (
               <div key={item.name} className="flex flex-col">
                 <Link
                   href={item.href}
-                  onClick={(e) => toggleMenu(e, item.name, !!item.subItems)}
+                  onClick={(e) => toggleMenu(e, item.name, hasVisibleSubItems)}
                   className={`group flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-medium transition-all ${isActive ? 'bg-[#3b597b] text-white' : 'text-slate-500 hover:bg-slate-50'
                     }`}
                 >
@@ -101,16 +164,16 @@ export function Sidebar() {
                       {item.name}
                     </span>
                   </div>
-                  {item.hasSubmenu && (
+                  {item.hasSubmenu && hasVisibleSubItems && (
                     isOpen
                       ? <ChevronDown size={16} className={isActive ? 'text-white/70' : 'text-slate-400'} />
                       : <ChevronRight size={16} className={isActive ? 'text-white/70' : 'text-slate-300'} />
                   )}
                 </Link>
 
-                {item.subItems && isOpen && (
+                {visibleSubItems && isOpen && (
                   <div className="mt-1 flex flex-col gap-1 pl-10 pr-2 pb-2">
-                    {item.subItems.map((subItem) => {
+                    {visibleSubItems.map((subItem) => {
                       const isSubActive = pathname === subItem.href;
                       return (
                         <Link

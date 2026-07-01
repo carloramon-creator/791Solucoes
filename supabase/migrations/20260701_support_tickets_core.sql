@@ -144,18 +144,22 @@ alter table public.support_ticket_messages enable row level security;
 
 -- Neste projeto, o acesso ocorre via rotas server-side com service_role.
 -- Mantemos políticas permissivas para evitar bloqueio em ambiente atual.
+drop policy if exists "support_subjects_service_role_full" on public.support_subjects;
 create policy "support_subjects_service_role_full" on public.support_subjects
   using (true)
   with check (true);
 
+drop policy if exists "support_subject_assignments_service_role_full" on public.support_subject_assignments;
 create policy "support_subject_assignments_service_role_full" on public.support_subject_assignments
   using (true)
   with check (true);
 
+drop policy if exists "support_tickets_service_role_full" on public.support_tickets;
 create policy "support_tickets_service_role_full" on public.support_tickets
   using (true)
   with check (true);
 
+drop policy if exists "support_ticket_messages_service_role_full" on public.support_ticket_messages;
 create policy "support_ticket_messages_service_role_full" on public.support_ticket_messages
   using (true)
   with check (true);

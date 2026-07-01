@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { getUserProfileIds, getUserSubjectIds } from '@/lib/holding-permissions';
 import {
   DONE_STATUSES,
   OPEN_STATUSES,
@@ -40,9 +41,22 @@ function applyQueueFilters(query: any, queue: SupportQueue, currentEmail: string
   return query;
 }
 
-async function countQueue(queue: SupportQueue, currentEmail: string | null): Promise<number> {
+function applySubjectVisibilityFilter(query: any, allowedSubjectIds: string[] | null) {
+  if (allowedSubjectIds === null) {
+    return query;
+  }
+
+  if (allowedSubjectIds.length === 0) {
+    return query.eq('subject_id', '__none__');
+  }
+
+  return query.in('subject_id', allowedSubjectIds);
+}
+
+async function countQueue(queue: SupportQueue, currentEmail: string | null, allowedSubjectIds: string[] | null): Promise<number> {
   let query = supabaseServer.from('support_tickets').select('id', { count: 'exact', head: true });
   query = applyQueueFilters(query, queue, currentEmail);
+  query = applySubjectVisibilityFilter(query, allowedSubjectIds);
   const { count, error } = await query;
   if (error) return 0;
   return count || 0;
@@ -62,6 +76,7 @@ export async function GET(req: NextRequest) {
     const assigneeEmail = searchParams.get('assigneeEmail');
     const search = (searchParams.get('search') || '').trim();
     const limit = toPositiveInt(searchParams.get('limit'), 60, 200);
+    const allowedSubjectIds = await getUserSubjectIds(auth.user.email);
 
     let query = supabaseServer
       .from('support_tickets')
@@ -70,6 +85,7 @@ export async function GET(req: NextRequest) {
       .limit(limit);
 
     query = applyQueueFilters(query, queue, auth.user.email);
+    query = applySubjectVisibilityFilter(query, allowedSubjectIds);
 
     if (status) {
       query = query.eq('status', status);
@@ -93,11 +109,11 @@ export async function GET(req: NextRequest) {
     const [{ data, error, count }, countsResult] = await Promise.all([
       query,
       Promise.all([
-        countQueue('all', auth.user.email),
-        countQueue('new', auth.user.email),
-        countQueue('mine', auth.user.email),
-        countQueue('overdue', auth.user.email),
-        countQueue('done', auth.user.email),
+        countQueue('all', auth.user.email, allowedSubjectIds),
+        countQueue('new', auth.user.email, allowedSubjectIds),
+        countQueue('mine', auth.user.email, allowedSubjectIds),
+        countQueue('overdue', auth.user.email, allowedSubjectIds),
+        countQueue('done', auth.user.email, allowedSubjectIds),
       ]),
     ]);
 
@@ -177,6 +193,46 @@ export async function POST(req: NextRequest) {
 
       if (assignment?.assignee_email) {
         assignedToEmail = String(assignment.assignee_email).trim().toLowerCase();
+      }
+
+      if (!assignedToEmail) {
+        const { data: profileLinks } = await supabaseServer
+          .from('support_subject_permission_profiles')
+          .select('profile_id')
+          .eq('subject_id', subjectId);
+
+        const profileIds = Array.from(new Set((profileLinks || []).map((row: any) => String(row.profile_id || '').trim()).filter(Boolean)));
+
+        if (profileIds.length > 0) {
+          const { data: usersByProfile } = await supabaseServer
+            .from('holding_user_permission_profiles')
+            .select('user_email, profile_id')
+            .in('profile_id', profileIds);
+
+          const candidate = (usersByProfile || [])
+            .map((row: any) => String(row.user_email || '').trim().toLowerCase())
+            .find(Boolean);
+
+          if (candidate) {
+            assignedToEmail = candidate;
+          }
+        }
+      }
+    }
+
+    if (subjectId) {
+      const userProfiles = await getUserProfileIds(auth.user.email);
+      if (userProfiles.length > 0) {
+        const { data: allowedBySubject } = await supabaseServer
+          .from('support_subject_permission_profiles')
+          .select('profile_id')
+          .eq('subject_id', subjectId)
+          .in('profile_id', userProfiles);
+
+        const hasAnyMatch = (allowedBySubject || []).length > 0;
+        if (!hasAnyMatch) {
+          return NextResponse.json({ error: 'Seu perfil nao pode abrir ticket neste assunto.' }, { status: 403 });
+        }
       }
     }
 

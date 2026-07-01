@@ -11,6 +11,13 @@ type Subject = {
   description: string | null;
   active: boolean;
   assigneeEmails: string[];
+  profileIds: string[];
+};
+
+type PermissionProfile = {
+  id: string;
+  name: string;
+  active: boolean;
 };
 
 type Ticket = {
@@ -105,6 +112,9 @@ export default function SuportePage() {
   const [counts, setCounts] = useState<QueueCounts>({ all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [permissionProfiles, setPermissionProfiles] = useState<PermissionProfile[]>([]);
+  const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
+  const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
 
@@ -131,6 +141,7 @@ export default function SuportePage() {
     name: '',
     description: '',
     assigneeEmails: '',
+    profileIds: [] as string[],
   });
 
   const selectedTicket = useMemo(
@@ -178,10 +189,12 @@ export default function SuportePage() {
     setError(null);
 
     try {
-      const [ticketsRes, subjectsRes, teamRes] = await Promise.all([
+      const [ticketsRes, subjectsRes, teamRes, permissionsRes, meRes] = await Promise.all([
         api(`/api/support/tickets?queue=${currentQueue}`),
         api('/api/support/subjects'),
         api('/api/support/team'),
+        api('/api/admin/permissions'),
+        api('/api/admin/permissions/me'),
       ]);
 
       const loadedTickets: Ticket[] = ticketsRes.tickets || [];
@@ -189,6 +202,9 @@ export default function SuportePage() {
       setCounts(ticketsRes.counts || { all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
       setSubjects(subjectsRes.subjects || []);
       setTeam(teamRes.members || []);
+      setPermissionProfiles((permissionsRes.profiles || []).filter((profile: PermissionProfile) => profile.active));
+      setPermissionCodes(new Set(Array.isArray(meRes.permissionCodes) ? meRes.permissionCodes : []));
+      setUnrestrictedFallback(Boolean(meRes.unrestrictedFallback));
 
       if (!preserveSelection) {
         setSelectedTicketId(loadedTickets[0]?.id || null);
@@ -296,11 +312,12 @@ export default function SuportePage() {
           name: newSubject.name,
           description: newSubject.description || null,
           assigneeEmails,
+          profileIds: newSubject.profileIds,
         }),
       });
 
       setFeedback('Assunto criado com sucesso.');
-      setNewSubject({ name: '', description: '', assigneeEmails: '' });
+      setNewSubject({ name: '', description: '', assigneeEmails: '', profileIds: [] });
       await loadSupportData(queue, true);
     } catch (err: any) {
       setError(err?.message || 'Falha ao criar assunto.');
@@ -376,6 +393,8 @@ export default function SuportePage() {
     }
   };
 
+  const can = (resourceCode: string) => unrestrictedFallback || permissionCodes.has(resourceCode);
+
   if (loading) {
     return (
       <div className="h-[70vh] w-full flex items-center justify-center">
@@ -396,12 +415,14 @@ export default function SuportePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowSubjectPanel((prev) => !prev)}
-            className="px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
-          >
-            Assuntos
-          </button>
+          {can('action.support.manage_subjects') && (
+            <button
+              onClick={() => setShowSubjectPanel((prev) => !prev)}
+              className="px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
+            >
+              Assuntos
+            </button>
+          )}
           <button
             onClick={() => setShowNewTicket((prev) => !prev)}
             className="px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg bg-[#3b597b] text-white hover:bg-[#2e4763]"
@@ -540,7 +561,7 @@ export default function SuportePage() {
         </form>
       )}
 
-      {showSubjectPanel && (
+      {showSubjectPanel && can('action.support.manage_subjects') && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Assuntos e responsaveis</h2>
 
@@ -564,6 +585,19 @@ export default function SuportePage() {
               placeholder="emails (separados por virgula)"
               className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2"
             />
+            <select
+              multiple
+              value={newSubject.profileIds}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
+                setNewSubject((prev) => ({ ...prev, profileIds: selected }));
+              }}
+              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-4 min-h-[120px]"
+            >
+              {permissionProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}</option>
+              ))}
+            </select>
             <div className="lg:col-span-4 flex justify-end">
               <button
                 type="submit"
@@ -588,6 +622,11 @@ export default function SuportePage() {
                   <div className="text-sm font-bold text-slate-800">{subject.name}</div>
                   <div className="text-xs text-slate-500">
                     {(subject.assigneeEmails || []).length > 0 ? subject.assigneeEmails.join(', ') : 'Sem responsavel definido'}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-1">
+                    {(subject.profileIds || []).length > 0
+                      ? `Perfis: ${permissionProfiles.filter((profile) => subject.profileIds.includes(profile.id)).map((profile) => profile.name).join(', ')}`
+                      : 'Perfis: sem vinculo'}
                   </div>
                 </div>
                 <button
@@ -691,16 +730,18 @@ export default function SuportePage() {
                     <option value="urgent">urgent</option>
                   </select>
 
-                  <select
-                    value={editState.assignedToEmail}
-                    onChange={(e) => setEditState((prev) => ({ ...prev, assignedToEmail: e.target.value }))}
-                    className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
-                  >
-                    <option value="">Sem responsavel</option>
-                    {team.map((member) => (
-                      <option key={member.email} value={member.email}>{member.email}</option>
-                    ))}
-                  </select>
+                  {can('action.support.assign') && (
+                    <select
+                      value={editState.assignedToEmail}
+                      onChange={(e) => setEditState((prev) => ({ ...prev, assignedToEmail: e.target.value }))}
+                      className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
+                    >
+                      <option value="">Sem responsavel</option>
+                      {team.map((member) => (
+                        <option key={member.email} value={member.email}>{member.email}</option>
+                      ))}
+                    </select>
+                  )}
 
                   <input
                     type="datetime-local"
@@ -744,23 +785,27 @@ export default function SuportePage() {
               </div>
 
               <div className="p-3 border-t border-slate-100 bg-white">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    value={draftMessage}
-                    onChange={(e) => setDraftMessage(e.target.value)}
-                    rows={2}
-                    placeholder="Responder ticket..."
-                    className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-                  />
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={sendingMessage || !draftMessage.trim()}
-                    className="px-3 py-2 rounded-lg bg-[#3b597b] text-white hover:bg-[#2e4763] disabled:opacity-50"
-                    title="Enviar mensagem"
-                  >
-                    {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                  </button>
-                </div>
+                {can('action.support.reply') ? (
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      value={draftMessage}
+                      onChange={(e) => setDraftMessage(e.target.value)}
+                      rows={2}
+                      placeholder="Responder ticket..."
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                    <button
+                      onClick={handleSendMessage}
+                      disabled={sendingMessage || !draftMessage.trim()}
+                      className="px-3 py-2 rounded-lg bg-[#3b597b] text-white hover:bg-[#2e4763] disabled:opacity-50"
+                      title="Enviar mensagem"
+                    >
+                      {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400">Sem permissao para responder tickets.</div>
+                )}
               </div>
             </div>
           )}

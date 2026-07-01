@@ -11,6 +11,15 @@ function normalizeEmails(value: unknown): string[] {
   ));
 }
 
+function normalizeProfileIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(
+    value
+      .map((profileId) => String(profileId || '').trim())
+      .filter(Boolean)
+  ));
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem consultar assuntos de suporte.');
   if (!auth.ok) {
@@ -18,7 +27,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [{ data: subjects, error: subjectsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
+    const [
+      { data: subjects, error: subjectsError },
+      { data: assignments, error: assignmentsError },
+      { data: subjectProfiles, error: subjectProfilesError },
+    ] = await Promise.all([
       supabaseServer
         .from('support_subjects')
         .select('id, name, description, active, created_at, updated_at')
@@ -26,11 +39,14 @@ export async function GET(req: Request) {
       supabaseServer
         .from('support_subject_assignments')
         .select('subject_id, assignee_email'),
+      supabaseServer
+        .from('support_subject_permission_profiles')
+        .select('subject_id, profile_id'),
     ]);
 
-    if (subjectsError || assignmentsError) {
+    if (subjectsError || assignmentsError || subjectProfilesError) {
       return NextResponse.json({
-        error: subjectsError?.message || assignmentsError?.message || 'Falha ao carregar assuntos.',
+        error: subjectsError?.message || assignmentsError?.message || subjectProfilesError?.message || 'Falha ao carregar assuntos.',
       }, { status: 500 });
     }
 
@@ -43,9 +59,19 @@ export async function GET(req: Request) {
       bySubject.get(subjectId)?.push(email);
     }
 
+    const profilesBySubject = new Map<string, string[]>();
+    for (const row of subjectProfiles || []) {
+      const subjectId = String(row.subject_id || '');
+      const profileId = String(row.profile_id || '').trim();
+      if (!subjectId || !profileId) continue;
+      if (!profilesBySubject.has(subjectId)) profilesBySubject.set(subjectId, []);
+      profilesBySubject.get(subjectId)?.push(profileId);
+    }
+
     const rows = (subjects || []).map((subject) => ({
       ...subject,
       assigneeEmails: bySubject.get(String(subject.id)) || [],
+      profileIds: Array.from(new Set(profilesBySubject.get(String(subject.id)) || [])),
     }));
 
     return NextResponse.json({
@@ -69,6 +95,7 @@ export async function POST(req: Request) {
     const description = body?.description ? String(body.description).trim() : null;
     const active = body?.active == null ? true : Boolean(body.active);
     const assigneeEmails = normalizeEmails(body?.assigneeEmails);
+    const profileIds = normalizeProfileIds(body?.profileIds);
 
     if (!name) {
       return NextResponse.json({ error: 'Informe o nome do assunto.' }, { status: 400 });
@@ -99,11 +126,27 @@ export async function POST(req: Request) {
       }
     }
 
+    if (profileIds.length > 0) {
+      const payload = profileIds.map((profileId) => ({
+        subject_id: created.id,
+        profile_id: profileId,
+      }));
+
+      const { error: profilesError } = await supabaseServer
+        .from('support_subject_permission_profiles')
+        .insert(payload);
+
+      if (profilesError) {
+        return NextResponse.json({ error: profilesError.message || 'Assunto criado, mas falhou ao salvar perfis vinculados.' }, { status: 500 });
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       subject: {
         ...created,
         assigneeEmails,
+        profileIds,
       },
       createdBy: auth.user.email,
     });

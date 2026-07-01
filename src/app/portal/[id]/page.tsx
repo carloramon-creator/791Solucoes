@@ -102,9 +102,12 @@ export default function SponsorPortal() {
   }, [id]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Erro ao deslogar:', err);
+    }
+    window.location.href = '/login';
   };
 
   const copyToClipboard = (text: string, tokenCode: string) => {

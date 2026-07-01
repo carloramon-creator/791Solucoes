@@ -58,10 +58,12 @@ export function Sidebar() {
   };
 
   const handleLogout = async () => {
-    setLoggingOut(true);
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Erro ao sair:', err);
+    }
+    window.location.href = '/login';
   };
 
   if (pathname === '/login') return null;

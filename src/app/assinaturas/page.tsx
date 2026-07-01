@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Users, 
   Search, 
@@ -25,6 +25,7 @@ import {
 
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { supabase } from '@/lib/supabase';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
 // Tipagem baseada na tabela vidracarias do Glass
 interface Vidracaria {
@@ -107,6 +108,7 @@ import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
   const router = useRouter();
+  const authClient = useMemo(() => createSupabaseBrowser(), []);
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Vidracaria[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -323,8 +325,15 @@ export default function AssinaturasPage() {
 
     setIsDeletingTenant(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
+      let accessToken = '';
+
+      const { data: sessionData } = await authClient.auth.getSession();
+      accessToken = sessionData.session?.access_token || '';
+
+      if (!accessToken) {
+        const { data: refreshed } = await authClient.auth.refreshSession();
+        accessToken = refreshed.session?.access_token || '';
+      }
 
       if (!accessToken) {
         throw new Error('Sessao nao encontrada. Faca login novamente.');

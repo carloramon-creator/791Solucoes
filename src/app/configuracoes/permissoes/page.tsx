@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import { ArrowRight, Check, Eye, Loader2, PencilLine, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Eye, Loader2, PencilLine, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 
 type PermissionResource = {
   code: string;
@@ -41,6 +41,7 @@ export default function PermissoesPage() {
   const [profiles, setProfiles] = useState<PermissionProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [expandedProfiles, setExpandedProfiles] = useState<Set<string>>(new Set());
   const [newProfile, setNewProfile] = useState<FormState>({
     name: '',
     description: '',
@@ -138,6 +139,15 @@ export default function PermissoesPage() {
         ...prev,
         [profileId]: { ...current, resourceCodes: next },
       };
+    });
+  };
+
+  const toggleProfileExpanded = (profileId: string) => {
+    setExpandedProfiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(profileId)) next.delete(profileId);
+      else next.add(profileId);
+      return next;
     });
   };
 
@@ -322,6 +332,7 @@ export default function PermissoesPage() {
         {profiles.map((profile) => {
           const editor = editingProfile[profile.id];
           if (!editor) return null;
+          const isExpanded = expandedProfiles.has(profile.id);
 
           return (
             <div key={profile.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
@@ -332,6 +343,15 @@ export default function PermissoesPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
+                    onClick={() => toggleProfileExpanded(profile.id)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50"
+                  >
+                    {isExpanded ? 'Ocultar permissões' : 'Expandir permissões'}
+                    <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleSave(profile.id)}
                     disabled={savingProfileId === profile.id}
                     className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-[#3b597b] text-white text-xs font-bold hover:bg-[#2e4763] disabled:opacity-50"
@@ -351,46 +371,50 @@ export default function PermissoesPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  value={editor.name}
-                  onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, name: e.target.value } }))}
-                  className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-                />
-                <input
-                  value={editor.description}
-                  onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, description: e.target.value } }))}
-                  className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-                />
-                <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={editor.active}
-                    onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, active: e.target.checked } }))}
-                  />
-                  Ativo
-                </label>
-              </div>
-
-              <div className="space-y-3">
-                {groupedResources.map(([category, items]) => (
-                  <div key={`${profile.id}-${category}`} className="border border-slate-100 rounded-xl p-3">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">{category}</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {items.map((resource) => (
-                        <label key={`${profile.id}-${resource.code}`} className="flex items-center gap-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={editor.resourceCodes.has(resource.code)}
-                            onChange={() => toggleEditResource(profile.id, resource.code)}
-                          />
-                          <span>{resource.label}</span>
-                        </label>
-                      ))}
-                    </div>
+              {isExpanded && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                      value={editor.name}
+                      onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, name: e.target.value } }))}
+                      className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                    <input
+                      value={editor.description}
+                      onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, description: e.target.value } }))}
+                      className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                    />
+                    <label className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={editor.active}
+                        onChange={(e) => setEditingProfile((prev) => ({ ...prev, [profile.id]: { ...editor, active: e.target.checked } }))}
+                      />
+                      Ativo
+                    </label>
                   </div>
-                ))}
-              </div>
+
+                  <div className="space-y-3">
+                    {groupedResources.map(([category, items]) => (
+                      <div key={`${profile.id}-${category}`} className="border border-slate-100 rounded-xl p-3">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">{category}</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {items.map((resource) => (
+                            <label key={`${profile.id}-${resource.code}`} className="flex items-center gap-2 text-sm text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={editor.resourceCodes.has(resource.code)}
+                                onChange={() => toggleEditResource(profile.id, resource.code)}
+                              />
+                              <span>{resource.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>{profile.userEmails.length} usuário(s) vinculado(s)</span>

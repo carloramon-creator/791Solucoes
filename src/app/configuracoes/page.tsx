@@ -9,7 +9,6 @@ import {
   Users, 
   CreditCard, 
   ChevronRight,
-  ArrowRight,
   Bell,
   Monitor,
   Wallet,
@@ -167,17 +166,6 @@ export default function ConfiguracoesPage() {
             <ChevronRight className="text-slate-300 group-hover:text-[#3b597b] transition-colors" size={20} />
           </Link>
         ))}
-      </div>
-
-      <div className="flex justify-start md:justify-start pl-0 md:pl-0">
-        <Link
-          href="/configuracoes/permissoes"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#3b597b] text-white text-sm font-bold rounded-xl hover:bg-[#2e4763] transition-all shadow-sm shadow-[#3b597b]/30 hover:shadow-md hover:-translate-y-0.5"
-        >
-          <ShieldCheck size={16} />
-          Permissões
-          <ArrowRight size={14} />
-        </Link>
       </div>
 
       {/* Footer Info */}

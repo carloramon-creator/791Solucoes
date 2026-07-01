@@ -20,12 +20,11 @@ export default function LoginPage() {
   const router = useRouter();
   const supabase = createSupabaseBrowser();
 
-  // Detectar se o Supabase redirecionou com um token de recuperação de senha
+  // Detectar se o Supabase redirecionou com um token de convite ou recuperação de senha
   useEffect(() => {
     const hash = window.location.hash;
-    if (hash && hash.includes('type=recovery')) {
-      // O Supabase já processou o token e criou uma sessão temporária
-      // Precisamos mostrar o formulário de definição de nova senha
+    // Supabase usa type=invite para convites e type=recovery para resets de senha
+    if (hash && (hash.includes('type=recovery') || hash.includes('type=invite'))) {
       setMode('set_password');
     }
   }, []);

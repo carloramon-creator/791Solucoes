@@ -33,7 +33,7 @@ export default function ConfiguracoesPage() {
     },
     {
       title: 'Contas Bancárias',
-      desc: 'Gerencie saldos, limites e cartões da Holding.',
+      href: '/equipe',
       href: '/configuracoes/contas',
       resourceCode: 'submenu.configuracoes.contas',
       icon: Wallet,

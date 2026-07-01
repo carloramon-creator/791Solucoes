@@ -33,7 +33,6 @@ export default function ConfiguracoesPage() {
     },
     {
       title: 'Contas Bancárias',
-      href: '/equipe',
       href: '/configuracoes/contas',
       resourceCode: 'submenu.configuracoes.contas',
       icon: Wallet,

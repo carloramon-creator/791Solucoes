@@ -20,6 +20,14 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
 
     async function checkAuth() {
       try {
+        // ⚡ Se a URL contém token de convite/recuperação, deixar a página tratar o fluxo
+        // Não redirecionar enquanto o usuário ainda não criou a senha
+        const hash = typeof window !== 'undefined' ? window.location.hash : '';
+        if (hash && (hash.includes('type=invite') || hash.includes('type=recovery'))) {
+          setLoading(false);
+          return;
+        }
+
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!active) return;
 
@@ -53,7 +61,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
             // Se for patrocinador e tentar acessar rotas admin, redireciona para o portal dele
             router.push(`/portal/${sponsorData.id}`);
           } else {
-            // Se estiver no portal, garantir que está acessando o portal correto dele (prevenir id de outro)
+            // Se estiver no portal, garantir que está acessando o portal correto dele
             const urlId = pathname.split('/')[2];
             if (urlId && urlId !== sponsorData.id) {
               router.push(`/portal/${sponsorData.id}`);

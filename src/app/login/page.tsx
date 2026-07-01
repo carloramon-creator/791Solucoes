@@ -25,7 +25,25 @@ export default function LoginPage() {
     const hash = window.location.hash;
     // Supabase usa type=invite para convites e type=recovery para resets de senha
     if (hash && (hash.includes('type=recovery') || hash.includes('type=invite'))) {
-      setMode('set_password');
+      // Extrair access_token e refresh_token do hash para criar a sessão
+      const params = new URLSearchParams(hash.substring(1)); // remove o '#'
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        // Estabelecer sessão a partir dos tokens do link do e-mail
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        }).then(({ error }) => {
+          if (error) {
+            console.error('Erro ao estabelecer sessão:', error.message);
+          }
+          setMode('set_password');
+        });
+      } else {
+        setMode('set_password');
+      }
     }
   }, []);
 

@@ -42,6 +42,15 @@ create table if not exists public.holding_user_permission_profiles (
   primary key (user_email, profile_id)
 );
 
+create table if not exists public.support_subjects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  description text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.support_subject_permission_profiles (
   subject_id uuid not null references public.support_subjects(id) on delete cascade,
   profile_id uuid not null references public.holding_permission_profiles(id) on delete cascade,

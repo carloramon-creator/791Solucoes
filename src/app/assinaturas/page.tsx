@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Check,
   FileCheck,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 
 import { supabaseGlass } from '@/lib/supabase-glass';
@@ -128,6 +129,9 @@ export default function AssinaturasPage() {
   const [messagesPeriodStart, setMessagesPeriodStart] = useState('');
   const [selectedUsage, setSelectedUsage] = useState<UsageTenantRow | null>(null);
   const [selectedUsageTenant, setSelectedUsageTenant] = useState<Vidracaria | null>(null);
+  const [tenantToDelete, setTenantToDelete] = useState<Vidracaria | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [isDeletingTenant, setIsDeletingTenant] = useState(false);
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -306,6 +310,56 @@ export default function AssinaturasPage() {
       alert('Erro na emissão: ' + err.message);
     } finally {
       setIsEmitting(false);
+    }
+  };
+
+  const REQUIRED_DELETE_CONFIRMATION = 'EXCLUIR VIDRACARIA DEFINITIVAMENTE';
+
+  const handleDeleteTenant = async () => {
+    if (!tenantToDelete || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION) {
+      alert(`Digite exatamente: ${REQUIRED_DELETE_CONFIRMATION}`);
+      return;
+    }
+
+    setIsDeletingTenant(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error('Sessao nao encontrada. Faca login novamente.');
+      }
+
+      const response = await fetch('/api/admin/vidracarias/purge', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          vidracariaId: tenantToDelete.id,
+          confirmacao: deleteConfirmInput.trim(),
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Falha ao excluir definitivamente a vidracaria.');
+      }
+
+      const falhasAuthCount = Array.isArray(payload?.falhasAuth) ? payload.falhasAuth.length : 0;
+      const resumoFalhas = falhasAuthCount > 0
+        ? `\n\nAtencao: ${falhasAuthCount} usuario(s) nao foram removidos do Auth.`
+        : '';
+
+      alert(`Vidracaria excluida definitivamente com sucesso.${resumoFalhas}`);
+      setTenantToDelete(null);
+      setDeleteConfirmInput('');
+      await fetchData();
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao excluir vidracaria.');
+    } finally {
+      setIsDeletingTenant(false);
     }
   };
 
@@ -629,6 +683,16 @@ export default function AssinaturasPage() {
                          <button className="p-2 text-slate-400 hover:text-[#3b597b] hover:bg-slate-100 rounded-lg transition-all" title="Financeiro">
                            <CreditCard size={18} />
                          </button>
+                         <button
+                           onClick={() => {
+                             setTenantToDelete(tenant);
+                             setDeleteConfirmInput('');
+                           }}
+                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                           title="Excluir definitivamente"
+                         >
+                           <Trash2 size={18} />
+                         </button>
                        </div>
                       </td>
                       <td className="px-4 py-2">
@@ -840,6 +904,63 @@ export default function AssinaturasPage() {
                   Fechar Painel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tenantToDelete && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-3xl border border-red-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-red-100 bg-red-50/60">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Acao Irreversivel</p>
+              <h3 className="text-lg font-black text-slate-900 mt-1">Excluir vidracaria definitivamente</h3>
+              <p className="text-[12px] text-slate-600 mt-1">
+                Esta acao remove dados, arquivos e usuarios de autentificacao da vidracaria no 791glass.
+              </p>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                <p><strong>Nome:</strong> {tenantToDelete.nome}</p>
+                <p><strong>Slug:</strong> /{tenantToDelete.slug}</p>
+                <p><strong>ID:</strong> {tenantToDelete.id}</p>
+              </div>
+
+              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                Digite exatamente a frase abaixo para confirmar
+              </p>
+              <p className="rounded-lg bg-slate-100 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-700">
+                {REQUIRED_DELETE_CONFIRMATION}
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                placeholder="Digite a frase de confirmacao"
+                className="w-full bg-white border border-slate-300 rounded-xl px-4 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+              />
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setTenantToDelete(null);
+                  setDeleteConfirmInput('');
+                }}
+                disabled={isDeletingTenant}
+                className="px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteTenant}
+                disabled={isDeletingTenant || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeletingTenant ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Excluir Definitivamente
+              </button>
             </div>
           </div>
         </div>

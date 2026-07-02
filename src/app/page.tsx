@@ -67,6 +67,13 @@ type ModalData = {
   data?: any[];
 };
 
+type TicketTotals = {
+  total: number;
+  emDia: number;
+  atrasados: number;
+  resolvidos: number;
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }
@@ -98,6 +105,7 @@ export default function Dashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('mes');
   const [modal, setModal] = useState<ModalData>({ type: null });
   const [financialTotals, setFinancialTotals] = useState({ saldoAtual: 0, contasReceber: 0, contasPagar: 0 });
+  const [ticketTotals, setTicketTotals] = useState<TicketTotals>({ total: 0, emDia: 0, atrasados: 0, resolvidos: 0 });
 
   const periods: PeriodFilter[] = ['dia', 'semana', 'quinzena', 'mes', 'trimestre', 'semestre', 'ano'];
 
@@ -125,7 +133,7 @@ export default function Dashboard() {
           });
         }
 
-        const response = await fetch('/api/admin/subscription-usage', {
+        const response = await fetch(`/api/admin/subscription-usage?period=${selectedPeriod}`, {
           cache: 'no-store',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -188,7 +196,7 @@ export default function Dashboard() {
 
         if (alive) {
           setFinancialTotals({
-            saldoAtual: (Array.isArray(saldoData) && saldoData[0]?.valor) || 0,
+            saldoAtual: Array.isArray(saldoData) ? saldoData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0,
             contasReceber: (Array.isArray(receberData) ? receberData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
             contasPagar: (Array.isArray(pagarData) ? pagarData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
           });
@@ -199,6 +207,58 @@ export default function Dashboard() {
     };
 
     loadFinancialTotals();
+    return () => {
+      alive = false;
+    };
+  }, [supabase, selectedPeriod]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const loadTicketTotals = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+
+        const [totalRes, emDiaRes, atrasadosRes, resolvidosRes] = await Promise.all([
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=total`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=em-dia`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=atrasados`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=resolvidos`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+        ]);
+
+        const totalData = await totalRes.json().catch(() => []);
+        const emDiaData = await emDiaRes.json().catch(() => []);
+        const atrasadosData = await atrasadosRes.json().catch(() => []);
+        const resolvidosData = await resolvidosRes.json().catch(() => []);
+
+        if (alive) {
+          setTicketTotals({
+            total: Array.isArray(totalData) ? totalData.length : 0,
+            emDia: Array.isArray(emDiaData) ? emDiaData.length : 0,
+            atrasados: Array.isArray(atrasadosData) ? atrasadosData.length : 0,
+            resolvidos: Array.isArray(resolvidosData) ? resolvidosData.length : 0,
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao carregar totais de tickets:', err);
+      }
+    };
+
+    loadTicketTotals();
     return () => {
       alive = false;
     };
@@ -449,7 +509,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-blue-600">Total</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-blue-700">24</p>
+                <p className="text-2xl font-bold text-blue-700">{ticketTotals.total}</p>
                 <ChevronRight size={18} className="text-blue-400" />
               </div>
             </button>
@@ -460,7 +520,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-emerald-600">Em dia</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-emerald-700">18</p>
+                <p className="text-2xl font-bold text-emerald-700">{ticketTotals.emDia}</p>
                 <ChevronRight size={18} className="text-emerald-400" />
               </div>
             </button>
@@ -471,7 +531,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-orange-600">Atrasados</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-orange-700">3</p>
+                <p className="text-2xl font-bold text-orange-700">{ticketTotals.atrasados}</p>
                 <ChevronRight size={18} className="text-orange-400" />
               </div>
             </button>
@@ -482,7 +542,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-slate-600">Resolvidos</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-slate-700">156</p>
+                <p className="text-2xl font-bold text-slate-700">{ticketTotals.resolvidos}</p>
                 <ChevronRight size={18} className="text-slate-400" />
               </div>
             </button>

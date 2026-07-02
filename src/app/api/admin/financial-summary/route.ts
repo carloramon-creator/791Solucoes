@@ -7,6 +7,47 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function getPeriodStart(period: string) {
+  const now = new Date();
+  const startDate = new Date(now);
+
+  switch (period) {
+    case 'dia':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semana':
+      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'quinzena':
+      startDate.setDate(now.getDate() > 15 ? 16 : 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'mes':
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'trimestre':
+      startDate.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semestre':
+      startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'ano':
+      startDate.setMonth(0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    default:
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+  }
+
+  return startDate;
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
   if (!auth.ok) {
@@ -19,126 +60,80 @@ export async function GET(req: Request) {
     const section = url.searchParams.get('section') || 'saldo-atual';
 
     // Calcular datas baseado no período
-    const now = new Date();
-    let startDate = new Date();
-
-    switch (period) {
-      case 'dia':
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'semana':
-        startDate.setDate(now.getDate() - now.getDay());
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'quinzena':
-        startDate.setDate(now.getDate() > 15 ? 16 : 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'mes':
-        startDate.setDate(1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'trimestre':
-        const quarter = Math.floor(now.getMonth() / 3);
-        startDate.setMonth(quarter * 3, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'semestre':
-        startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'ano':
-        startDate.setMonth(0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-    }
+    const startDate = getPeriodStart(period);
 
     let data: any[] = [];
 
     if (section === 'saldo-atual') {
-      // Buscar saldo de cada conta bancária
+      // Buscar saldo de cada conta bancária real da holding
       const { data: bankAccounts, error: accountsError } = await supabaseServer
-        .from('bank_accounts')
-        .select('id, bank_name, account_number, balance, updated_at')
-        .eq('active', true);
+        .from('system_bank_accounts')
+        .select('id, name, bank_name, agency, account_number, balance, updated_at, status')
+        .order('bank_name', { ascending: true })
+        .order('name', { ascending: true });
 
       if (accountsError && accountsError.code !== 'PGRST116') {
-        // PGRST116 = tabela não existe, que é aceitável
         console.log('Aviso ao buscar contas bancárias:', accountsError.message);
       }
 
       if (bankAccounts && bankAccounts.length > 0) {
         data = bankAccounts.map((account: any) => ({
           id: account.id,
-          descricao: `${account.bank_name} - Conta ${account.account_number}`,
+          descricao: [account.bank_name, account.name].filter(Boolean).join(' - ') || 'Conta bancária',
+          detalhes: [account.agency ? `Ag. ${account.agency}` : null, account.account_number ? `Conta ${account.account_number}` : null]
+            .filter(Boolean)
+            .join(' | '),
           valor: toNumber(account.balance, 0),
-          data_vencimento: null,
+          data_vencimento: account.updated_at,
           atualizado_em: account.updated_at,
         }));
-      } else {
-        // Se não existir tabela de contas bancárias, buscar do histórico de notas pagas
-        const { data: paidInvoices } = await supabaseServer
-          .from('system_invoices')
-          .select('value, status, created_at')
-          .in('status', ['pago', 'authorized'])
-          .order('created_at', { ascending: false });
-
-        let totalSaldo = 0;
-        (paidInvoices || []).forEach((inv: any) => {
-          totalSaldo += toNumber(inv?.value, 0);
-        });
-
-        data = [
-          {
-            id: '1',
-            descricao: 'Saldo Total Acumulado (Notas Pagas)',
-            valor: totalSaldo,
-            data_vencimento: null,
-          },
-        ];
       }
 
     } else if (section === 'contas-receber') {
-      // Buscar notas fiscais pendentes (não pagas) no período
-      const { data: invoices, error: invoicesError } = await supabaseServer
-        .from('system_invoices')
-        .select('invoice_number, value, created_at, metadata')
+      // Buscar receitas pendentes no período
+      const { data: records, error: recordsError } = await supabaseServer
+        .from('system_finance_records')
+        .select('id, type, value, description, category, status, created_at, payment_method, metadata')
+        .eq('type', 'revenue')
         .eq('status', 'pending')
         .gte('created_at', startDate.toISOString());
 
-      if (invoicesError) {
-        console.log('Aviso ao buscar contas a receber:', invoicesError.message);
+      if (recordsError && recordsError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar contas a receber:', recordsError.message);
       }
 
-      data = (invoices || []).map((inv: any) => ({
-        id: inv.invoice_number,
-        descricao: `Nota Fiscal ${inv.invoice_number}`,
-        valor: toNumber(inv?.value, 0),
-        data_vencimento: inv?.created_at ? new Date(new Date(inv.created_at).getTime() + 30*24*60*60*1000).toISOString() : null,
-        status: 'em_aberto',
-        data_emissao: inv?.created_at,
+      data = (records || []).map((record: any) => ({
+        id: record.id,
+        titulo: record.description,
+        descricao: record.category || record.payment_method || 'Receita pendente',
+        valor: toNumber(record?.value, 0),
+        data_vencimento: record.created_at,
+        status: record.status,
+        data_emissao: record.created_at,
       }));
 
     } else if (section === 'contas-pagar') {
       // Buscar despesas pendentes no período
-      const { data: expenses, error: expensesError } = await supabaseServer
-        .from('expenses')
-        .select('id, description, amount, due_date, status')
+      const { data: records, error: recordsError } = await supabaseServer
+        .from('system_finance_records')
+        .select('id, type, value, description, category, status, created_at, payment_method, metadata')
+        .eq('type', 'expense')
         .eq('status', 'pending')
-        .gte('due_date', startDate.toISOString())
-        .order('due_date');
+        .gte('created_at', startDate.toISOString())
+        .order('created_at', { ascending: false });
 
-      if (expensesError && expensesError.code !== 'PGRST116') {
-        console.log('Aviso ao buscar contas a pagar:', expensesError.message);
+      if (recordsError && recordsError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar contas a pagar:', recordsError.message);
       }
 
-      if (expenses && expenses.length > 0) {
-        data = expenses.map((exp: any) => ({
-          id: exp.id,
-          descricao: exp.description,
-          valor: toNumber(exp.amount, 0),
-          data_vencimento: exp.due_date,
-          status: exp.status,
+      if (records && records.length > 0) {
+        data = records.map((record: any) => ({
+          id: record.id,
+          titulo: record.description,
+          descricao: record.category || record.payment_method || 'Despesa pendente',
+          valor: toNumber(record.value, 0),
+          data_vencimento: record.created_at,
+          status: record.status,
         }));
       }
     }

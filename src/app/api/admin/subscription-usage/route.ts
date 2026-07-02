@@ -20,13 +20,54 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
-export async function GET() {
+function getPeriodStart(period: string) {
+  const now = new Date();
+  const startDate = new Date(now);
+
+  switch (period) {
+    case 'dia':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semana':
+      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'quinzena':
+      startDate.setDate(now.getDate() > 15 ? 16 : 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'mes':
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'trimestre':
+      startDate.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semestre':
+      startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'ano':
+      startDate.setMonth(0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    default:
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+  }
+
+  return startDate;
+}
+
+export async function GET(req: Request) {
   try {
+    const url = new URL(req.url);
+    const period = url.searchParams.get('period') || 'mes';
     const glass = await getGlassClient();
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const messagesPeriodStart = monthStart.toISOString();
+    const periodStart = getPeriodStart(period);
+    const messagesPeriodStart = periodStart.toISOString();
 
     const [
       { data: tenants, error: tenantsError },

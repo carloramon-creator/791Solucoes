@@ -26,6 +26,11 @@ type UsageSummaryResponse = {
   messagesPeriodStart?: string;
   faturamentoMesAtual?: number;
   faturamentoAcumulado?: number;
+  periodSummary?: {
+    lojasAtivas: number;
+    usuariosCadastrados: number;
+    usuariosWhatsapp: number;
+  };
   totals?: {
     tenants: number;
     registeredUsers: number;
@@ -168,6 +173,7 @@ export default function Dashboard() {
   const [modal, setModal] = useState<ModalData>({ type: null });
   const [financialTotals, setFinancialTotals] = useState({ saldoAtual: 0, contasReceber: 0, contasPagar: 0 });
   const [ticketTotals, setTicketTotals] = useState<TicketTotals>({ total: 0, emDia: 0, atrasados: 0, resolvidos: 0 });
+  const [bottomTab, setBottomTab] = useState<'tickets' | 'lojas'>('tickets');
 
   const rangeStartIso = toIsoStartOfDay(dateRange.start);
   const rangeEndIso = toIsoEndOfDay(dateRange.end);
@@ -334,6 +340,7 @@ export default function Dashboard() {
   }, [supabase, selectedPeriod, dateRange.start, dateRange.end]);
 
   const totals = data?.totals;
+  const periodSummary = data?.periodSummary;
   const tenants = data?.tenants || [];
   const latestTenants = tenants.slice(0, 4);
   const healthCount = (totals?.usersExceeded || 0) + (totals?.whatsappUsersExceeded || 0) + (totals?.messagesExceeded || 0);
@@ -523,8 +530,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Linha 2: Resumo operacional e financeiro */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-4">
+      {/* Linha 2: Resumo operacional, período e financeiro */}
+      <div className="grid grid-cols-1 gap-4 mt-4 min-[1440px]:grid-cols-3">
         {/* Resumo Operacional */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
           <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
@@ -551,6 +558,30 @@ export default function Dashboard() {
           </div>
           <div className="flex-1 flex items-end">
             <p className="text-[12px] text-slate-500">Consumo baseado no período: <strong>{getPeriodLabel(selectedPeriod)}</strong></p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
+            <Calendar size={18} />
+            <h2>Resumo do período</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 text-sm mb-3">
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">Lojas ativas no período</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.lojasAtivas || 0}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários cadastrados no período</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.usuariosCadastrados || 0}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários WhatsApp no período</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.usuariosWhatsapp || 0}</p>
+            </div>
+          </div>
+          <div className="flex-1 flex items-end">
+            <p className="text-[12px] text-slate-500">Contagem sensível ao intervalo: <strong>{dateRange.start}</strong> até <strong>{dateRange.end}</strong></p>
           </div>
         </div>
 
@@ -597,14 +628,31 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Linha 3: Cards de Tickets (Clicáveis) */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-4">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
-            <Clock size={18} />
-            <h2>Tickets do período</h2>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px]">
+            {bottomTab === 'tickets' ? <Clock size={18} /> : <CheckCircle2 size={18} className="text-emerald-500" />}
+            <h2>{bottomTab === 'tickets' ? 'Tickets do período' : 'Lojas monitoradas'}</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3 flex-1">
+          <div className="flex items-center gap-2 rounded-lg bg-slate-100 p-1">
+            <button
+              onClick={() => setBottomTab('tickets')}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors ${bottomTab === 'tickets' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+            >
+              Tickets
+            </button>
+            <button
+              onClick={() => setBottomTab('lojas')}
+              className={`rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors ${bottomTab === 'lojas' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+            >
+              Lojas
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {bottomTab === 'tickets' ? (
+            <div className="grid grid-cols-2 gap-3 min-[1440px]:grid-cols-4">
             <button
               onClick={() => handleCardClick('tickets', 'total')}
               className="rounded-lg bg-blue-50 p-3 hover:bg-blue-100 transition-colors text-left border border-transparent hover:border-blue-200 cursor-pointer"
@@ -648,16 +696,9 @@ export default function Dashboard() {
                 <ChevronRight size={18} className="text-slate-400" />
               </div>
             </button>
-          </div>
-        </div>
-
-        {/* Lojas monitoradas */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
-            <CheckCircle2 size={18} className="text-emerald-500" />
-            <h2>Lojas monitoradas</h2>
-          </div>
-          <div className="space-y-2.5 flex-1">
+            </div>
+          ) : (
+            <div className="space-y-2.5 min-h-[150px]">
             {latestTenants.length ? (
               latestTenants.map((tenant) => (
                 <div key={tenant.id || tenant.slug || tenant.nome} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2.5 hover:bg-slate-50 transition-colors">
@@ -676,7 +717,8 @@ export default function Dashboard() {
                 {loading ? 'Carregando lojas...' : 'Nenhuma loja encontrada.'}
               </div>
             )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 

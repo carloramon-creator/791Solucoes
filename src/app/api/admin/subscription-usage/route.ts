@@ -96,7 +96,7 @@ export async function GET(req: Request) {
         .order('nome'),
       glass
         .from('user_profiles')
-        .select('vidracaria_id, user_id, ativo'),
+        .select('vidracaria_id, user_id, ativo, created_at'),
       glass
         .from('whatsapp_sectors')
         .select('id, vidracaria_id'),
@@ -134,6 +134,14 @@ export async function GET(req: Request) {
     if (firstError) {
       return NextResponse.json({ error: firstError.message }, { status: 500 });
     }
+
+    const rangeStartTime = rangeStart.getTime();
+    const rangeEndTime = rangeEnd.getTime();
+
+    const isWithinRange = (value: unknown) => {
+      const time = value ? new Date(String(value)).getTime() : Number.NaN;
+      return Number.isFinite(time) && time >= rangeStartTime && time <= rangeEndTime;
+    };
 
     // Calcular faturamento real das notas pagas
     let faturamentoMesAtual = 0;
@@ -195,6 +203,29 @@ export async function GET(req: Request) {
 
       if (!whatsappUsersByTenant.has(tenantId)) whatsappUsersByTenant.set(tenantId, new Set());
       whatsappUsersByTenant.get(tenantId)?.add(userId);
+    });
+
+    let lojasAtivasPeriodo = 0;
+    (tenants || []).forEach((tenant: any) => {
+      if (!isWithinRange(tenant?.created_at)) return;
+      if (tenant?.ativa === false) return;
+      lojasAtivasPeriodo += 1;
+    });
+
+    let usuariosCadastradosPeriodo = 0;
+    let usuariosWhatsappPeriodo = 0;
+    (userProfiles || []).forEach((profile: any) => {
+      if (!isWithinRange(profile?.created_at)) return;
+
+      usuariosCadastradosPeriodo += 1;
+
+      const tenantId = String(profile?.vidracaria_id || '');
+      const userId = String(profile?.user_id || '');
+      if (!tenantId || !userId) return;
+
+      if (whatsappUsersByTenant.get(tenantId)?.has(userId)) {
+        usuariosWhatsappPeriodo += 1;
+      }
     });
 
     const messagesByTenant = new Map<string, number>();
@@ -312,6 +343,11 @@ export async function GET(req: Request) {
       generatedAt: new Date().toISOString(),
       messagesPeriodStart,
       totals,
+      periodSummary: {
+        lojasAtivas: lojasAtivasPeriodo,
+        usuariosCadastrados: usuariosCadastradosPeriodo,
+        usuariosWhatsapp: usuariosWhatsappPeriodo,
+      },
       faturamentoMesAtual, // MRR do período
       faturamentoAcumulado, // Total acumulado
       tenants: tenantRows,

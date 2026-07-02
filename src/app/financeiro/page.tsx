@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   Receipt, 
   TrendingUp, 
@@ -41,6 +42,10 @@ interface FinanceRecord {
   payment_link?: string;
 }
 
+type DifferenceHandling = 'adjust' | 'keep_open';
+type OpenViewKind = 'payable' | 'receivable';
+type PeriodFilter = 'dia' | 'semana' | 'quinzena' | 'mes' | 'trimestre' | 'semestre' | 'ano';
+
 interface BankAccount {
   id: string;
   name: string;
@@ -55,8 +60,10 @@ interface Category {
 }
 
 export default function FinanceiroPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [settling, setSettling] = useState(false);
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [stats, setStats] = useState({
@@ -72,6 +79,19 @@ export default function FinanceiroPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'revenue' | 'expense' | 'payable'>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeSection, setActiveSection] = useState<'lancamentos' | 'abertos'>('lancamentos');
+  const [openViewKind, setOpenViewKind] = useState<OpenViewKind>('payable');
+  const [openPeriod, setOpenPeriod] = useState<PeriodFilter>('dia');
+  const [openDateStart, setOpenDateStart] = useState(new Date().toISOString().split('T')[0]);
+  const [openDateEnd, setOpenDateEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
+  const [settleRecord, setSettleRecord] = useState<FinanceRecord | null>(null);
+  const [settleForm, setSettleForm] = useState({
+    paidAmount: '',
+    bankAccountId: '',
+    paymentMethod: 'Pix',
+    differenceHandling: 'adjust' as DifferenceHandling,
+  });
 
   const [newRecord, setNewRecord] = useState({
     type: 'expense' as 'revenue' | 'expense',
@@ -92,9 +112,75 @@ export default function FinanceiroPage() {
     'Pix', 'Cartão Crédito', 'Cartão Débito', 'Boleto', 'Dinheiro', 'Transferência'
   ];
 
+  const periodOptions: PeriodFilter[] = ['dia', 'semana', 'quinzena', 'mes', 'trimestre', 'semestre', 'ano'];
+
+  const getPeriodLabel = (period: PeriodFilter) => {
+    const labels: Record<PeriodFilter, string> = {
+      dia: 'Hoje',
+      semana: 'Semana',
+      quinzena: 'Quinzena',
+      mes: 'Mês',
+      trimestre: 'Trimestre',
+      semestre: 'Semestre',
+      ano: 'Ano',
+    };
+    return labels[period];
+  };
+
+  const getDateRangeByPeriod = (period: PeriodFilter) => {
+    const now = new Date();
+    const start = new Date(now);
+
+    switch (period) {
+      case 'dia':
+        break;
+      case 'semana':
+        start.setDate(now.getDate() - 6);
+        break;
+      case 'quinzena':
+        start.setDate(now.getDate() - 14);
+        break;
+      case 'mes':
+        start.setDate(now.getDate() - 29);
+        break;
+      case 'trimestre':
+        start.setDate(now.getDate() - 89);
+        break;
+      case 'semestre':
+        start.setDate(now.getDate() - 179);
+        break;
+      case 'ano':
+        start.setDate(now.getDate() - 364);
+        break;
+    }
+
+    return {
+      start: start.toISOString().split('T')[0],
+      end: now.toISOString().split('T')[0],
+    };
+  };
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const range = getDateRangeByPeriod(openPeriod);
+    setOpenDateStart(range.start);
+    setOpenDateEnd(range.end);
+  }, [openPeriod]);
+
+  useEffect(() => {
+    const settleId = searchParams.get('settleId');
+    if (!settleId || records.length === 0) return;
+
+    const target = records.find((row) => row.id === settleId);
+    if (target && target.status !== 'paid') {
+      setActiveSection('abertos');
+      setOpenViewKind(target.type === 'expense' ? 'payable' : 'receivable');
+      openSettleModal(target);
+    }
+  }, [searchParams, records]);
 
   async function fetchData() {
     setLoading(true);
@@ -135,6 +221,107 @@ export default function FinanceiroPage() {
       balance: rev - exp
     });
   }
+
+  const categoryByName = useMemo(() => {
+    const map = new Map<string, Category>();
+    categories.forEach((cat) => {
+      map.set(cat.name, cat);
+    });
+    return map;
+  }, [categories]);
+
+  const getClassAndSubclass = (record: FinanceRecord) => {
+    const metadataClass = record.metadata?.classe || record.metadata?.class || null;
+    const metadataSubclass = record.metadata?.subclasse || record.metadata?.subclass || null;
+    if (metadataClass || metadataSubclass) {
+      return {
+        classe: metadataClass || record.category || 'Geral',
+        subclasse: metadataSubclass || '-',
+      };
+    }
+
+    const category = categoryByName.get(record.category);
+    if (!category) {
+      return { classe: record.category || 'Geral', subclasse: '-' };
+    }
+
+    if (!category.parent_id) {
+      return { classe: category.name, subclasse: '-' };
+    }
+
+    const parent = categories.find((row) => row.id === category.parent_id);
+    return {
+      classe: parent?.name || category.name,
+      subclasse: category.name,
+    };
+  };
+
+  const formatDateShort = (value?: string) => {
+    if (!value) return '--';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '--';
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  };
+
+  const getDueDate = (record: FinanceRecord) => {
+    return record.metadata?.due_date || record.metadata?.vencimento || record.created_at;
+  };
+
+  const openSettleModal = (record: FinanceRecord) => {
+    setSettleRecord(record);
+    setSettleForm({
+      paidAmount: String(Number(record.value || 0).toFixed(2)),
+      bankAccountId: record.bank_account_id || '',
+      paymentMethod: record.payment_method || 'Pix',
+      differenceHandling: 'adjust',
+    });
+    setIsSettleModalOpen(true);
+  };
+
+  const handleSettleRecord = async () => {
+    if (!settleRecord) return;
+
+    const paidAmount = Number(settleForm.paidAmount);
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+      alert('Informe um valor de baixa válido.');
+      return;
+    }
+
+    const originalValue = Number(settleRecord.value || 0);
+    const difference = Number((originalValue - paidAmount).toFixed(2));
+    if (settleForm.differenceHandling === 'keep_open' && difference <= 0) {
+      alert('Para manter diferença em aberto, o valor pago deve ser menor que o valor lançado.');
+      return;
+    }
+
+    setSettling(true);
+    try {
+      const response = await fetch('/api/system/finance-records/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recordId: settleRecord.id,
+          paidAmount,
+          bankAccountId: settleForm.bankAccountId || null,
+          paymentMethod: settleForm.paymentMethod,
+          differenceHandling: settleForm.differenceHandling,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.error || 'Falha ao baixar lançamento.');
+      }
+
+      setIsSettleModalOpen(false);
+      setSettleRecord(null);
+      await fetchData();
+    } catch (err: any) {
+      alert(`Erro ao baixar: ${err?.message || 'Falha inesperada.'}`);
+    } finally {
+      setSettling(false);
+    }
+  };
 
   const handleAddCategory = async () => {
     if (!newCategoryName) return;
@@ -313,6 +500,19 @@ export default function FinanceiroPage() {
     return matchesFilter && matchesSearch;
   });
 
+  const openRecordsFiltered = records
+    .filter((record) => record.status !== 'paid')
+    .filter((record) => (openViewKind === 'payable' ? record.type === 'expense' : record.type === 'revenue'))
+    .filter((record) => {
+      const due = new Date(getDueDate(record));
+      if (!Number.isFinite(due.getTime())) return false;
+
+      const start = new Date(`${openDateStart}T00:00:00`);
+      const end = new Date(`${openDateEnd}T23:59:59.999`);
+      return due.getTime() >= start.getTime() && due.getTime() <= end.getTime();
+    })
+    .sort((a, b) => new Date(getDueDate(a)).getTime() - new Date(getDueDate(b)).getTime());
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       
@@ -373,129 +573,256 @@ export default function FinanceiroPage() {
         </div>
       </div>
 
-      {/* Tabela de Lançamentos */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/30">
-          <div className="flex items-center gap-2">
-             <button 
-                onClick={() => setFilter('all')}
-                className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'all' ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >Tudo</button>
-             <button 
-                onClick={() => setFilter('revenue')}
-                className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'revenue' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >Receitas</button>
-             <button 
-                onClick={() => setFilter('expense')}
-                className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'expense' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >Despesas</button>
-             <button 
-               onClick={() => setFilter('payable')}
-               className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'payable' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >Contas a Pagar</button>
+        <div className="p-5 border-b border-slate-100 bg-slate-50/30 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveSection('lancamentos')}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === 'lancamentos' ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Lançamentos
+            </button>
+            <button
+              onClick={() => {
+                setActiveSection('abertos');
+                setOpenViewKind('payable');
+              }}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === 'abertos' && openViewKind === 'payable' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Contas a pagar em aberto
+            </button>
+            <button
+              onClick={() => {
+                setActiveSection('abertos');
+                setOpenViewKind('receivable');
+              }}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === 'abertos' && openViewKind === 'receivable' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Contas a receber em aberto
+            </button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
-            <input 
-              type="text" 
-              placeholder="Pesquisar descrição ou categoria..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl pl-9 pr-4 h-[38px] text-xs focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 w-full md:w-64 transition-all"
-            />
-          </div>
+
+          {activeSection === 'lancamentos' ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button 
+                  onClick={() => setFilter('all')}
+                  className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'all' ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >Tudo</button>
+                <button 
+                  onClick={() => setFilter('revenue')}
+                  className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'revenue' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >Receitas</button>
+                <button 
+                  onClick={() => setFilter('expense')}
+                  className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'expense' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >Despesas</button>
+                <button 
+                  onClick={() => setFilter('payable')}
+                  className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'payable' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >Contas a Pagar</button>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Pesquisar descrição ou categoria..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl pl-9 pr-4 h-[38px] text-xs focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 w-full md:w-64 transition-all"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {periodOptions.map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => setOpenPeriod(period)}
+                    className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${openPeriod === period ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {getPeriodLabel(period)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Início</label>
+                <input
+                  type="date"
+                  value={openDateStart}
+                  onChange={(event) => setOpenDateStart(event.target.value)}
+                  className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
+                />
+                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest ml-2">Fim</label>
+                <input
+                  type="date"
+                  value={openDateEnd}
+                  onChange={(event) => setOpenDateEnd(event.target.value)}
+                  className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
-                <th className="px-8 py-3">Data / Status</th>
-                <th className="px-8 py-3">Descrição / Categoria</th>
-                <th className="px-8 py-3 text-center">Método</th>
-                <th className="px-8 py-3 text-right pr-12">Valor</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {loading ? (
-                <tr>
-                  <td colSpan={4} className="px-8 py-20 text-center text-slate-400">
-                    <Loader2 className="animate-spin mx-auto mb-3" size={28} />
-                    <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Sincronizando fluxo de caixa...</span>
-                  </td>
+        {activeSection === 'lancamentos' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-8 py-3">Data / Status</th>
+                  <th className="px-8 py-3">Descrição / Categoria</th>
+                  <th className="px-8 py-3 text-center">Método</th>
+                  <th className="px-8 py-3 text-right pr-12">Valor</th>
+                  <th className="px-6 py-3 text-right">Ações</th>
                 </tr>
-              ) : filteredRecords.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-8 py-20 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
-                    Nenhum lançamento encontrado.
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords.map((record) => (
-                  <tr key={record.id} className="hover:bg-slate-50/80 transition-all group">
-                    <td className="px-8 py-2.5">
-                      <div className="flex flex-col">
-                        <span className="text-[11px] font-bold text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</span>
-                        <span className={`text-[9px] uppercase font-black tracking-tighter flex items-center gap-1 mt-0.5 ${record.status === 'paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${record.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-                          {record.status === 'paid' ? 'Efetivado' : 'Pendente'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-2.5">
-                      <div className="flex flex-col">
-                        <span className="text-[12px] text-slate-800 font-bold uppercase tracking-tight">{getDisplayDescription(record)}</span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-black uppercase tracking-widest">
-                            {record.category}
-                          </span>
-                          {record.bank_account_id && (
-                            <span className="text-[9px] text-slate-400 flex items-center gap-1 uppercase font-bold">
-                              <Building size={10} /> {bankAccounts.find(a => a.id === record.bank_account_id)?.name}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-8 py-2.5 text-center">
-                      <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-3 py-1 rounded-full">
-                        <CreditCard size={10} className="text-slate-400" />
-                        <span className="text-[10px] text-slate-600 font-bold uppercase tracking-tighter">
-                          {record.payment_method}
-                        </span>
-                      </div>
-                    </td>
-                    <td className={`px-8 py-2.5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
-                    </td>
-                    <td className="px-6 py-2 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => handleDelete(record.id)}
-                          className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                          title="Excluir Lançamento"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {record.payment_link && (
-                          <a 
-                            href={record.payment_link} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-600 transition-colors p-2 hover:bg-blue-50 rounded-lg"
-                            title="Abrir Link de Pagamento"
-                          >
-                            <ExternalLink size={16} />
-                          </a>
-                        )}
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center text-slate-400">
+                      <Loader2 className="animate-spin mx-auto mb-3" size={28} />
+                      <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Sincronizando fluxo de caixa...</span>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                      Nenhum lançamento encontrado.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-slate-50/80 transition-all group">
+                      <td className="px-8 py-2.5">
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</span>
+                          <span className={`text-[9px] uppercase font-black tracking-tighter flex items-center gap-1 mt-0.5 ${record.status === 'paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
+                            <div className={`w-1.5 h-1.5 rounded-full ${record.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
+                            {record.status === 'paid' ? 'Efetivado' : 'Pendente'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-2.5">
+                        <div className="flex flex-col">
+                          <span className="text-[12px] text-slate-800 font-bold uppercase tracking-tight">{getDisplayDescription(record)}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-black uppercase tracking-widest">
+                              {record.category}
+                            </span>
+                            {record.bank_account_id && (
+                              <span className="text-[9px] text-slate-400 flex items-center gap-1 uppercase font-bold">
+                                <Building size={10} /> {bankAccounts.find(a => a.id === record.bank_account_id)?.name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-2.5 text-center">
+                        <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-3 py-1 rounded-full">
+                          <CreditCard size={10} className="text-slate-400" />
+                          <span className="text-[10px] text-slate-600 font-bold uppercase tracking-tighter">
+                            {record.payment_method}
+                          </span>
+                        </div>
+                      </td>
+                      <td className={`px-8 py-2.5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                      </td>
+                      <td className="px-6 py-2 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {record.status !== 'paid' && (
+                            <button
+                              onClick={() => openSettleModal(record)}
+                              className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider"
+                              title="Baixar lançamento"
+                            >
+                              Baixar
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDelete(record.id)}
+                            className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                            title="Excluir Lançamento"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          {record.payment_link && (
+                            <a 
+                              href={record.payment_link} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:text-blue-600 transition-colors p-2 hover:bg-blue-50 rounded-lg"
+                              title="Abrir Link de Pagamento"
+                            >
+                              <ExternalLink size={16} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-4 py-2">Classe</th>
+                  <th className="px-4 py-2">Subclasse</th>
+                  <th className="px-4 py-2">Lançamento</th>
+                  <th className="px-4 py-2">Venc.</th>
+                  <th className="px-4 py-2 text-right">Valor</th>
+                  <th className="px-4 py-2 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400">
+                      <Loader2 className="animate-spin mx-auto mb-3" size={24} />
+                      <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Carregando contas em aberto...</span>
+                    </td>
+                  </tr>
+                ) : openRecordsFiltered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                      Nenhuma conta em aberto para o filtro informado.
+                    </td>
+                  </tr>
+                ) : (
+                  openRecordsFiltered.map((record) => {
+                    const classInfo = getClassAndSubclass(record);
+                    const dueDate = getDueDate(record);
+                    return (
+                      <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 text-[11px] text-slate-700">{classInfo.classe}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-500">{classInfo.subclasse}</td>
+                        <td className="px-4 py-2 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-600">{formatDateShort(dueDate)}</td>
+                        <td className={`px-4 py-2 text-right text-[12px] font-bold ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            onClick={() => openSettleModal(record)}
+                            className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider"
+                          >
+                            Baixar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {isModalOpen && (
@@ -687,6 +1014,105 @@ export default function FinanceiroPage() {
                 ) : (
                   'Confirmar Lançamento'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isSettleModalOpen && settleRecord && (
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-[105] p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl border border-slate-200">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/40">
+              <h2 className="text-lg font-black uppercase tracking-tight text-[#3b597b]">Baixar Lançamento</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {getDisplayDescription(settleRecord)} | Valor original: {formatCurrency(settleRecord.value)}
+              </p>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">Valor pago</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={settleForm.paidAmount}
+                    onChange={(event) => setSettleForm((prev) => ({ ...prev, paidAmount: event.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">Método</label>
+                  <select
+                    value={settleForm.paymentMethod}
+                    onChange={(event) => setSettleForm((prev) => ({ ...prev, paymentMethod: event.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                  >
+                    {paymentMethods.map((method) => (
+                      <option key={method} value={method}>{method}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">Conta bancária</label>
+                  <select
+                    value={settleForm.bankAccountId}
+                    onChange={(event) => setSettleForm((prev) => ({ ...prev, bankAccountId: event.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                  >
+                    <option value="">Sem conta bancária</option>
+                    {bankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2">Se houver diferença</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="radio"
+                      name="differenceHandling"
+                      checked={settleForm.differenceHandling === 'adjust'}
+                      onChange={() => setSettleForm((prev) => ({ ...prev, differenceHandling: 'adjust' }))}
+                    />
+                    <span>Fechar lançamento com o valor pago (juros/desconto).</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="radio"
+                      name="differenceHandling"
+                      checked={settleForm.differenceHandling === 'keep_open'}
+                      onChange={() => setSettleForm((prev) => ({ ...prev, differenceHandling: 'keep_open' }))}
+                    />
+                    <span>Manter diferença em aberto em um novo lançamento pendente.</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  if (settling) return;
+                  setIsSettleModalOpen(false);
+                  setSettleRecord(null);
+                }}
+                className="h-[38px] px-4 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-wider hover:bg-white"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSettleRecord}
+                disabled={settling}
+                className="h-[38px] px-5 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-wider shadow-sm hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {settling ? 'Baixando...' : 'Confirmar baixa'}
               </button>
             </div>
           </div>

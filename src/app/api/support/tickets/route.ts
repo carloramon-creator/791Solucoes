@@ -132,12 +132,15 @@ async function pickLeastBusyAssignee(subjectId: string): Promise<string | null> 
 
     const profileNames = Array.from(new Set((profileRows || []).map((row: any) => String(row.name || '').trim()).filter(Boolean)));
 
-    const { data: usersByCargo } = profileNames.length > 0
-      ? await supabaseServer
-          .from('equipe_791')
-          .select('email, cargo')
-          .in('cargo', profileNames)
-      : { data: [], error: null };
+    let usersByCargo: any[] = [];
+    if (profileNames.length > 0) {
+      const { data } = await supabaseServer
+        .from('equipe_791')
+        .select('email, cargo')
+        .in('cargo', profileNames);
+
+      usersByCargo = data || [];
+    }
 
     for (const row of usersByCargo || []) {
       const email = String((row as any).email || '').trim().toLowerCase();

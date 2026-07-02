@@ -33,19 +33,60 @@ export async function POST(req: Request, context: RouteContext) {
   const redirectTo = `${getRedirectBase(req)}/set-password`;
 
   try {
-    const { data, error } = await supabaseServer.auth.admin.generateLink({
-      type: 'recovery',
-      email: userEmail,
-      options: { redirectTo },
-    });
+    const { data: listedUsers, error: listError } = await supabaseServer.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) {
+      return NextResponse.json({ error: listError.message || 'Falha ao consultar usuarios do Auth.' }, { status: 500 });
+    }
 
-    if (error || !data?.properties?.action_link) {
-      return NextResponse.json({ error: error?.message || 'Falha ao gerar link de senha.' }, { status: 500 });
+    const existingUser = (listedUsers?.users || []).find((user) => String(user.email || '').trim().toLowerCase() === userEmail);
+    let actionLink: string | null = null;
+
+    if (existingUser) {
+      const { data, error } = await supabaseServer.auth.admin.generateLink({
+        type: 'recovery',
+        email: userEmail,
+        options: { redirectTo },
+      });
+
+      if (!error && data?.properties?.action_link) {
+        actionLink = data.properties.action_link;
+      }
+    } else {
+      const { error: inviteError } = await supabaseServer.auth.admin.inviteUserByEmail(userEmail, {
+        redirectTo,
+        data: { generatedBy: auth.user.email || null },
+      });
+
+      if (inviteError) {
+        const inviteMessage = String(inviteError.message || '').toLowerCase();
+        if (!inviteMessage.includes('already exists')) {
+          return NextResponse.json({ error: inviteError.message || 'Falha ao enviar convite.' }, { status: 500 });
+        }
+      }
+
+      const { data, error } = await supabaseServer.auth.admin.generateLink({
+        type: 'recovery',
+        email: userEmail,
+        options: { redirectTo },
+      });
+
+      if (!error && data?.properties?.action_link) {
+        actionLink = data.properties.action_link;
+      }
+    }
+
+    if (!actionLink) {
+      return NextResponse.json({
+        ok: true,
+        email: userEmail,
+        generatedBy: auth.user.email,
+        message: 'Nao foi possivel gerar o link automaticamente. Verifique se o usuario tem conta no Auth.',
+      });
     }
 
     return NextResponse.json({
       ok: true,
-      actionLink: data.properties.action_link,
+      actionLink,
       email: userEmail,
       generatedBy: auth.user.email,
     });

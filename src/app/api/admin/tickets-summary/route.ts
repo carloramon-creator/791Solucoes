@@ -12,47 +12,55 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const period = url.searchParams.get('period') || 'mes';
     const status = url.searchParams.get('status') || 'total';
+    const startDateParam = url.searchParams.get('startDate');
+    const endDateParam = url.searchParams.get('endDate');
 
-    // Calcular datas baseado no período
     const now = new Date();
-    let startDate = new Date();
-
-    switch (period) {
-      case 'dia':
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'semana':
-        startDate.setDate(now.getDate() - now.getDay());
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'quinzena':
-        startDate.setDate(now.getDate() > 15 ? 16 : 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'mes':
-        startDate.setDate(1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'trimestre':
-        const quarter = Math.floor(now.getMonth() / 3);
-        startDate.setMonth(quarter * 3, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'semestre':
-        startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'ano':
-        startDate.setMonth(0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-    }
+    const startDate = startDateParam ? new Date(startDateParam) : (() => {
+      const date = new Date(now);
+      switch (period) {
+        case 'dia':
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'semana':
+          date.setDate(now.getDate() - now.getDay());
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'quinzena':
+          date.setDate(now.getDate() > 15 ? 16 : 1);
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'mes':
+          date.setDate(1);
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'trimestre':
+          date.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'semestre':
+          date.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+          date.setHours(0, 0, 0, 0);
+          break;
+        case 'ano':
+          date.setMonth(0, 1);
+          date.setHours(0, 0, 0, 0);
+          break;
+      }
+      return date;
+    })();
+    const endDate = endDateParam ? new Date(endDateParam) : now;
+    const rangeStart = Number.isFinite(startDate.getTime()) ? startDate : new Date(now.getFullYear(), now.getMonth(), 1);
+    const rangeEnd = Number.isFinite(endDate.getTime()) ? endDate : now;
+    const fromDate = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+    const toDate = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
 
     // Buscar todos os tickets do período
     const { data: allTickets, error: ticketsError } = await supabaseServer
       .from('support_tickets')
       .select('id, protocol, title, description, tenant_slug, priority, status, created_at, due_at, resolved_at')
-      .gte('created_at', startDate.toISOString())
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toDate.toISOString())
       .order('created_at', { ascending: false });
 
     if (ticketsError) {

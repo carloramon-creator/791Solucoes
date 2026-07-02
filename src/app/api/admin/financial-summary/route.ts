@@ -48,6 +48,12 @@ function getPeriodStart(period: string) {
   return startDate;
 }
 
+function getDateFromParam(value: string | null, fallback: Date) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : fallback;
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
   if (!auth.ok) {
@@ -57,10 +63,16 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const period = url.searchParams.get('period') || 'mes';
+    const startDateParam = url.searchParams.get('startDate');
+    const endDateParam = url.searchParams.get('endDate');
     const section = url.searchParams.get('section') || 'saldo-atual';
 
     // Calcular datas baseado no período
-    const startDate = getPeriodStart(period);
+    const now = new Date();
+    const startDate = getDateFromParam(startDateParam, getPeriodStart(period));
+    const endDate = getDateFromParam(endDateParam, now);
+    const rangeStart = startDate <= endDate ? startDate : endDate;
+    const rangeEnd = startDate <= endDate ? endDate : startDate;
 
     let data: any[] = [];
 
@@ -68,7 +80,7 @@ export async function GET(req: Request) {
       // Buscar saldo de cada conta bancária real da holding
       const { data: bankAccounts, error: accountsError } = await supabaseServer
         .from('system_bank_accounts')
-        .select('id, name, bank_name, agency, account_number, balance, updated_at, status')
+        .select('*')
         .order('bank_name', { ascending: true })
         .order('name', { ascending: true });
 
@@ -96,7 +108,8 @@ export async function GET(req: Request) {
         .select('id, type, value, description, category, status, created_at, payment_method, metadata')
         .eq('type', 'revenue')
         .eq('status', 'pending')
-        .gte('created_at', startDate.toISOString());
+        .gte('created_at', rangeStart.toISOString())
+        .lte('created_at', rangeEnd.toISOString());
 
       if (recordsError && recordsError.code !== 'PGRST116') {
         console.log('Aviso ao buscar contas a receber:', recordsError.message);
@@ -119,7 +132,8 @@ export async function GET(req: Request) {
         .select('id, type, value, description, category, status, created_at, payment_method, metadata')
         .eq('type', 'expense')
         .eq('status', 'pending')
-        .gte('created_at', startDate.toISOString())
+        .gte('created_at', rangeStart.toISOString())
+        .lte('created_at', rangeEnd.toISOString())
         .order('created_at', { ascending: false });
 
       if (recordsError && recordsError.code !== 'PGRST116') {

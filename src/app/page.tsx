@@ -74,6 +74,11 @@ type TicketTotals = {
   resolvidos: number;
 };
 
+type DateRange = {
+  start: string;
+  end: string;
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }
@@ -96,6 +101,62 @@ function getPeriodLabel(period: PeriodFilter): string {
   return labels[period];
 }
 
+function padDatePart(value: number) {
+  return String(value).padStart(2, '0');
+}
+
+function toInputDateValue(date: Date) {
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+}
+
+function getPeriodRange(period: PeriodFilter): DateRange {
+  const now = new Date();
+  const startDate = new Date(now);
+
+  switch (period) {
+    case 'dia':
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semana':
+      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'quinzena':
+      startDate.setDate(now.getDate() > 15 ? 16 : 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'mes':
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'trimestre':
+      startDate.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'semestre':
+      startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'ano':
+      startDate.setMonth(0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+  }
+
+  return {
+    start: toInputDateValue(startDate),
+    end: toInputDateValue(now),
+  };
+}
+
+function toIsoStartOfDay(value: string) {
+  return new Date(`${value}T00:00:00`).toISOString();
+}
+
+function toIsoEndOfDay(value: string) {
+  return new Date(`${value}T23:59:59.999`).toISOString();
+}
+
 export default function Dashboard() {
   const supabase = useMemo(() => createSupabaseBrowser(), []);
   const [loading, setLoading] = useState(true);
@@ -103,9 +164,13 @@ export default function Dashboard() {
   const [data, setData] = useState<UsageSummaryResponse | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('mes');
+  const [dateRange, setDateRange] = useState<DateRange>(() => getPeriodRange('mes'));
   const [modal, setModal] = useState<ModalData>({ type: null });
   const [financialTotals, setFinancialTotals] = useState({ saldoAtual: 0, contasReceber: 0, contasPagar: 0 });
   const [ticketTotals, setTicketTotals] = useState<TicketTotals>({ total: 0, emDia: 0, atrasados: 0, resolvidos: 0 });
+
+  const rangeStartIso = toIsoStartOfDay(dateRange.start);
+  const rangeEndIso = toIsoEndOfDay(dateRange.end);
 
   const periods: PeriodFilter[] = ['dia', 'semana', 'quinzena', 'mes', 'trimestre', 'semestre', 'ano'];
 
@@ -133,7 +198,7 @@ export default function Dashboard() {
           });
         }
 
-        const response = await fetch(`/api/admin/subscription-usage?period=${selectedPeriod}`, {
+        const response = await fetch(`/api/admin/subscription-usage?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}`, {
           cache: 'no-store',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -163,7 +228,11 @@ export default function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [supabase, selectedPeriod]);
+  }, [supabase, selectedPeriod, dateRange.start, dateRange.end]);
+
+  useEffect(() => {
+    setDateRange(getPeriodRange(selectedPeriod));
+  }, [selectedPeriod]);
 
   // Carregar totais financeiros quando o período muda
   useEffect(() => {
@@ -176,15 +245,15 @@ export default function Dashboard() {
         if (!token) return;
 
         const [saldoRes, receberRes, pagarRes] = await Promise.all([
-          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=saldo-atual`, {
+          fetch(`/api/admin/financial-summary?section=saldo-atual`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=contas-receber`, {
+          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&section=contas-receber`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=contas-pagar`, {
+          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&section=contas-pagar`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
@@ -210,7 +279,7 @@ export default function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [supabase, selectedPeriod]);
+  }, [supabase, selectedPeriod, dateRange.start, dateRange.end]);
 
   useEffect(() => {
     let alive = true;
@@ -222,19 +291,19 @@ export default function Dashboard() {
         if (!token) return;
 
         const [totalRes, emDiaRes, atrasadosRes, resolvidosRes] = await Promise.all([
-          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=total`, {
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&status=total`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=em-dia`, {
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&status=em-dia`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=atrasados`, {
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&status=atrasados`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
-          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&status=resolvidos`, {
+          fetch(`/api/admin/tickets-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&status=resolvidos`, {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
           }),
@@ -262,7 +331,7 @@ export default function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [supabase, selectedPeriod]);
+  }, [supabase, selectedPeriod, dateRange.start, dateRange.end]);
 
   const totals = data?.totals;
   const tenants = data?.tenants || [];
@@ -280,9 +349,11 @@ export default function Dashboard() {
 
       let apiUrl = '';
       if (type === 'financeiro') {
-        apiUrl = `/api/admin/financial-summary?period=${selectedPeriod}&section=${subtype}`;
+        apiUrl = subtype === 'saldo-atual'
+          ? `/api/admin/financial-summary?section=${subtype}`
+          : `/api/admin/financial-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&section=${subtype}`;
       } else if (type === 'tickets') {
-        apiUrl = `/api/admin/tickets-summary?period=${selectedPeriod}&status=${subtype}`;
+        apiUrl = `/api/admin/tickets-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&status=${subtype}`;
       }
 
       if (apiUrl) {
@@ -341,7 +412,10 @@ export default function Dashboard() {
           {periods.map((period) => (
             <button
               key={period}
-              onClick={() => setSelectedPeriod(period)}
+              onClick={() => {
+                setSelectedPeriod(period);
+                setDateRange(getPeriodRange(period));
+              }}
               className={`px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-all ${
                 selectedPeriod === period
                   ? 'bg-[#3b597b] text-white shadow-md'
@@ -354,6 +428,34 @@ export default function Dashboard() {
           <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#6899c4] text-white tracking-wider ml-2">
             {totals?.tenants || 0} LOJAS | DADOS AO VIVO | {formatDate(data?.generatedAt)}
           </span>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Calendar size={14} className="text-slate-400" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Intervalo aplicado</span>
+          </div>
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+            <span>Data inicial</span>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(event) => setDateRange((current) => ({ ...current, start: event.target.value }))}
+              className="bg-transparent text-slate-700 outline-none"
+            />
+          </label>
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+            <span>Data fim</span>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(event) => setDateRange((current) => ({ ...current, end: event.target.value }))}
+              className="bg-transparent text-slate-700 outline-none"
+            />
+          </label>
+          <p className="text-[11px] text-slate-500">
+            O período do painel considera tudo entre as duas datas, de trás para frente até hoje, a menos que você altere o fim.
+          </p>
         </div>
       </div>
 

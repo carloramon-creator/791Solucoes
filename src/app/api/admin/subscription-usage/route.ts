@@ -61,13 +61,25 @@ function getPeriodStart(period: string) {
   return startDate;
 }
 
+function getDateFromParam(value: string | null, fallback: Date) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : fallback;
+}
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const period = url.searchParams.get('period') || 'mes';
+    const startDateParam = url.searchParams.get('startDate');
+    const endDateParam = url.searchParams.get('endDate');
     const glass = await getGlassClient();
-    const periodStart = getPeriodStart(period);
-    const messagesPeriodStart = periodStart.toISOString();
+    const now = new Date();
+    const periodStart = getDateFromParam(startDateParam, getPeriodStart(period));
+    const periodEnd = getDateFromParam(endDateParam, now);
+    const rangeStart = periodStart <= periodEnd ? periodStart : periodEnd;
+    const rangeEnd = periodStart <= periodEnd ? periodEnd : periodStart;
+    const messagesPeriodStart = rangeStart.toISOString();
 
     const [
       { data: tenants, error: tenantsError },
@@ -95,6 +107,7 @@ export async function GET(req: Request) {
         .from('whatsapp_messages')
         .select('vidracaria_id, sender_type, created_at')
         .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString())
         .in('sender_type', ['user', 'system']),
       supabaseServer
         .from('system_plans')
@@ -105,6 +118,7 @@ export async function GET(req: Request) {
         .from('system_invoices')
         .select('value, status, created_at, metadata')
         .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString())
         .in('status', ['pago', 'authorized']),
     ]);
 

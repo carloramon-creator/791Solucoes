@@ -86,6 +86,19 @@ export async function GET() {
       faturamentoMesAtual += toNumber(invoice?.value, 0);
     });
 
+    // Calcular faturamento acumulado total (todas as notas com status pago)
+    const { data: allPaidInvoices, error: allInvoicesError } = await supabaseServer
+      .from('system_invoices')
+      .select('value')
+      .in('status', ['pago', 'authorized']);
+
+    let faturamentoAcumulado = 0;
+    if (!allInvoicesError) {
+      (allPaidInvoices || []).forEach((invoice: any) => {
+        faturamentoAcumulado += toNumber(invoice?.value, 0);
+      });
+    }
+
     const sectorToTenantMap = new Map<string, string>();
     (sectors || []).forEach((sector: any) => {
       if (sector?.id && sector?.vidracaria_id) {
@@ -244,6 +257,8 @@ export async function GET() {
       generatedAt: new Date().toISOString(),
       messagesPeriodStart,
       totals,
+      faturamentoMesAtual, // MRR do período
+      faturamentoAcumulado, // Total acumulado
       tenants: tenantRows,
     });
   } catch (err: any) {

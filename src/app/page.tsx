@@ -24,6 +24,8 @@ type PeriodFilter = 'dia' | 'semana' | 'quinzena' | 'mes' | 'trimestre' | 'semes
 type UsageSummaryResponse = {
   generatedAt?: string;
   messagesPeriodStart?: string;
+  faturamentoMesAtual?: number;
+  faturamentoAcumulado?: number;
   totals?: {
     tenants: number;
     registeredUsers: number;
@@ -299,16 +301,27 @@ export default function Dashboard() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>
       ) : null}
 
-      {/* Faturamento (MRR) - Card único principal */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-1">
+      {/* Faturamento (MRR) - 2 cards: período e acumulado */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[140px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
-            <span>Faturamento (MRR) - Receita Recorrente Mensal</span>
+            <span>Faturamento - Período ({getPeriodLabel(selectedPeriod)})</span>
           </div>
           <div className="mt-4 flex items-baseline gap-1.5">
-            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(totals?.overageMonthly || 0)}</h3>
-            <p className="text-xs font-medium text-slate-500">acumulado no período</p>
+            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoMesAtual || 0)}</h3>
+            <p className="text-xs font-medium text-slate-500">neste período</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[140px]">
+          <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
+            <BarChart3 size={18} />
+            <span>Faturamento - Acumulado Total</span>
+          </div>
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoAcumulado || 0)}</h3>
+            <p className="text-xs font-medium text-slate-500">desde o início</p>
           </div>
         </div>
       </div>
@@ -392,7 +405,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Saldo atual (todas as contas)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-slate-800">{formatCurrency(5420.80)}</p>
+                <p className="text-lg font-bold text-slate-800">{formatCurrency(financialTotals.saldoAtual)}</p>
                 <ChevronRight size={16} className="text-slate-400" />
               </div>
             </button>
@@ -523,22 +536,47 @@ export default function Dashboard() {
             <div className="p-6">
               {modal.data && modal.data.length > 0 ? (
                 <div className="space-y-3">
-                  {modal.data.map((item, idx) => (
-                    <div key={idx} className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-bold text-slate-800">{item.titulo || item.descricao || item.nome || 'Item'}</p>
-                          <p className="text-sm text-slate-600 mt-1">{item.detalhes || item.descricao_completa || ''}</p>
+                  {modal.type === 'financeiro' && modal.subtype === 'saldo-atual' ? (
+                    // Renderização especial para Saldo Atual (dados de contas bancárias)
+                    modal.data.map((item, idx) => (
+                      <div key={idx} className="border border-blue-200 rounded-lg p-4 bg-blue-50 hover:bg-blue-100 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-bold text-slate-800">{item.descricao || 'Conta Bancária'}</p>
+                            {item.detalhes && (
+                              <p className="text-sm text-slate-600 mt-1">{item.detalhes}</p>
+                            )}
+                            {item.data_vencimento && (
+                              <p className="text-xs text-slate-500 mt-2">Atualizado em: {formatDate(item.data_vencimento)}</p>
+                            )}
+                          </div>
+                          {item.valor !== undefined && (
+                            <div className="text-right ml-4">
+                              <p className="text-2xl font-bold text-blue-700">{formatCurrency(item.valor)}</p>
+                            </div>
+                          )}
                         </div>
-                        {item.valor && (
-                          <p className="text-right font-bold text-slate-800">{formatCurrency(item.valor)}</p>
+                      </div>
+                    ))
+                  ) : (
+                    // Renderização padrão para outros tipos (Contas a Receber/Pagar, Tickets)
+                    modal.data.map((item, idx) => (
+                      <div key={idx} className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-bold text-slate-800">{item.titulo || item.descricao || item.nome || 'Item'}</p>
+                            <p className="text-sm text-slate-600 mt-1">{item.detalhes || item.descricao_completa || ''}</p>
+                          </div>
+                          {item.valor && (
+                            <p className="text-right font-bold text-slate-800">{formatCurrency(item.valor)}</p>
+                          )}
+                        </div>
+                        {item.data_vencimento && (
+                          <p className="text-xs text-slate-500 mt-2">Vencimento: {formatDate(item.data_vencimento)}</p>
                         )}
                       </div>
-                      {item.data_vencimento && (
-                        <p className="text-xs text-slate-500 mt-2">Vencimento: {formatDate(item.data_vencimento)}</p>
-                      )}
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-12">

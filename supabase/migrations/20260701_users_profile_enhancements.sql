@@ -62,7 +62,7 @@ on conflict (id) do nothing;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'equipe-avatars',
+  'equaijnda ipe-avatars',
   'equipe-avatars',
   false,
   5242880,

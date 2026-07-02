@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
-import { getGlassClient } from '@/lib/glass-client';
+
+function toNumber(value: unknown, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
@@ -52,32 +56,50 @@ export async function GET(req: Request) {
     let data: any[] = [];
 
     if (section === 'saldo-atual') {
-      // Buscar notas pagas para calcular saldo
-      const { data: paidInvoices, error: invoicesError } = await supabaseServer
-        .from('system_invoices')
-        .select('value')
-        .in('status', ['pago', 'authorized']);
+      // Buscar saldo de cada conta bancária
+      const { data: bankAccounts, error: accountsError } = await supabaseServer
+        .from('bank_accounts')
+        .select('id, bank_name, account_number, balance, updated_at')
+        .eq('active', true);
 
-      if (invoicesError) {
-        return NextResponse.json({ error: invoicesError.message }, { status: 500 });
+      if (accountsError && accountsError.code !== 'PGRST116') {
+        // PGRST116 = tabela não existe, que é aceitável
+        console.log('Aviso ao buscar contas bancárias:', accountsError.message);
       }
 
-      let totalSaldo = 0;
-      (paidInvoices || []).forEach((inv: any) => {
-        totalSaldo += Number(inv?.value || 0);
-      });
+      if (bankAccounts && bankAccounts.length > 0) {
+        data = bankAccounts.map((account: any) => ({
+          id: account.id,
+          descricao: `${account.bank_name} - Conta ${account.account_number}`,
+          valor: toNumber(account.balance, 0),
+          data_vencimento: null,
+          atualizado_em: account.updated_at,
+        }));
+      } else {
+        // Se não existir tabela de contas bancárias, buscar do histórico de notas pagas
+        const { data: paidInvoices } = await supabaseServer
+          .from('system_invoices')
+          .select('value, status, created_at')
+          .in('status', ['pago', 'authorized'])
+          .order('created_at', { ascending: false });
 
-      data = [
-        { 
-          id: '1', 
-          descricao: 'Saldo Total Acumulado - Notas Pagas',
-          valor: totalSaldo,
-          data_vencimento: null 
-        },
-      ];
+        let totalSaldo = 0;
+        (paidInvoices || []).forEach((inv: any) => {
+          totalSaldo += toNumber(inv?.value, 0);
+        });
+
+        data = [
+          {
+            id: '1',
+            descricao: 'Saldo Total Acumulado (Notas Pagas)',
+            valor: totalSaldo,
+            data_vencimento: null,
+          },
+        ];
+      }
 
     } else if (section === 'contas-receber') {
-      // Buscar notas fiscais em aberto (pending/authorized mas não pagas)
+      // Buscar notas fiscais pendentes (não pagas) no período
       const { data: invoices, error: invoicesError } = await supabaseServer
         .from('system_invoices')
         .select('invoice_number, value, created_at, metadata')
@@ -85,29 +107,40 @@ export async function GET(req: Request) {
         .gte('created_at', startDate.toISOString());
 
       if (invoicesError) {
-        return NextResponse.json({ error: invoicesError.message }, { status: 500 });
+        console.log('Aviso ao buscar contas a receber:', invoicesError.message);
       }
 
       data = (invoices || []).map((inv: any) => ({
         id: inv.invoice_number,
-        descricao: `Nota Fiscal ${inv.invoice_number} - Consultoria`,
-        valor: Number(inv?.value || 0),
+        descricao: `Nota Fiscal ${inv.invoice_number}`,
+        valor: toNumber(inv?.value, 0),
         data_vencimento: inv?.created_at ? new Date(new Date(inv.created_at).getTime() + 30*24*60*60*1000).toISOString() : null,
-        status: 'em_aberto'
+        status: 'em_aberto',
+        data_emissao: inv?.created_at,
       }));
 
     } else if (section === 'contas-pagar') {
-      // Buscar despesas em aberto (essa tabela pode não existir ainda)
-      // Por enquanto, retornar vazio, pois não há tabela específica
-      data = [
-        {
-          id: '1',
-          descricao: 'Despesa aguardando mapeamento no banco',
-          valor: 0,
-          data_vencimento: null,
-          status: 'em_aberto'
-        }
-      ];
+      // Buscar despesas pendentes no período
+      const { data: expenses, error: expensesError } = await supabaseServer
+        .from('expenses')
+        .select('id, description, amount, due_date, status')
+        .eq('status', 'pending')
+        .gte('due_date', startDate.toISOString())
+        .order('due_date');
+
+      if (expensesError && expensesError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar contas a pagar:', expensesError.message);
+      }
+
+      if (expenses && expenses.length > 0) {
+        data = expenses.map((exp: any) => ({
+          id: exp.id,
+          descricao: exp.description,
+          valor: toNumber(exp.amount, 0),
+          data_vencimento: exp.due_date,
+          status: exp.status,
+        }));
+      }
     }
 
     return NextResponse.json(data);

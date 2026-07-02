@@ -95,6 +95,7 @@ export default function Dashboard() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('mes');
   const [modal, setModal] = useState<ModalData>({ type: null });
+  const [financialTotals, setFinancialTotals] = useState({ saldoAtual: 0, contasReceber: 0, contasPagar: 0 });
 
   const periods: PeriodFilter[] = ['dia', 'semana', 'quinzena', 'mes', 'trimestre', 'semestre', 'ano'];
 
@@ -149,6 +150,53 @@ export default function Dashboard() {
     };
 
     load();
+    return () => {
+      alive = false;
+    };
+  }, [supabase, selectedPeriod]);
+
+  // Carregar totais financeiros quando o período muda
+  useEffect(() => {
+    let alive = true;
+
+    const loadFinancialTotals = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+
+        const [saldoRes, receberRes, pagarRes] = await Promise.all([
+          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=saldo-atual`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=contas-receber`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&section=contas-pagar`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+          }),
+        ]);
+
+        const saldoData = await saldoRes.json().catch(() => []);
+        const receberData = await receberRes.json().catch(() => []);
+        const pagarData = await pagarRes.json().catch(() => []);
+
+        if (alive) {
+          setFinancialTotals({
+            saldoAtual: (Array.isArray(saldoData) && saldoData[0]?.valor) || 0,
+            contasReceber: (Array.isArray(receberData) ? receberData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
+            contasPagar: (Array.isArray(pagarData) ? pagarData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao carregar totais financeiros:', err);
+      }
+    };
+
+    loadFinancialTotals();
     return () => {
       alive = false;
     };
@@ -355,7 +403,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-emerald-600">Contas a receber (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-emerald-700">{formatCurrency(12580.00)}</p>
+                <p className="text-lg font-bold text-emerald-700">{formatCurrency(financialTotals.contasReceber)}</p>
                 <ChevronRight size={16} className="text-emerald-400" />
               </div>
             </button>
@@ -366,7 +414,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-red-600">Contas a pagar (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-red-700">{formatCurrency(8320.00)}</p>
+                <p className="text-lg font-bold text-red-700">{formatCurrency(financialTotals.contasPagar)}</p>
                 <ChevronRight size={16} className="text-red-400" />
               </div>
             </button>

@@ -35,6 +35,7 @@ export async function GET() {
       { data: sectorUsers, error: sectorUsersError },
       { data: messages, error: messagesError },
       { data: planConfig, error: planConfigError },
+      { data: invoices, error: invoicesError },
     ] = await Promise.all([
       glass
         .from('vidracarias')
@@ -59,6 +60,11 @@ export async function GET() {
         .select('system_limits')
         .eq('sistema', '791glass')
         .single(),
+      supabaseServer
+        .from('system_invoices')
+        .select('value, status, created_at, metadata')
+        .gte('created_at', messagesPeriodStart)
+        .in('status', ['pago', 'authorized']),
     ]);
 
     const firstError =
@@ -67,11 +73,18 @@ export async function GET() {
       sectorsError ||
       sectorUsersError ||
       messagesError ||
-      planConfigError;
+      planConfigError ||
+      invoicesError;
 
     if (firstError) {
       return NextResponse.json({ error: firstError.message }, { status: 500 });
     }
+
+    // Calcular faturamento real das notas pagas
+    let faturamentoMesAtual = 0;
+    (invoices || []).forEach((invoice: any) => {
+      faturamentoMesAtual += toNumber(invoice?.value, 0);
+    });
 
     const sectorToTenantMap = new Map<string, string>();
     (sectors || []).forEach((sector: any) => {
@@ -206,7 +219,7 @@ export async function GET() {
         acc.whatsappUsers += tenant.usage.whatsappUsers;
         acc.sectors += tenant.usage.sectors;
         acc.messagesSent += tenant.usage.messagesSent;
-        acc.overageMonthly += tenant.overage.values.total;
+        // Não adiciona mais o overage, pois usaremos o faturamento real
 
         if (tenant.status.users === 'exceeded') acc.usersExceeded += 1;
         if (tenant.status.whatsappUsers === 'exceeded') acc.whatsappUsersExceeded += 1;
@@ -220,7 +233,7 @@ export async function GET() {
         whatsappUsers: 0,
         sectors: 0,
         messagesSent: 0,
-        overageMonthly: 0,
+        overageMonthly: faturamentoMesAtual, // Usar faturamento real em vez de overage
         usersExceeded: 0,
         whatsappUsersExceeded: 0,
         messagesExceeded: 0,

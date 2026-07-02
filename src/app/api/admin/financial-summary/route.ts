@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { getGlassClient } from '@/lib/glass-client';
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
@@ -48,25 +49,64 @@ export async function GET(req: Request) {
         break;
     }
 
-    // Dados mock para demonstração - em produção viriam do banco
     let data: any[] = [];
 
     if (section === 'saldo-atual') {
+      // Buscar notas pagas para calcular saldo
+      const { data: paidInvoices, error: invoicesError } = await supabaseServer
+        .from('system_invoices')
+        .select('value')
+        .in('status', ['pago', 'authorized']);
+
+      if (invoicesError) {
+        return NextResponse.json({ error: invoicesError.message }, { status: 500 });
+      }
+
+      let totalSaldo = 0;
+      (paidInvoices || []).forEach((inv: any) => {
+        totalSaldo += Number(inv?.value || 0);
+      });
+
       data = [
-        { id: '1', descricao: 'Conta Bradesco - Corrente', valor: 5420.80, data_vencimento: null },
-        { id: '2', descricao: 'Conta Itaú - Aplicação', valor: 3200.00, data_vencimento: null },
+        { 
+          id: '1', 
+          descricao: 'Saldo Total Acumulado - Notas Pagas',
+          valor: totalSaldo,
+          data_vencimento: null 
+        },
       ];
+
     } else if (section === 'contas-receber') {
-      data = [
-        { id: '1', descricao: 'Vidraçaria Juliana - Serviço de instalação', valor: 3500.00, data_vencimento: '2026-07-15', status: 'em_aberto' },
-        { id: '2', descricao: 'Test Insert - Consultoria', valor: 2080.00, data_vencimento: '2026-07-10', status: 'em_aberto' },
-        { id: '3', descricao: 'Vidraçaria MaySaLu - Produtos diversos', valor: 7000.00, data_vencimento: '2026-07-20', status: 'em_aberto' },
-      ];
+      // Buscar notas fiscais em aberto (pending/authorized mas não pagas)
+      const { data: invoices, error: invoicesError } = await supabaseServer
+        .from('system_invoices')
+        .select('invoice_number, value, created_at, metadata')
+        .eq('status', 'pending')
+        .gte('created_at', startDate.toISOString());
+
+      if (invoicesError) {
+        return NextResponse.json({ error: invoicesError.message }, { status: 500 });
+      }
+
+      data = (invoices || []).map((inv: any) => ({
+        id: inv.invoice_number,
+        descricao: `Nota Fiscal ${inv.invoice_number} - Consultoria`,
+        valor: Number(inv?.value || 0),
+        data_vencimento: inv?.created_at ? new Date(new Date(inv.created_at).getTime() + 30*24*60*60*1000).toISOString() : null,
+        status: 'em_aberto'
+      }));
+
     } else if (section === 'contas-pagar') {
+      // Buscar despesas em aberto (essa tabela pode não existir ainda)
+      // Por enquanto, retornar vazio, pois não há tabela específica
       data = [
-        { id: '1', descricao: 'Fornecedor XYZ - Materiais', valor: 2500.00, data_vencimento: '2026-07-05', status: 'em_aberto' },
-        { id: '2', descricao: 'Serviço de hosting - Mensal', valor: 450.00, data_vencimento: '2026-07-01', status: 'em_aberto' },
-        { id: '3', descricao: 'Aluguel sala comercial', valor: 5370.00, data_vencimento: '2026-07-01', status: 'em_aberto' },
+        {
+          id: '1',
+          descricao: 'Despesa aguardando mapeamento no banco',
+          valor: 0,
+          data_vencimento: null,
+          status: 'em_aberto'
+        }
       ];
     }
 

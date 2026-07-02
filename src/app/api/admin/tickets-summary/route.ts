@@ -48,30 +48,72 @@ export async function GET(req: Request) {
         break;
     }
 
-    // Dados mock para demonstração - em produção viriam do banco
+    // Buscar todos os tickets do período
+    const { data: allTickets, error: ticketsError } = await supabaseServer
+      .from('support_tickets')
+      .select('id, protocol, title, description, tenant_slug, priority, status, created_at, due_at, resolved_at')
+      .gte('created_at', startDate.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (ticketsError) {
+      return NextResponse.json({ error: ticketsError.message }, { status: 500 });
+    }
+
     let data: any[] = [];
 
     if (status === 'total') {
-      data = [
-        { id: '1', titulo: 'Problema de configuração no sistema', vidracaria: 'Vidraçaria Juliana', data_criacao: '2026-06-28', prioridade: 'alta', status_ticket: 'aberto' },
-        { id: '2', titulo: 'Dúvida sobre permissões de usuário', vidracaria: 'Test Insert', data_criacao: '2026-06-25', prioridade: 'média', status_ticket: 'em_progresso' },
-        { id: '3', titulo: 'Relatório não está gerando corretamente', vidracaria: 'Vidraçaria MaySaLu', data_criacao: '2026-06-20', prioridade: 'alta', status_ticket: 'em_progresso' },
-      ];
+      // Todos os tickets do período
+      data = (allTickets || []).map((ticket: any) => ({
+        id: ticket.id,
+        titulo: ticket.title,
+        vidracaria: ticket.tenant_slug || 'Sistema',
+        data_criacao: ticket.created_at,
+        prioridade: ticket.priority,
+        status_ticket: ticket.status,
+      }));
+
     } else if (status === 'em-dia') {
-      data = [
-        { id: '1', titulo: 'Dúvida sobre backup de dados', vidracaria: 'Vidraçaria Juliana', data_criacao: '2026-06-25', prioridade: 'baixa', status_ticket: 'em_progresso' },
-        { id: '2', titulo: 'Integração com sistema externo', vidracaria: 'Test Insert', data_criacao: '2026-06-26', prioridade: 'média', status_ticket: 'em_progresso' },
-      ];
+      // Tickets onde a data de vencimento não foi ultrapassada
+      data = (allTickets || [])
+        .filter((ticket: any) => ticket.due_at && new Date(ticket.due_at) >= now && ticket.status !== 'closed' && ticket.status !== 'resolved')
+        .map((ticket: any) => ({
+          id: ticket.id,
+          titulo: ticket.title,
+          vidracaria: ticket.tenant_slug || 'Sistema',
+          data_criacao: ticket.created_at,
+          prioridade: ticket.priority,
+          status_ticket: ticket.status,
+        }));
+
     } else if (status === 'atrasados') {
-      data = [
-        { id: '1', titulo: 'Erro ao gerar nota fiscal eletrônica', vidracaria: 'Vidraçaria MaySaLu', data_criacao: '2026-06-10', dias_atraso: 22, prioridade: 'alta', status_ticket: 'aberto' },
-      ];
+      // Tickets onde a data de vencimento foi ultrapassada e não foram resolvidos
+      data = (allTickets || [])
+        .filter((ticket: any) => ticket.due_at && new Date(ticket.due_at) < now && ticket.status !== 'closed' && ticket.status !== 'resolved')
+        .map((ticket: any) => {
+          const diasAtraso = Math.floor((now.getTime() - new Date(ticket.due_at).getTime()) / (1000 * 60 * 60 * 24));
+          return {
+            id: ticket.id,
+            titulo: ticket.title,
+            vidracaria: ticket.tenant_slug || 'Sistema',
+            data_criacao: ticket.created_at,
+            dias_atraso: diasAtraso,
+            prioridade: ticket.priority,
+            status_ticket: ticket.status,
+          };
+        });
+
     } else if (status === 'resolvidos') {
-      data = [
-        { id: '1', titulo: 'Problema de login com domínio corporativo', vidracaria: 'Vidraçaria Juliana', data_criacao: '2026-05-15', data_resolucao: '2026-05-16', prioridade: 'média' },
-        { id: '2', titulo: 'Exportação de relatório lento', vidracaria: 'Test Insert', data_criacao: '2026-05-20', data_resolucao: '2026-05-22', prioridade: 'baixa' },
-        { id: '3', titulo: 'Sincronização de dados incorreta', vidracaria: 'Vidraçaria MaySaLu', data_criacao: '2026-05-10', data_resolucao: '2026-05-12', prioridade: 'alta' },
-      ];
+      // Tickets resolvidos
+      data = (allTickets || [])
+        .filter((ticket: any) => ticket.status === 'closed' || ticket.status === 'resolved')
+        .map((ticket: any) => ({
+          id: ticket.id,
+          titulo: ticket.title,
+          vidracaria: ticket.tenant_slug || 'Sistema',
+          data_criacao: ticket.created_at,
+          data_resolucao: ticket.resolved_at,
+          prioridade: ticket.priority,
+        }));
     }
 
     return NextResponse.json(data);
@@ -82,3 +124,4 @@ export async function GET(req: Request) {
     );
   }
 }
+

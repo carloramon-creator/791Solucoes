@@ -78,10 +78,50 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
             }
           }
         } else {
-          // É administrador. Se estiver no login, manda pro home admin
+          // É administrador. Se estiver no login, manda pro primeiro menu com permissão
           setSponsorId(null);
           if (pathname === '/login') {
-            router.push('/');
+            // Buscar permissões e redirecionar para primeiro menu disponível
+            try {
+              const token = authUser.user_metadata?.token || (await supabase.auth.getSession()).data?.session?.access_token;
+              if (token) {
+                const permRes = await fetch('/api/admin/permissions/me', {
+                  headers: { 'Authorization': `Bearer ${token}` },
+                });
+                
+                if (permRes.ok) {
+                  const permData = await permRes.json();
+                  const permissionCodes = new Set(permData.permission_codes || []);
+                  
+                  // Navegar para o primeiro menu com permissão
+                  const menuOrder = ['/financeiro', '/notas-fiscais', '/suporte', '/assinaturas', '/'];
+                  for (const menu of menuOrder) {
+                    const resourceMap: Record<string, string> = {
+                      '/financeiro': 'financeiro',
+                      '/notas-fiscais': 'notas-fiscais',
+                      '/suporte': 'suporte',
+                      '/assinaturas': 'assinaturas',
+                    };
+                    const resource = resourceMap[menu];
+                    
+                    // Se não tem recurso mapeado ou tem permissão, vai para lá
+                    if (!resource || permissionCodes.has(resource) || permissionCodes.size === 0) {
+                      router.push(menu);
+                      return;
+                    }
+                  }
+                  // Fallback
+                  router.push('/');
+                } else {
+                  router.push('/');
+                }
+              } else {
+                router.push('/');
+              }
+            } catch (err) {
+              console.error('Erro ao buscar permissões:', err);
+              router.push('/');
+            }
           }
         }
       } catch (err) {

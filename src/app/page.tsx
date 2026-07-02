@@ -77,12 +77,12 @@ function formatDate(value?: string) {
 function getPeriodLabel(period: PeriodFilter): string {
   const labels: Record<PeriodFilter, string> = {
     dia: 'Hoje',
-    semana: 'Esta semana',
+    semana: 'Semana',
     quinzena: 'Quinzena',
-    mes: 'Este mês',
+    mes: 'Mês',
     trimestre: 'Trimestre',
     semestre: 'Semestre',
-    ano: 'Este ano',
+    ano: 'Ano',
   };
   return labels[period];
 }
@@ -159,8 +159,33 @@ export default function Dashboard() {
   const latestTenants = tenants.slice(0, 4);
   const healthCount = (totals?.usersExceeded || 0) + (totals?.whatsappUsersExceeded || 0) + (totals?.messagesExceeded || 0);
 
-  const handleCardClick = (type: 'tickets' | 'financeiro', subtype: string) => {
+  const handleCardClick = async (type: 'tickets' | 'financeiro', subtype: string) => {
     setModal({ type, subtype, data: [] });
+    
+    // Carregar dados reais baseado no tipo
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+
+      let apiUrl = '';
+      if (type === 'financeiro') {
+        apiUrl = `/api/admin/financial-summary?period=${selectedPeriod}&section=${subtype}`;
+      } else if (type === 'tickets') {
+        apiUrl = `/api/admin/tickets-summary?period=${selectedPeriod}&status=${subtype}`;
+      }
+
+      if (apiUrl) {
+        const response = await fetch(apiUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => []);
+        setModal({ type, subtype, data: Array.isArray(payload) ? payload : payload.data || [] });
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do modal:', err);
+    }
   };
 
   const closeModal = () => {
@@ -173,7 +198,7 @@ export default function Dashboard() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[13px] text-[#3b597b] font-medium">Bem-vindo, Administrador Global</p>
+            <p className="text-[13px] text-[#3b597b] font-medium">Bem-vindo, {userProfile?.email?.split('@')[0]?.toUpperCase() || 'ADMINISTRADOR'}</p>
             <div className="flex items-center gap-3 mt-2">
               <div className="p-2.5 bg-white rounded-md shadow-sm border border-slate-200">
                 <Building2 size={24} className="text-[#3b597b]" />
@@ -213,7 +238,7 @@ export default function Dashboard() {
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              {getPeriodLabel(period).split(' ')[0]}
+              {getPeriodLabel(period)}
             </button>
           ))}
           <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#6899c4] text-white tracking-wider ml-2">
@@ -226,38 +251,16 @@ export default function Dashboard() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>
       ) : null}
 
-      {/* Top 3 Cards: Consumo, Período, MRR */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[160px]">
-          <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
-            <Layers size={18} />
-            <span>Consumo consolidado</span>
-          </div>
-          <div className="mt-4">
-            <h3 className="text-[15px] font-bold text-slate-800 uppercase tracking-wide">{loading ? 'Carregando...' : 'Subscription usage'}</h3>
-            <p className="text-xs font-medium text-[#6899c4] uppercase mt-1.5 tracking-wider">Período: {getPeriodLabel(selectedPeriod)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[160px]">
-          <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
-            <Calendar size={18} />
-            <span>Período analisado</span>
-          </div>
-          <div className="mt-4">
-            <h3 className="text-[17px] font-bold text-slate-800">{formatDate(data?.messagesPeriodStart)}</h3>
-            <p className="text-xs font-medium text-[#6899c4] mt-1.5">Baseado no filtro selecionado</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[160px]">
+      {/* Faturamento (MRR) - Card único principal */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-1">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[140px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
-            <span>MRR (Faturamento)</span>
+            <span>Faturamento (MRR) - Receita Recorrente Mensal</span>
           </div>
           <div className="mt-4 flex items-baseline gap-1.5">
-            <h3 className="text-3xl font-bold text-[#3b597b]">{formatCurrency(totals?.overageMonthly || 0)}</h3>
-            <p className="text-xs font-medium text-slate-500">acumulado</p>
+            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(totals?.overageMonthly || 0)}</h3>
+            <p className="text-xs font-medium text-slate-500">acumulado no período</p>
           </div>
         </div>
       </div>
@@ -311,7 +314,7 @@ export default function Dashboard() {
               <p className="mt-1 text-lg font-bold text-slate-800">{totals?.activeUsers || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-[11px] uppercase tracking-wider text-slate-500">WhatsApp Users</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários WhatsApp</p>
               <p className="mt-1 text-lg font-bold text-slate-800">{totals?.whatsappUsers || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
@@ -319,8 +322,8 @@ export default function Dashboard() {
               <p className="mt-1 text-lg font-bold text-slate-800">{totals?.sectors || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-[11px] uppercase tracking-wider text-slate-500">Consultas Serasa</p>
-              <p className="mt-1 text-lg font-bold text-slate-800">0</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-500">Mensagens WhatsApp</p>
+              <p className="mt-1 text-lg font-bold text-slate-800">{totals?.messagesSent || 0}</p>
             </div>
           </div>
           <div className="flex-1 flex items-end">
@@ -460,16 +463,43 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-auto">
             <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-800">
-                {modal.type === 'tickets' ? `Tickets - ${modal.subtype}` : `Financeiro - ${modal.subtype}`}
+                {modal.type === 'tickets' 
+                  ? `Tickets - ${modal.subtype === 'total' ? 'Total' : modal.subtype === 'em-dia' ? 'Em dia' : modal.subtype === 'atrasados' ? 'Atrasados' : modal.subtype === 'resolvidos' ? 'Resolvidos' : modal.subtype}`
+                  : `Financeiro - ${modal.subtype === 'saldo-atual' ? 'Saldo atual' : modal.subtype === 'contas-receber' ? 'Contas a receber' : 'Contas a pagar'}`
+                }
               </h3>
               <button onClick={closeModal} className="p-1 hover:bg-slate-100 rounded-md transition-colors">
                 <X size={20} className="text-slate-600" />
               </button>
             </div>
             <div className="p-6">
-              <p className="text-slate-600 text-center py-8">
-                Lista de detalhes será carregada aqui baseada no período: <strong>{getPeriodLabel(selectedPeriod)}</strong>
-              </p>
+              {modal.data && modal.data.length > 0 ? (
+                <div className="space-y-3">
+                  {modal.data.map((item, idx) => (
+                    <div key={idx} className="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-bold text-slate-800">{item.titulo || item.descricao || item.nome || 'Item'}</p>
+                          <p className="text-sm text-slate-600 mt-1">{item.detalhes || item.descricao_completa || ''}</p>
+                        </div>
+                        {item.valor && (
+                          <p className="text-right font-bold text-slate-800">{formatCurrency(item.valor)}</p>
+                        )}
+                      </div>
+                      {item.data_vencimento && (
+                        <p className="text-xs text-slate-500 mt-2">Vencimento: {formatDate(item.data_vencimento)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-slate-600 text-center">
+                    Carregando dados do período: <strong>{getPeriodLabel(selectedPeriod)}</strong>
+                  </p>
+                  <p className="text-slate-400 text-sm mt-2">Os dados reais aparecerão aqui quando disponíveis</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

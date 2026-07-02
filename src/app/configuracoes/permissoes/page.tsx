@@ -194,7 +194,6 @@ export default function PermissoesPage() {
           description: current.description || null,
           active: current.active,
           resourceCodes: Array.from(current.resourceCodes.values()),
-          userEmails: [],
         }),
       });
       setFeedback('Perfil atualizado com sucesso.');

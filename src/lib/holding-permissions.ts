@@ -30,6 +30,9 @@ export async function getUserProfileIds(userEmail: string | null | undefined): P
 
 export async function getUserPermissionCodes(userEmail: string | null | undefined): Promise<Set<string>> {
   const profileIds = await getUserProfileIds(userEmail);
+  
+  // Se não tiver nenhum perfil atribuído: retorna vazio (triggering fallback no backend)
+  // Se tiver perfil: retorna EXATAMENTE o que está habilitado nesse perfil (sem fallback)
   if (profileIds.length === 0) {
     return new Set();
   }

@@ -24,8 +24,20 @@ type PermissionProfile = {
 type TenantOption = {
   id: string;
   nome: string | null;
+  nomeFantasia: string | null;
   slug: string;
   ativa: boolean | null;
+};
+
+type GlassUser = {
+  userId: string;
+  email: string | null;
+  nomeExibicao: string | null;
+  vidracariaId: string | null;
+  vidracariaNome: string | null;
+  vidracariaNomeFantasia: string | null;
+  vidracariaSlug: string | null;
+  vidracariaAtiva: boolean | null;
 };
 
 type Ticket = {
@@ -110,6 +122,14 @@ function toInputDateTime(value: string | null): string {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 }
 
+function formatTenantLabel(tenant: TenantOption | null) {
+  if (!tenant) return '';
+  const reasonSocial = String(tenant.nome || '').trim();
+  const fantasia = String(tenant.nomeFantasia || '').trim();
+  if (reasonSocial && fantasia) return `${reasonSocial} / ${fantasia}`;
+  return reasonSocial || fantasia || tenant.slug;
+}
+
 export default function SuportePage() {
   const supabase = createSupabaseBrowser();
 
@@ -126,6 +146,7 @@ export default function SuportePage() {
   const [counts, setCounts] = useState<QueueCounts>({ all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
+  const [glassUsers, setGlassUsers] = useState<GlassUser[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [permissionProfiles, setPermissionProfiles] = useState<PermissionProfile[]>([]);
   const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
@@ -148,6 +169,9 @@ export default function SuportePage() {
     tenantSlug: '',
     tenantId: '',
     tenantName: '',
+    requesterUserId: '',
+    requesterName: '',
+    requesterEmail: '',
     title: '',
     description: '',
     subjectId: '',
@@ -191,6 +215,11 @@ export default function SuportePage() {
     () => subjects.filter((subject) => !subject.active).length,
     [subjects]
   );
+
+  const selectedTenantUsers = useMemo(() => {
+    if (!newTicket.tenantId) return [];
+    return glassUsers.filter((user) => String(user.vidracariaId || '') === newTicket.tenantId);
+  }, [glassUsers, newTicket.tenantId]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId) || null,
@@ -259,10 +288,10 @@ export default function SuportePage() {
       const { data: userData } = await supabase.auth.getUser();
       setCurrentUserEmail(userData.user?.email?.toLowerCase() || null);
 
-      const [ticketsRes, subjectsRes, tenantsRes, teamRes, permissionsRes, meRes] = await Promise.all([
+      const [ticketsRes, subjectsRes, glassUsersRes, teamRes, permissionsRes, meRes] = await Promise.all([
         api(`/api/support/tickets?queue=${currentQueue}`),
         api('/api/support/subjects'),
-        api('/api/support/tenants'),
+        api('/api/admin/glass-users'),
         api('/api/support/team'),
         api('/api/admin/permissions'),
         api('/api/admin/permissions/me'),
@@ -272,7 +301,23 @@ export default function SuportePage() {
       setTickets(loadedTickets);
       setCounts(ticketsRes.counts || { all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
       setSubjects(subjectsRes.subjects || []);
-      setTenants(tenantsRes?.tenants || []);
+      const loadedGlassUsers: GlassUser[] = glassUsersRes?.users || [];
+      setGlassUsers(loadedGlassUsers);
+      const tenantMap = new Map<string, TenantOption>();
+      for (const user of loadedGlassUsers) {
+        const tenantId = String(user.vidracariaId || '').trim();
+        if (!tenantId) continue;
+        if (!tenantMap.has(tenantId)) {
+          tenantMap.set(tenantId, {
+            id: tenantId,
+            nome: user.vidracariaNome || null,
+            nomeFantasia: user.vidracariaNomeFantasia || null,
+            slug: user.vidracariaSlug || '',
+            ativa: user.vidracariaAtiva ?? null,
+          });
+        }
+      }
+      setTenants(Array.from(tenantMap.values()));
       setTeam(teamRes.members || []);
       setPermissionProfiles((permissionsRes.profiles || []).filter((profile: PermissionProfile) => profile.active));
       setPermissionCodes(new Set(Array.isArray(meRes.permissionCodes) ? meRes.permissionCodes : []));
@@ -335,6 +380,9 @@ export default function SuportePage() {
           tenantSlug: newTicket.tenantSlug,
           tenantId: newTicket.tenantId || null,
           tenantName: newTicket.tenantName || null,
+          requesterUserId: newTicket.requesterUserId || null,
+          requesterName: newTicket.requesterName || null,
+          requesterEmail: newTicket.requesterEmail || null,
           title: newTicket.title,
           description: newTicket.description,
           subjectId: newTicket.subjectId || null,
@@ -349,6 +397,9 @@ export default function SuportePage() {
         tenantSlug: '',
         tenantId: '',
         tenantName: '',
+        requesterUserId: '',
+        requesterName: '',
+        requesterEmail: '',
         title: '',
         description: '',
         subjectId: '',
@@ -615,23 +666,48 @@ export default function SuportePage() {
                   ...prev,
                   tenantSlug: slug,
                   tenantId: selectedTenant?.id || '',
-                  tenantName: selectedTenant?.nome || '',
+                  tenantName: formatTenantLabel(selectedTenant),
+                  requesterUserId: '',
+                  requesterName: '',
+                  requesterEmail: '',
                 }));
               }}
               required
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             >
               <option value="">Selecione a vidraçaria</option>
               {tenants.map((tenant) => (
                 <option key={tenant.id} value={tenant.slug}>
-                  {tenant.nome ? `${tenant.nome} / ${tenant.slug}` : tenant.slug}{tenant.ativa === false ? ' (inativa)' : ''}
+                  {formatTenantLabel(tenant)}{tenant.ativa === false ? ' (inativa)' : ''}
+                </option>
+              ))}
+            </select>
+            <select
+              value={newTicket.requesterUserId}
+              onChange={(e) => {
+                const userId = e.target.value;
+                const selectedUser = selectedTenantUsers.find((user) => user.userId === userId) || null;
+                setNewTicket((prev) => ({
+                  ...prev,
+                  requesterUserId: userId,
+                  requesterName: selectedUser?.nomeExibicao || selectedUser?.email || '',
+                  requesterEmail: selectedUser?.email || '',
+                }));
+              }}
+              disabled={!newTicket.tenantId}
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm disabled:opacity-50"
+            >
+              <option value="">Selecione o usuário da vidraçaria</option>
+              {selectedTenantUsers.map((user) => (
+                <option key={user.userId} value={user.userId}>
+                  {user.nomeExibicao ? `${user.nomeExibicao} (${user.email || 'sem e-mail'})` : user.email || user.userId}
                 </option>
               ))}
             </select>
             <select
               value={newTicket.subjectId}
               onChange={(e) => setNewTicket((prev) => ({ ...prev, subjectId: e.target.value }))}
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             >
               <option value="">Assunto (opcional)</option>
               {visibleSubjects.filter((subject) => subject.active).map((subject) => (
@@ -643,12 +719,12 @@ export default function SuportePage() {
               onChange={(e) => setNewTicket((prev) => ({ ...prev, title: e.target.value }))}
               placeholder="Titulo"
               required
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2"
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2"
             />
             <select
               value={newTicket.priority}
               onChange={(e) => setNewTicket((prev) => ({ ...prev, priority: e.target.value }))}
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             >
               <option value="low">Baixa</option>
               <option value="normal">Normal</option>
@@ -659,7 +735,7 @@ export default function SuportePage() {
               value={newTicket.dueAt}
               onChange={(e) => setNewTicket((prev) => ({ ...prev, dueAt: e.target.value }))}
               type="datetime-local"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             />
           </div>
           <textarea

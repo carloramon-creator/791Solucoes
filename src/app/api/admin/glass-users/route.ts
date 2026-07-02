@@ -85,7 +85,7 @@ export async function GET(req: Request) {
         .order('created_at', { ascending: false }),
       glass
         .from('vidracarias')
-        .select('id, nome, slug, ativa')
+        .select('id, nome, nome_fantasia, slug, ativa')
         .order('nome', { ascending: true }),
       glass
         .from('pessoas')
@@ -124,6 +124,7 @@ export async function GET(req: Request) {
         lastSignInAt: authUser?.last_sign_in_at || null,
         vidracariaId: profile.vidracaria_id || null,
         vidracariaNome: tenant?.nome || 'Sem vidracaria',
+        vidracariaNomeFantasia: tenant?.nome_fantasia || null,
         vidracariaSlug: tenant?.slug || null,
         vidracariaAtiva: tenant?.ativa ?? null,
       };

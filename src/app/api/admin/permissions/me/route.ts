@@ -17,6 +17,6 @@ export async function GET(req: Request) {
     userEmail: auth.user.email,
     profileIds,
     permissionCodes: Array.from(permissionCodes.values()).sort(),
-    unrestrictedFallback: permissionCodes.size === 0,
+    unrestrictedFallback: profileIds.length === 0 && permissionCodes.size === 0,
   });
 }

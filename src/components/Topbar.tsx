@@ -9,6 +9,7 @@ type TopbarUser = {
   name: string;
   email: string;
   avatarUrl: string | null;
+  fallbackAvatarUrl: string;
 };
 
 export function Topbar() {
@@ -32,6 +33,7 @@ export function Topbar() {
         name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Admin',
         email: currentUser.email || '',
         avatarUrl: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || null,
+        fallbackAvatarUrl: `https://i.pravatar.cc/150?u=${encodeURIComponent((currentUser.email || currentUser.id || 'admin').toLowerCase())}`,
       });
     });
 
@@ -74,8 +76,8 @@ export function Topbar() {
         </button>
         
         <div className="ml-2 h-8 w-8 overflow-hidden rounded-full border border-slate-200 bg-[#3b597b] text-[10px] font-black text-white cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center">
-          {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt={user.name || 'Perfil'} className="h-full w-full object-cover" />
+          {user ? (
+            <img src={user.avatarUrl || user.fallbackAvatarUrl} alt={user.name || 'Perfil'} className="h-full w-full object-cover" />
           ) : (
             <span>{initials}</span>
           )}

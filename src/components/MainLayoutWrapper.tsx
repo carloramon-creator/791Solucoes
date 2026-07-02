@@ -7,6 +7,31 @@ import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { Loader2 } from 'lucide-react';
 
+const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
+  { path: '/', resourceCode: 'menu.dashboard' },
+  { path: '/financeiro', resourceCode: 'menu.financeiro' },
+  { path: '/notas-fiscais', resourceCode: 'menu.notas_fiscais' },
+  { path: '/suporte', resourceCode: 'menu.suporte' },
+  { path: '/assinaturas', resourceCode: 'menu.assinaturas' },
+  { path: '/patrocinadores', resourceCode: 'menu.patrocinadores' },
+  { path: '/planos', resourceCode: 'menu.planos' },
+  { path: '/cupons', resourceCode: 'menu.cupons' },
+  { path: '/configuracoes', resourceCode: 'menu.configuracoes' },
+];
+
+function mapPathToResource(path: string): string | null {
+  if (path === '/') return 'menu.dashboard';
+  if (path.startsWith('/financeiro')) return 'menu.financeiro';
+  if (path.startsWith('/notas-fiscais')) return 'menu.notas_fiscais';
+  if (path.startsWith('/suporte')) return 'menu.suporte';
+  if (path.startsWith('/assinaturas')) return 'menu.assinaturas';
+  if (path.startsWith('/patrocinadores')) return 'menu.patrocinadores';
+  if (path.startsWith('/planos')) return 'menu.planos';
+  if (path.startsWith('/cupons')) return 'menu.cupons';
+  if (path.startsWith('/configuracoes')) return 'menu.configuracoes';
+  return null;
+}
+
 export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -78,10 +103,9 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
             }
           }
         } else {
-          // É administrador. Se estiver no login, manda pro primeiro menu com permissão
+          // É administrador. Redireciona para a primeira rota habilitada quando necessário.
           setSponsorId(null);
-          if (pathname === '/login') {
-            // Buscar permissões e redirecionar para primeiro menu disponível
+          if (pathname === '/login' || pathname === '/' || pathname.startsWith('/financeiro') || pathname.startsWith('/notas-fiscais') || pathname.startsWith('/suporte') || pathname.startsWith('/assinaturas') || pathname.startsWith('/patrocinadores') || pathname.startsWith('/planos') || pathname.startsWith('/cupons') || pathname.startsWith('/configuracoes')) {
             try {
               const token = authUser.user_metadata?.token || (await supabase.auth.getSession()).data?.session?.access_token;
               if (token) {
@@ -91,36 +115,40 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
                 
                 if (permRes.ok) {
                   const permData = await permRes.json();
-                  const permissionCodes = new Set(permData.permission_codes || []);
-                  
-                  // Navegar para o primeiro menu com permissão
-                  const menuOrder = ['/financeiro', '/notas-fiscais', '/suporte', '/assinaturas', '/'];
-                  for (const menu of menuOrder) {
-                    const resourceMap: Record<string, string> = {
-                      '/financeiro': 'financeiro',
-                      '/notas-fiscais': 'notas-fiscais',
-                      '/suporte': 'suporte',
-                      '/assinaturas': 'assinaturas',
-                    };
-                    const resource = resourceMap[menu];
-                    
-                    // Se não tem recurso mapeado ou tem permissão, vai para lá
-                    if (!resource || permissionCodes.has(resource) || permissionCodes.size === 0) {
-                      router.push(menu);
-                      return;
-                    }
+                  const permissionCodes = new Set(Array.isArray(permData.permissionCodes) ? permData.permissionCodes : []);
+                  const unrestrictedFallback = Boolean(permData.unrestrictedFallback);
+
+                  const firstAllowedPath = unrestrictedFallback
+                    ? '/'
+                    : (MENU_ORDER.find((item) => permissionCodes.has(item.resourceCode))?.path || '/');
+
+                  const currentResource = mapPathToResource(pathname);
+                  const currentAllowed = unrestrictedFallback || !currentResource || permissionCodes.has(currentResource);
+
+                  if (pathname === '/login') {
+                    router.replace(firstAllowedPath);
+                    return;
                   }
-                  // Fallback
-                  router.push('/');
+
+                  if (!currentAllowed || (pathname === '/' && firstAllowedPath !== '/')) {
+                    router.replace(firstAllowedPath);
+                    return;
+                  }
                 } else {
-                  router.push('/');
+                  if (pathname === '/login') {
+                    router.replace('/');
+                  }
                 }
               } else {
-                router.push('/');
+                if (pathname === '/login') {
+                  router.replace('/');
+                }
               }
             } catch (err) {
               console.error('Erro ao buscar permissões:', err);
-              router.push('/');
+              if (pathname === '/login') {
+                router.replace('/');
+              }
             }
           }
         }

@@ -598,7 +598,7 @@ export default function EquipePage() {
 
       await refresh();
       setFeedback({ type: 'success', msg: `Dados de ${editingMember.email} atualizados.` });
-      await loadUserDetails(editingMember);
+      closeEditUser();
     } catch (err: any) {
       setFeedback({ type: 'error', msg: err.message });
     } finally {
@@ -717,7 +717,7 @@ export default function EquipePage() {
                 }}
                 required
                 placeholder="Carlos Eduardo"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
               />
             </div>
 
@@ -731,7 +731,7 @@ export default function EquipePage() {
                   onChange={(e) => setInviteEmail(e.target.value)}
                   required
                   placeholder="carlos@791.com.br"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
                 />
               </div>
             </div>
@@ -743,7 +743,7 @@ export default function EquipePage() {
                 <select
                   value={inviteProfileId}
                   onChange={(e) => setInviteProfileId(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] appearance-none transition-all"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] appearance-none transition-all"
                 >
                   {permissionProfileOptions.map((profile) => (
                     <option key={profile.id} value={profile.id}>
@@ -763,7 +763,7 @@ export default function EquipePage() {
                   value={invitePassword}
                   onChange={(e) => setInvitePassword(e.target.value)}
                   placeholder="Opcional"
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
                 />
               </div>
             </div>
@@ -774,7 +774,7 @@ export default function EquipePage() {
                 value={inviteDetails.cpf}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, cpf: maskCpf(e.target.value) }))}
                 placeholder="000.000.000-00"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -784,7 +784,7 @@ export default function EquipePage() {
                 value={inviteDetails.whatsapp}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, whatsapp: maskWhatsapp(e.target.value) }))}
                 placeholder="(00) 00000-0000"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -794,7 +794,7 @@ export default function EquipePage() {
                 value={inviteDetails.cep}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, cep: maskCep(e.target.value) }))}
                 placeholder="00000-000"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
               {loadingInviteCep && <span className="text-[10px] text-slate-500">Buscando endereco pelo CEP...</span>}
             </div>
@@ -804,7 +804,7 @@ export default function EquipePage() {
               <input
                 value={inviteDetails.enderecoRua}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, enderecoRua: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -813,7 +813,7 @@ export default function EquipePage() {
               <input
                 value={inviteDetails.enderecoNumero}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, enderecoNumero: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -826,21 +826,21 @@ export default function EquipePage() {
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="sm:col-span-2 flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bairro</label>
               <input
                 value={inviteDetails.enderecoBairro}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, enderecoBairro: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="sm:col-span-2 flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cidade</label>
               <input
                 value={inviteDetails.enderecoCidade}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, enderecoCidade: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -849,7 +849,7 @@ export default function EquipePage() {
               <input
                 value={inviteDetails.enderecoUf}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, enderecoUf: e.target.value.toUpperCase().slice(0, 2) }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px] uppercase"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] uppercase"
               />
             </div>
 
@@ -859,7 +859,7 @@ export default function EquipePage() {
                 value={inviteDetails.salarioMensal}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, salarioMensal: formatMoneyInput(e.target.value) }))}
                 placeholder="0,00"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -869,7 +869,7 @@ export default function EquipePage() {
                 type="date"
                 value={inviteDetails.periodoTrabalhoInicio}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, periodoTrabalhoInicio: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -879,7 +879,7 @@ export default function EquipePage() {
                 type="date"
                 value={inviteDetails.periodoTrabalhoFim}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, periodoTrabalhoFim: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -889,7 +889,7 @@ export default function EquipePage() {
                 type="time"
                 value={inviteDetails.jornadaInicio}
                 onChange={(e) => setInviteDetails((prev) => ({ ...prev, jornadaInicio: e.target.value }))}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
+                className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px]"
               />
             </div>
 
@@ -1064,7 +1064,7 @@ export default function EquipePage() {
                       <input
                         value={editingDetails.nome}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, nome: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
                     <div>
@@ -1072,7 +1072,7 @@ export default function EquipePage() {
                       <select
                         value={editingProfileId}
                         onChange={(e) => setEditingProfileId(e.target.value)}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       >
                         <option value="">Sem perfil</option>
                         {permissionProfileOptions.map((profile) => (
@@ -1089,7 +1089,7 @@ export default function EquipePage() {
                       value={editingDetails.cpf}
                       onChange={(e) => setEditingDetails((prev) => ({ ...prev, cpf: maskCpf(e.target.value) }))}
                       placeholder="000.000.000-00"
-                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                     />
                   </div>
                   <div>
@@ -1097,7 +1097,7 @@ export default function EquipePage() {
                     <input
                       value={editingDetails.email}
                       readOnly
-                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-100 text-[12px] text-slate-500"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-100 text-[12px] text-slate-500"
                     />
                   </div>
                   <div>
@@ -1106,7 +1106,7 @@ export default function EquipePage() {
                       value={editingDetails.whatsapp}
                       onChange={(e) => setEditingDetails((prev) => ({ ...prev, whatsapp: maskWhatsapp(e.target.value) }))}
                       placeholder="(00) 00000-0000"
-                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                     />
                   </div>
                 </div>
@@ -1123,7 +1123,7 @@ export default function EquipePage() {
                         value={editingDetails.cep}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, cep: maskCep(e.target.value) }))}
                         placeholder="00000-000"
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                       {loadingEditCep && <span className="text-[10px] text-slate-500">Buscando endereco pelo CEP...</span>}
                     </div>
@@ -1132,7 +1132,7 @@ export default function EquipePage() {
                       <input
                         value={editingDetails.enderecoRua}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoRua: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
                     <div>
@@ -1140,7 +1140,7 @@ export default function EquipePage() {
                       <input
                         value={editingDetails.enderecoNumero}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoNumero: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
                     <div>
@@ -1148,23 +1148,23 @@ export default function EquipePage() {
                       <input
                         value={editingDetails.enderecoComplemento}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoComplemento: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
-                    <div>
+                    <div className="md:col-span-3">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bairro</label>
                       <input
                         value={editingDetails.enderecoBairro}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoBairro: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-3">
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cidade</label>
                       <input
                         value={editingDetails.enderecoCidade}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoCidade: e.target.value }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
                     </div>
                     <div>
@@ -1172,7 +1172,7 @@ export default function EquipePage() {
                       <input
                         value={editingDetails.enderecoUf}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, enderecoUf: e.target.value.toUpperCase().slice(0, 2) }))}
-                        className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px] uppercase"
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px] uppercase"
                       />
                     </div>
                   </div>
@@ -1190,7 +1190,7 @@ export default function EquipePage() {
                       value={editingDetails.salarioMensal}
                       onChange={(e) => setEditingDetails((prev) => ({ ...prev, salarioMensal: formatMoneyInput(e.target.value) }))}
                       placeholder="0,00"
-                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                      className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                     />
                   </div>
 
@@ -1206,7 +1206,7 @@ export default function EquipePage() {
                           type="date"
                           value={editingDetails.periodoTrabalhoInicio}
                           onChange={(e) => setEditingDetails((prev) => ({ ...prev, periodoTrabalhoInicio: e.target.value }))}
-                          className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                          className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                         />
                       </div>
                       <div>
@@ -1215,7 +1215,7 @@ export default function EquipePage() {
                           type="date"
                           value={editingDetails.periodoTrabalhoFim}
                           onChange={(e) => setEditingDetails((prev) => ({ ...prev, periodoTrabalhoFim: e.target.value }))}
-                          className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                          className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                         />
                       </div>
                       <div>
@@ -1224,7 +1224,7 @@ export default function EquipePage() {
                           type="time"
                           value={editingDetails.jornadaInicio}
                           onChange={(e) => setEditingDetails((prev) => ({ ...prev, jornadaInicio: e.target.value }))}
-                          className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                          className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                         />
                       </div>
                       <div>
@@ -1233,7 +1233,7 @@ export default function EquipePage() {
                           type="time"
                           value={editingDetails.jornadaFim}
                           onChange={(e) => setEditingDetails((prev) => ({ ...prev, jornadaFim: e.target.value }))}
-                          className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                          className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                         />
                       </div>
                     </div>

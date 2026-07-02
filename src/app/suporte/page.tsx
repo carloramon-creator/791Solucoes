@@ -63,6 +63,7 @@ type TicketMessage = {
 type TeamMember = {
   name: string | null;
   email: string;
+  cargo?: string | null;
   avatarUrl?: string | null;
 };
 
@@ -150,21 +151,37 @@ export default function SuportePage() {
   const availableSubjectUsers = useMemo(() => {
     if (newSubject.profileIds.length === 0) return team;
 
+    const selectedProfiles = permissionProfiles.filter((profile) => newSubject.profileIds.includes(profile.id));
+    const selectedProfileNames = new Set(selectedProfiles.map((profile) => String(profile.name || '').trim().toLowerCase()).filter(Boolean));
     const allowedEmails = new Set(
-      permissionProfiles
-        .filter((profile) => newSubject.profileIds.includes(profile.id))
+      selectedProfiles
         .flatMap((profile) => profile.userEmails || [])
         .map((email) => String(email || '').trim().toLowerCase())
         .filter(Boolean)
     );
 
-    return team.filter((member) => allowedEmails.has(String(member.email || '').trim().toLowerCase()));
+    return team.filter((member) => {
+      const email = String(member.email || '').trim().toLowerCase();
+      const cargo = String(member.cargo || '').trim().toLowerCase();
+      return allowedEmails.has(email) || (cargo ? selectedProfileNames.has(cargo) : false);
+    });
   }, [newSubject.profileIds, permissionProfiles, team]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId) || null,
     [tickets, selectedTicketId]
   );
+
+  const teamMemberNameByEmail = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of team) {
+      const email = String(member.email || '').trim().toLowerCase();
+      const name = String(member.name || '').trim();
+      if (!email || !name) continue;
+      map.set(email, name);
+    }
+    return map;
+  }, [team]);
 
   const [editState, setEditState] = useState({
     status: 'new',
@@ -583,19 +600,19 @@ export default function SuportePage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Assuntos e responsaveis</h2>
 
-          <form onSubmit={handleCreateSubject} className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+          <form onSubmit={handleCreateSubject} className="grid grid-cols-1 xl:grid-cols-4 gap-2 items-start">
             <input
               value={newSubject.name}
               onChange={(e) => setNewSubject((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="Nome do assunto"
               required
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
             />
             <input
               value={newSubject.description}
               onChange={(e) => setNewSubject((prev) => ({ ...prev, description: e.target.value }))}
               placeholder="Descricao"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
             />
             <select
               multiple
@@ -617,7 +634,7 @@ export default function SuportePage() {
                   return { ...prev, profileIds: selected, assigneeEmails: nextAssignees };
                 });
               }}
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2 min-h-[110px]"
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px] min-h-[72px]"
             >
               {permissionProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>{profile.name}</option>
@@ -630,7 +647,7 @@ export default function SuportePage() {
                 const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
                 setNewSubject((prev) => ({ ...prev, assigneeEmails: selected }));
               }}
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2 min-h-[110px]"
+              className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px] min-h-[72px]"
             >
               {availableSubjectUsers.map((member) => (
                 <option key={member.email} value={member.email}>
@@ -638,13 +655,13 @@ export default function SuportePage() {
                 </option>
               ))}
             </select>
-            <div className="lg:col-span-2 text-[11px] text-slate-500">
+            <div className="xl:col-span-2 text-[10px] text-slate-500 -mt-1">
               Perfil/Cargo: selecione um ou mais perfis para controlar o acesso ao assunto.
             </div>
-            <div className="lg:col-span-2 text-[11px] text-slate-500">
+            <div className="xl:col-span-2 text-[10px] text-slate-500 -mt-1">
               Usuarios: selecao multipla de responsaveis; pode ter varios usuarios no mesmo perfil.
             </div>
-            <div className="lg:col-span-4 flex justify-end">
+            <div className="xl:col-span-4 flex justify-end">
               <button
                 type="submit"
                 disabled={creatingSubject}
@@ -667,7 +684,15 @@ export default function SuportePage() {
                 <div>
                   <div className="text-sm font-bold text-slate-800">{subject.name}</div>
                   <div className="text-xs text-slate-500">
-                    {(subject.assigneeEmails || []).length > 0 ? subject.assigneeEmails.join(', ') : 'Sem responsavel definido'}
+                    {(subject.assigneeEmails || []).length > 0
+                      ? subject.assigneeEmails
+                          .map((email) => {
+                            const normalizedEmail = String(email || '').trim().toLowerCase();
+                            const name = teamMemberNameByEmail.get(normalizedEmail);
+                            return name ? `${name} (${normalizedEmail})` : normalizedEmail;
+                          })
+                          .join(', ')
+                      : 'Sem responsavel definido'}
                   </div>
                   <div className="text-xs text-slate-500 mt-1">
                     {(subject.profileIds || []).length > 0

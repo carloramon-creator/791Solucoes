@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   try {
     const { data, error } = await supabaseServer
       .from('equipe_791')
-      .select('nome, email, foto_path')
+      .select('nome, email, cargo, foto_path')
       .not('email', 'is', null)
       .order('nome', { ascending: true });
 
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message || 'Falha ao carregar equipe.' }, { status: 500 });
     }
 
-    const normalized = new Map<string, { name: string | null; email: string; avatarUrl: string | null }>();
+    const normalized = new Map<string, { name: string | null; email: string; cargo: string | null; avatarUrl: string | null }>();
 
     for (const row of data || []) {
       const email = String(row.email || '').trim().toLowerCase();
@@ -39,6 +39,7 @@ export async function GET(req: Request) {
       normalized.set(email, {
         name: row.nome ? String(row.nome) : null,
         email,
+        cargo: row.cargo ? String(row.cargo) : null,
         avatarUrl,
       });
     }
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
     if (auth.user.email) {
       const own = String(auth.user.email).trim().toLowerCase();
       if (own && !normalized.has(own)) {
-        normalized.set(own, { name: null, email: own, avatarUrl: null });
+        normalized.set(own, { name: null, email: own, cargo: null, avatarUrl: null });
       }
     }
 

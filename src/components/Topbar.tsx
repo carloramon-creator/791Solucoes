@@ -19,7 +19,8 @@ export function Topbar() {
   useEffect(() => {
     let active = true;
 
-    supabase.auth.getUser().then(({ data }) => {
+    async function loadUser() {
+      const { data } = await supabase.auth.getUser();
       if (!active) return;
 
       const currentUser = data.user;
@@ -53,6 +54,10 @@ export function Topbar() {
         if (!prev) return prev;
         return { ...prev, avatarUrl: cadastroAvatar };
       });
+    }
+
+    loadUser().catch((err) => {
+      console.error('Falha ao carregar avatar do topo:', err);
     });
 
     return () => {

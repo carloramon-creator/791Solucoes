@@ -94,6 +94,78 @@ async function countQueue(queue: SupportQueue, currentEmail: string | null, allo
   return count || 0;
 }
 
+async function pickLeastBusyAssignee(subjectId: string): Promise<string | null> {
+  const candidateEmails = new Set<string>();
+
+  const { data: directAssignments } = await supabaseServer
+    .from('support_subject_assignments')
+    .select('assignee_email')
+    .eq('subject_id', subjectId);
+
+  for (const row of directAssignments || []) {
+    const email = String(row.assignee_email || '').trim().toLowerCase();
+    if (email) candidateEmails.add(email);
+  }
+
+  const { data: profileLinks } = await supabaseServer
+    .from('support_subject_permission_profiles')
+    .select('profile_id')
+    .eq('subject_id', subjectId);
+
+  const profileIds = Array.from(new Set((profileLinks || []).map((row: any) => String(row.profile_id || '').trim()).filter(Boolean)));
+
+  if (profileIds.length > 0) {
+    const { data: usersByProfile } = await supabaseServer
+      .from('holding_user_permission_profiles')
+      .select('user_email')
+      .in('profile_id', profileIds);
+
+    for (const row of usersByProfile || []) {
+      const email = String((row as any).user_email || '').trim().toLowerCase();
+      if (email) candidateEmails.add(email);
+    }
+
+    const { data: profileRows } = await supabaseServer
+      .from('holding_permission_profiles')
+      .select('name')
+      .in('id', profileIds);
+
+    const profileNames = Array.from(new Set((profileRows || []).map((row: any) => String(row.name || '').trim()).filter(Boolean)));
+
+    const { data: usersByCargo } = profileNames.length > 0
+      ? await supabaseServer
+          .from('equipe_791')
+          .select('email, cargo')
+          .in('cargo', profileNames)
+      : { data: [], error: null };
+
+    for (const row of usersByCargo || []) {
+      const email = String((row as any).email || '').trim().toLowerCase();
+      if (email) candidateEmails.add(email);
+    }
+  }
+
+  const candidates = Array.from(candidateEmails).filter(Boolean);
+  if (candidates.length === 0) return null;
+
+  const counts = await Promise.all(candidates.map(async (email) => {
+    const { count } = await supabaseServer
+      .from('support_tickets')
+      .select('id', { count: 'exact', head: true })
+      .eq('assigned_to_email', email)
+      .in('status', OPEN_STATUSES);
+
+    return { email, activeCount: count || 0 };
+  }));
+
+  counts.sort((a, b) => {
+    if (a.activeCount !== b.activeCount) return a.activeCount - b.activeCount;
+    return a.email.localeCompare(b.email);
+  });
+
+  return counts[0]?.email || null;
+}
+
 export async function GET(req: NextRequest) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem acessar tickets de suporte.');
   if (!auth.ok) {
@@ -230,40 +302,7 @@ export async function POST(req: NextRequest) {
       : null;
 
     if (!assignedToEmail && subjectId) {
-      const { data: assignment } = await supabaseServer
-        .from('support_subject_assignments')
-        .select('assignee_email')
-        .eq('subject_id', subjectId)
-        .limit(1)
-        .maybeSingle();
-
-      if (assignment?.assignee_email) {
-        assignedToEmail = String(assignment.assignee_email).trim().toLowerCase();
-      }
-
-      if (!assignedToEmail) {
-        const { data: profileLinks } = await supabaseServer
-          .from('support_subject_permission_profiles')
-          .select('profile_id')
-          .eq('subject_id', subjectId);
-
-        const profileIds = Array.from(new Set((profileLinks || []).map((row: any) => String(row.profile_id || '').trim()).filter(Boolean)));
-
-        if (profileIds.length > 0) {
-          const { data: usersByProfile } = await supabaseServer
-            .from('holding_user_permission_profiles')
-            .select('user_email, profile_id')
-            .in('profile_id', profileIds);
-
-          const candidate = (usersByProfile || [])
-            .map((row: any) => String(row.user_email || '').trim().toLowerCase())
-            .find(Boolean);
-
-          if (candidate) {
-            assignedToEmail = candidate;
-          }
-        }
-      }
+      assignedToEmail = await pickLeastBusyAssignee(subjectId);
     }
 
     if (subjectId) {

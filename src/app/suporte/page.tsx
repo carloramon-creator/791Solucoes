@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import type { SupportQueue } from '@/lib/support-queue';
-import { BellDot, CircleDot, Clock3, LifeBuoy, Loader2, MessageSquare, RefreshCcw, Send, UserRoundCheck } from 'lucide-react';
+import { BellDot, CircleDot, Clock3, LifeBuoy, Loader2, MessageSquare, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
 
 type Subject = {
   id: string;
@@ -121,6 +121,8 @@ export default function SuportePage() {
   const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -183,6 +185,12 @@ export default function SuportePage() {
     return map;
   }, [team]);
 
+  const currentUserTeamMember = useMemo(() => {
+    const current = String(currentUserEmail || '').trim().toLowerCase();
+    if (!current) return null;
+    return team.find((member) => String(member.email || '').trim().toLowerCase() === current) || null;
+  }, [currentUserEmail, team]);
+
   const [editState, setEditState] = useState({
     status: 'new',
     priority: 'normal',
@@ -223,6 +231,9 @@ export default function SuportePage() {
     setError(null);
 
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      setCurrentUserEmail(userData.user?.email?.toLowerCase() || null);
+
       const [ticketsRes, subjectsRes, teamRes, permissionsRes, meRes] = await Promise.all([
         api(`/api/support/tickets?queue=${currentQueue}`),
         api('/api/support/subjects'),
@@ -341,8 +352,8 @@ export default function SuportePage() {
           .filter(Boolean)
       ));
 
-      await api('/api/support/subjects', {
-        method: 'POST',
+      await api(editingSubjectId ? `/api/support/subjects/${editingSubjectId}` : '/api/support/subjects', {
+        method: editingSubjectId ? 'PATCH' : 'POST',
         body: JSON.stringify({
           name: newSubject.name,
           description: newSubject.description || null,
@@ -351,14 +362,51 @@ export default function SuportePage() {
         }),
       });
 
-      setFeedback('Assunto criado com sucesso.');
+      setFeedback(editingSubjectId ? 'Assunto atualizado com sucesso.' : 'Assunto criado com sucesso.');
       setNewSubject({ name: '', description: '', assigneeEmails: [], profileIds: [] });
+      setEditingSubjectId(null);
       await loadSupportData(queue, true);
     } catch (err: any) {
-      setError(err?.message || 'Falha ao criar assunto.');
+      setError(err?.message || `Falha ao ${editingSubjectId ? 'atualizar' : 'criar'} assunto.`);
     } finally {
       setCreatingSubject(false);
     }
+  };
+
+  const handleEditSubject = (subject: Subject) => {
+    setEditingSubjectId(subject.id);
+    setShowSubjectPanel(true);
+    setNewSubject({
+      name: subject.name,
+      description: subject.description || '',
+      assigneeEmails: subject.assigneeEmails || [],
+      profileIds: subject.profileIds || [],
+    });
+  };
+
+  const handleDeleteSubject = async (subject: Subject) => {
+    const ok = window.confirm(`Excluir o assunto "${subject.name}"?`);
+    if (!ok) return;
+
+    setError(null);
+    setFeedback(null);
+
+    try {
+      await api(`/api/support/subjects/${subject.id}`, { method: 'DELETE' });
+      if (editingSubjectId === subject.id) {
+        setEditingSubjectId(null);
+        setNewSubject({ name: '', description: '', assigneeEmails: [], profileIds: [] });
+      }
+      setFeedback('Assunto excluido com sucesso.');
+      await loadSupportData(queue, true);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao excluir assunto.');
+    }
+  };
+
+  const handleCancelSubjectEdit = () => {
+    setEditingSubjectId(null);
+    setNewSubject({ name: '', description: '', assigneeEmails: [], profileIds: [] });
   };
 
   const handleToggleSubject = async (subject: Subject) => {
@@ -450,6 +498,13 @@ export default function SuportePage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full border border-slate-200 bg-white overflow-hidden flex items-center justify-center text-[11px] font-bold text-slate-700">
+            {currentUserTeamMember?.avatarUrl ? (
+              <img src={currentUserTeamMember.avatarUrl} alt="Usuario logado" className="w-full h-full object-cover" />
+            ) : (
+              String(currentUserTeamMember?.name || currentUserEmail || 'U').slice(0, 2).toUpperCase()
+            )}
+          </div>
           {can('action.support.manage_subjects') && (
             <button
               onClick={() => setShowSubjectPanel((prev) => !prev)}
@@ -662,12 +717,21 @@ export default function SuportePage() {
               Usuarios: selecao multipla de responsaveis; pode ter varios usuarios no mesmo perfil.
             </div>
             <div className="xl:col-span-4 flex justify-end">
+              {editingSubjectId && (
+                <button
+                  type="button"
+                  onClick={handleCancelSubjectEdit}
+                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 mr-2"
+                >
+                  Cancelar
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={creatingSubject}
                 className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold hover:bg-black disabled:opacity-50"
               >
-                {creatingSubject ? 'Salvando...' : 'Criar assunto'}
+                {creatingSubject ? 'Salvando...' : editingSubjectId ? 'Salvar assunto' : 'Criar assunto'}
               </button>
             </div>
           </form>
@@ -700,16 +764,34 @@ export default function SuportePage() {
                       : 'Perfis: sem vinculo'}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleToggleSubject(subject)}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
-                    subject.active
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 border border-slate-200'
-                  }`}
-                >
-                  {subject.active ? 'Ativo' : 'Inativo'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleEditSubject(subject)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-bold hover:bg-slate-50"
+                  >
+                    <PencilLine size={12} />
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSubject(subject)}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-[11px] font-bold hover:bg-red-100"
+                  >
+                    <Trash2 size={12} />
+                    Excluir
+                  </button>
+                  <button
+                    onClick={() => handleToggleSubject(subject)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                      subject.active
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {subject.active ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { Bell, Maximize, Moon, Search, Settings } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -83,21 +83,6 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
-
-        <button className="p-2 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-50 transition-colors">
-          <Settings size={18} />
-        </button>
-        <button className="p-2 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-50 transition-colors">
-          <Moon size={18} />
-        </button>
-        <button className="p-2 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-50 transition-colors">
-          <Maximize size={18} />
-        </button>
-        <button className="p-2 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-50 transition-colors relative">
-          <Bell size={18} />
-          <span className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-white" />
-        </button>
-        
         <div className="ml-2 h-8 w-8 overflow-hidden rounded-full border border-slate-200 bg-[#3b597b] text-[10px] font-black text-white cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center">
           {user ? (
             user.avatarUrl ? (

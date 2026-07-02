@@ -44,422 +44,412 @@ interface FinanceRecord {
 
 type DifferenceHandling = 'adjust' | 'keep_open';
 type OpenViewKind = 'payable' | 'receivable';
-type PeriodFilter = 'dia' | 'semana' | 'quinzena' | 'mes' | 'trimestre' | 'semestre' | 'ano';
+        {activeSection === 'lancamentos' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-8 py-3">Data / Status</th>
+                  <th className="px-8 py-3">Descrição / Categoria</th>
+                  <th className="px-8 py-3">Conta</th>
+                  <th className="px-8 py-3 text-center">Método</th>
+                  <th className="px-8 py-3 text-right pr-12">Valor</th>
+                  <th className="px-6 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400">
+                      <Loader2 className="animate-spin mx-auto mb-3" size={24} />
+                      <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Carregando lançamentos...</span>
+                    </td>
+                  </tr>
+                ) : filteredRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                      Nenhum lançamento encontrado para o filtro informado.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-8 py-2.5">
+                        <p className="text-[11px] text-slate-700">{formatDateShort(record.created_at)}</p>
+                        <span className={`inline-flex mt-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${record.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {record.status === 'paid' ? 'Pago' : 'Pendente'}
+                        </span>
+                      </td>
+                      <td className="px-8 py-2.5">
+                        <p className="text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</p>
+                        <p className="mt-0.5 text-[10px] uppercase tracking-widest font-black text-slate-500">{record.category || 'Geral'}</p>
+                      </td>
+                      <td className="px-8 py-2.5 text-[11px] text-slate-600 uppercase tracking-widest font-bold">
+                        {getSourceLabel(record.bank_account_id)}
+                      </td>
+                      <td className="px-8 py-2.5 text-center text-[11px] font-bold text-slate-600 uppercase tracking-widest">
+                        {record.payment_method || 'Pix'}
+                      </td>
+                      <td className={`px-8 py-2.5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                      </td>
+                      <td className="px-6 py-2 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(record)}
+                            className="text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider"
+                            title="Editar lançamento"
+                          >
+                            Editar
+                          </button>
+                          {record.status !== 'paid' && (
+                            <button
+                              onClick={() => openSettleModal(record)}
+                              className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider"
+                              title="Baixar lançamento"
+                            >
+                              Baixar
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(record.id)}
+                            className="text-slate-300 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                            title="Excluir Lançamento"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                          {record.payment_link && (
+                            <a
+                              href={record.payment_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:text-blue-600 transition-colors p-2 hover:bg-blue-50 rounded-lg"
+                              title="Abrir Link de Pagamento"
+                            >
+                              <ExternalLink size={16} />
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : activeSection === 'abertos' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-4 py-2">Classe</th>
+                  <th className="px-4 py-2">Subclasse</th>
+                  <th className="px-4 py-2">Lançamento</th>
+                  <th className="px-4 py-2">Venc.</th>
+                  <th className="px-4 py-2 text-right">Valor</th>
+                  <th className="px-4 py-2 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400">
+                      <Loader2 className="animate-spin mx-auto mb-3" size={24} />
+                      <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Carregando contas em aberto...</span>
+                    </td>
+                  </tr>
+                ) : openRecordsFiltered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-8 py-10 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                      Nenhuma conta em aberto para o filtro informado.
+                    </td>
+                  </tr>
+                ) : (
+                  openRecordsFiltered.map((record) => {
+                    const classInfo = getClassAndSubclass(record);
+                    const dueDate = getDueDate(record);
+                    return (
+                      <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-2 text-[11px] text-slate-700">{classInfo.classe}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-500">{classInfo.subclasse}</td>
+                        <td className="px-4 py-2 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                        <td className="px-4 py-2 text-[11px] text-slate-600">{formatDateShort(dueDate)}</td>
+                        <td className={`px-4 py-2 text-right text-[12px] font-bold ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            onClick={() => openSettleModal(record)}
+                            className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider"
+                          >
+                            Baixar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-8 py-3">Data</th>
+                  <th className="px-8 py-3">Lançamento</th>
+                  <th className="px-8 py-3">Conta</th>
+                  <th className="px-8 py-3 text-right">Valor</th>
+                  <th className="px-8 py-3 text-right">Saldo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                <tr className="bg-slate-50/50">
+                  <td className="px-8 py-3 text-[11px] text-slate-500">Saldo inicial</td>
+                  <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Saldo anterior ao período</td>
+                  <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                  <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(0)}</td>
+                  <td className="px-8 py-3 text-right text-[12px] font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
+                </tr>
+                {flowRows.length ? flowRows.map(({ record, running }) => (
+                  <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-8 py-2.5 text-[11px] text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</td>
+                    <td className="px-8 py-2.5 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                    <td className="px-8 py-2.5 text-[11px] text-slate-600 uppercase tracking-widest font-bold">{getSourceLabel(record.bank_account_id)}</td>
+                    <td className={`px-8 py-2.5 text-right text-[12px] font-black ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                    </td>
+                    <td className="px-8 py-2.5 text-right text-[12px] font-black text-slate-700">{formatCurrency(running)}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-14 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                      Nenhum lançamento efetivado no período.
+                    </td>
+                  </tr>
+                )}
+                <tr className="bg-slate-50/50">
+                  <td className="px-8 py-3 text-[11px] text-slate-500">Saldo final</td>
+                  <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Consolidado do período</td>
+                  <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                  <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(flowNet)}</td>
+                  <td className="px-8 py-3 text-right text-[12px] font-black text-blue-700">{formatCurrency(flowClosingBalance)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
 
-interface BankAccount {
-  id: string;
-  name: string;
-  bank_name: string;
-  type?: string;
-  balance?: number;
-  account_number?: string;
-  cards?: BankCard[];
-}
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[105] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+              <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-800">
+                  {editingRecord ? 'Editar lançamento' : 'Novo lançamento'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingRecord(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
 
-interface BankCard {
-  id: string;
-  account_id: string;
-  name: string;
-  last_digits: string;
-  card_type: string;
-  credit_limit: number;
-}
+              <div className="p-6 overflow-y-auto max-h-[70vh] space-y-4">
+                <div className="flex gap-2 rounded-xl bg-slate-100 p-1">
+                  <button
+                    onClick={() => setNewRecord((prev) => ({ ...prev, type: 'revenue' }))}
+                    className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${newRecord.type === 'revenue' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
+                  >Receita</button>
+                  <button
+                    onClick={() => setNewRecord((prev) => ({ ...prev, type: 'expense' }))}
+                    className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${newRecord.type === 'expense' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}
+                  >Despesa</button>
+                </div>
 
-interface FinanceSource {
-  id: string;
-  label: string;
-  kind: 'account' | 'card';
-  amount: number;
-  details?: string;
-}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Descrição</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-slate-300"><Tag size={14} /></span>
+                      <input
+                        type="text"
+                        value={newRecord.description}
+                        onChange={(e) => setNewRecord({ ...newRecord, description: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 h-[42px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
+                      />
+                    </div>
+                  </div>
 
-interface Category {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  type: 'revenue' | 'expense';
-}
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Valor (R$)</label>
+                    <input
+                      type="number"
+                      value={newRecord.value}
+                      onChange={(e) => setNewRecord({ ...newRecord, value: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 h-[42px] text-sm focus:outline-none"
+                    />
+                  </div>
 
-export default function FinanceiroPage() {
-  const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [settling, setSettling] = useState(false);
-  const [records, setRecords] = useState<FinanceRecord[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [stats, setStats] = useState({
-    revenue: 0,
-    expenses: 0,
-    balance: 0
-  });
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedParentCategory, setSelectedParentCategory] = useState('');
-  const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [editingRecord, setEditingRecord] = useState<FinanceRecord | null>(null);
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Data</label>
+                    <input
+                      type="date"
+                      value={newRecord.date}
+                      onChange={(e) => setNewRecord({ ...newRecord, date: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 h-[42px] text-sm focus:outline-none"
+                    />
+                  </div>
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'revenue' | 'expense' | 'payable'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeSection, setActiveSection] = useState<'lancamentos' | 'abertos' | 'fluxo'>('lancamentos');
-  const [openViewKind, setOpenViewKind] = useState<OpenViewKind>('payable');
-  const [openPeriod, setOpenPeriod] = useState<PeriodFilter>('dia');
-  const [openDateStart, setOpenDateStart] = useState(new Date().toISOString().split('T')[0]);
-  const [openDateEnd, setOpenDateEnd] = useState(new Date().toISOString().split('T')[0]);
-  const [flowPeriod, setFlowPeriod] = useState<PeriodFilter>('dia');
-  const [flowDateStart, setFlowDateStart] = useState(new Date().toISOString().split('T')[0]);
-  const [flowDateEnd, setFlowDateEnd] = useState(new Date().toISOString().split('T')[0]);
-  const [flowSourceId, setFlowSourceId] = useState<'all' | string>('all');
-  const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
-  const [settleRecord, setSettleRecord] = useState<FinanceRecord | null>(null);
-  const [settleForm, setSettleForm] = useState({
-    paidAmount: '',
-    bankAccountId: '',
-    paymentMethod: 'Pix',
-    differenceHandling: 'adjust' as DifferenceHandling,
-  });
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Categoria</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={newRecord.category}
+                        onChange={(e) => setNewRecord({ ...newRecord, category: e.target.value })}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 h-[42px] text-sm focus:outline-none"
+                      >
+                        <option value="">Selecione...</option>
+                        {categories.filter((c) => !c.parent_id && c.type === newRecord.type).map((parent) => (
+                          <optgroup key={parent.id} label={parent.name.toUpperCase()}>
+                            <option value={parent.name}>{parent.name}</option>
+                            {categories.filter((c) => c.parent_id === parent.id).map((sub) => (
+                              <option key={sub.id} value={sub.name}>- {sub.name}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingCategory(true)}
+                        className="h-[42px] px-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100"
+                        title="Adicionar categoria"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
 
-  const [newRecord, setNewRecord] = useState({
-    type: 'expense' as 'revenue' | 'expense',
-    description: '',
-    value: '',
-    category: 'Geral',
-    payment_method: 'Pix',
-    bank_account_id: '',
-    status: 'paid' as 'paid' | 'pending',
-    date: new Date().toISOString().split('T')[0],
-    is_recurring: false,
-    recurring_period: 'monthly' as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly',
-    generateAsaas: false,
-    customerCpfCnpj: ''
-  });
+                  <div>
+                    <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1 ml-1">Conta / Método</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={newRecord.bank_account_id}
+                        onChange={(e) => setNewRecord({ ...newRecord, bank_account_id: e.target.value })}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 h-[42px] text-xs focus:outline-none"
+                      >
+                        <option value="">Conta...</option>
+                        {bankAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                      <select
+                        value={newRecord.payment_method}
+                        onChange={(e) => setNewRecord({ ...newRecord, payment_method: e.target.value })}
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 h-[42px] text-xs focus:outline-none"
+                      >
+                        {paymentMethods.map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
 
-  const paymentMethods = [
-    'Pix', 'Cartão Crédito', 'Cartão Débito', 'Boleto', 'Dinheiro', 'Transferência'
-  ];
+                  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-100 h-[42px]">
+                    <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-2">Já foi pago?</span>
+                    <label className="relative inline-flex items-center cursor-pointer mr-2">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={newRecord.status === 'paid'}
+                        onChange={(e) => setNewRecord({ ...newRecord, status: e.target.checked ? 'paid' : 'pending' })}
+                      />
+                      <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
 
-  const periodOptions: PeriodFilter[] = ['dia', 'semana', 'quinzena', 'mes', 'trimestre', 'semestre', 'ano'];
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col justify-center">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Recorrente?</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={newRecord.is_recurring}
+                          onChange={(e) => setNewRecord({ ...newRecord, is_recurring: e.target.checked })}
+                        />
+                        <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-[#3b597b]"></div>
+                      </label>
+                    </div>
+                    {newRecord.is_recurring && (
+                      <select
+                        value={newRecord.recurring_period}
+                        onChange={(e) => setNewRecord({ ...newRecord, recurring_period: e.target.value as any })}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 h-[28px] text-[10px] focus:outline-none mt-2"
+                      >
+                        <option value="daily">Diária</option>
+                        <option value="weekly">Semanal</option>
+                        <option value="biweekly">Quinzenal</option>
+                        <option value="monthly">Mensal</option>
+                        <option value="yearly">Anual</option>
+                      </select>
+                    )}
+                  </div>
 
-  const getPeriodLabel = (period: PeriodFilter) => {
-    const labels: Record<PeriodFilter, string> = {
-      dia: 'Hoje',
-      semana: 'Semana',
-      quinzena: 'Quinzena',
-      mes: 'Mês',
-      trimestre: 'Trimestre',
-      semestre: 'Semestre',
-      ano: 'Ano',
-    };
-    return labels[period];
-  };
+                  <div className={`p-3 rounded-xl border flex flex-col justify-center transition-all ${newRecord.type === 'revenue' ? 'bg-blue-50 border-blue-100 opacity-100' : 'bg-slate-50 border-slate-100 opacity-50 pointer-events-none'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-blue-800 uppercase font-black tracking-widest">Asaas?</span>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={newRecord.generateAsaas}
+                          onChange={(e) => setNewRecord({ ...newRecord, generateAsaas: e.target.checked })}
+                          disabled={newRecord.type !== 'revenue'}
+                        />
+                        <div className="w-8 h-4 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-500"></div>
+                      </label>
+                    </div>
+                  </div>
 
-  const getDateRangeByPeriod = (period: PeriodFilter) => {
-    const now = new Date();
-    const start = new Date(now);
+                  {newRecord.generateAsaas && (
+                    <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 animate-in fade-in duration-300 flex flex-col justify-center">
+                      <label className="block text-[9px] text-blue-800 uppercase font-black tracking-widest mb-1">CPF/CNPJ Pagador</label>
+                      <input
+                        type="text"
+                        placeholder="000.000..."
+                        value={newRecord.customerCpfCnpj}
+                        onChange={(e) => setNewRecord({ ...newRecord, customerCpfCnpj: e.target.value })}
+                        className="w-full bg-white border border-blue-200 rounded-lg px-2 h-[28px] text-[10px] focus:outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
 
-    switch (period) {
-      case 'dia':
-        break;
-      case 'semana':
-        start.setDate(now.getDate() - 6);
-        break;
-      case 'quinzena':
-        start.setDate(now.getDate() - 14);
-        break;
-      case 'mes':
-        start.setDate(now.getDate() - 29);
-        break;
-      case 'trimestre':
-        start.setDate(now.getDate() - 89);
-        break;
-      case 'semestre':
-        start.setDate(now.getDate() - 179);
-        break;
-      case 'ano':
-        start.setDate(now.getDate() - 364);
-        break;
-    }
-
-    return {
-      start: start.toISOString().split('T')[0],
-      end: now.toISOString().split('T')[0],
-    };
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    const range = getDateRangeByPeriod(openPeriod);
-    setOpenDateStart(range.start);
-    setOpenDateEnd(range.end);
-  }, [openPeriod]);
-
-  useEffect(() => {
-    const range = getDateRangeByPeriod(flowPeriod);
-    setFlowDateStart(range.start);
-    setFlowDateEnd(range.end);
-  }, [flowPeriod]);
-
-  useEffect(() => {
-    const section = searchParams.get('section');
-    const kind = searchParams.get('kind');
-    const period = searchParams.get('period');
-    const start = searchParams.get('start');
-    const end = searchParams.get('end');
-
-    if (section === 'abertos') {
-      setActiveSection('abertos');
-    }
-
-    if (kind === 'payable' || kind === 'receivable') {
-      setOpenViewKind(kind);
-    }
-
-    if (period && periodOptions.includes(period as PeriodFilter)) {
-      setOpenPeriod(period as PeriodFilter);
-    }
-
-    if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
-      setOpenDateStart(start);
-    }
-
-    if (end && /^\d{4}-\d{2}-\d{2}$/.test(end)) {
-      setOpenDateEnd(end);
-    }
-
-    const settleId = searchParams.get('settleId');
-    if (!settleId || records.length === 0) return;
-
-    const target = records.find((row) => row.id === settleId);
-    if (target && target.status !== 'paid') {
-      setActiveSection('abertos');
-      setOpenViewKind(target.type === 'expense' ? 'payable' : 'receivable');
-      openSettleModal(target);
-    }
-  }, [searchParams, records]);
-
-  async function fetchData() {
-    setLoading(true);
-    try {
-      const [recordsRes, accountsRes] = await Promise.all([
-        fetch('/api/system/finance-records', { cache: 'no-store' }),
-        fetch('/api/system/bank-accounts', { cache: 'no-store' })
-      ]);
-
-      const recordsJson = await recordsRes.json();
-      const accountsJson = await accountsRes.json();
-
-      if (recordsJson.success) {
-        setRecords(recordsJson.records || []);
-        updateStats(recordsJson.records || []);
-      }
-      if (accountsJson.success) setBankAccounts(accountsJson.accounts || []);
-
-      const catRes = await fetch('/api/system/categories');
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        setCategories(catData || []);
-      }
-
-    } catch (err) {
-      console.error('Erro ao carregar dados:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function updateStats(data: FinanceRecord[]) {
-    const rev = data.filter(r => r.type === 'revenue' && r.status === 'paid').reduce((acc, curr) => acc + Number(curr.value), 0);
-    const exp = data.filter(r => r.type === 'expense' && r.status === 'paid').reduce((acc, curr) => acc + Number(curr.value), 0);
-    setStats({
-      revenue: rev,
-      expenses: exp,
-      balance: rev - exp
-    });
-  }
-
-  const categoryByName = useMemo(() => {
-    const map = new Map<string, Category>();
-    categories.forEach((cat) => {
-      map.set(cat.name, cat);
-    });
-    return map;
-  }, [categories]);
-
-  const sourceOptions = useMemo<FinanceSource[]>(() => {
-    const accountSources = bankAccounts.map((account) => ({
-      id: account.id,
-      label: `${account.bank_name || 'Conta'} - ${account.name}`,
-      kind: 'account' as const,
-      amount: Number(account.balance || 0),
-      details: [account.type, account.account_number].filter(Boolean).join(' · '),
-    }));
-
-    const cardSources = bankAccounts.flatMap((account) => (account.cards || []).map((card) => ({
-      id: card.id,
-      label: `${account.bank_name || 'Cartão'} - ${card.name}`,
-      kind: 'card' as const,
-      amount: Number(card.credit_limit || 0),
-      details: [card.card_type ? String(card.card_type).toUpperCase() : null, card.last_digits ? `•••• ${card.last_digits}` : null]
-        .filter(Boolean)
-        .join(' · '),
-    })));
-
-    return [
-      { id: 'all', label: 'Todas as contas', kind: 'account' as const, amount: accountSources.reduce((sum, item) => sum + item.amount, 0) + cardSources.reduce((sum, item) => sum + item.amount, 0), details: 'Consolidado' },
-      ...accountSources,
-      ...cardSources,
-    ];
-  }, [bankAccounts]);
-
-  const sourceById = useMemo(() => {
-    const map = new Map<string, FinanceSource>();
-    sourceOptions.forEach((source) => map.set(source.id, source));
-    return map;
-  }, [sourceOptions]);
-
-  const getClassAndSubclass = (record: FinanceRecord) => {
-    const metadataClass = record.metadata?.classe || record.metadata?.class || null;
-    const metadataSubclass = record.metadata?.subclasse || record.metadata?.subclass || null;
-    if (metadataClass || metadataSubclass) {
-      return {
-        classe: metadataClass || record.category || 'Geral',
-        subclasse: metadataSubclass || '-',
-      };
-    }
-
-    const category = categoryByName.get(record.category);
-    if (!category) {
-      return { classe: record.category || 'Geral', subclasse: '-' };
-    }
-
-    if (!category.parent_id) {
-      return { classe: category.name, subclasse: '-' };
-    }
-
-    const parent = categories.find((row) => row.id === category.parent_id);
-    return {
-      classe: parent?.name || category.name,
-      subclasse: category.name,
-    };
-  };
-
-  const formatDateShort = (value?: string) => {
-    if (!value) return '--';
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return '--';
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-  };
-
-  const getDueDate = (record: FinanceRecord) => {
-    return record.metadata?.due_date || record.metadata?.vencimento || record.created_at;
-  };
-
-  const getSourceLabel = (sourceId?: string) => {
-    if (!sourceId) return '—';
-    const source = sourceById.get(sourceId);
-    return source ? source.label : sourceId;
-  };
-
-  const openEditModal = (record: FinanceRecord) => {
-    setEditingRecord(record);
-    setNewRecord({
-      type: record.type,
-      description: record.description || '',
-      value: String(record.value ?? ''),
-      category: record.category || 'Geral',
-      payment_method: record.payment_method || 'Pix',
-      bank_account_id: record.bank_account_id || '',
-      status: record.status,
-      date: (record.created_at || new Date().toISOString()).slice(0, 10),
-      is_recurring: Boolean(record.is_recurring),
-      recurring_period: (record.recurring_period as any) || 'monthly',
-      generateAsaas: false,
-      customerCpfCnpj: '',
-    });
-    setIsModalOpen(true);
-  };
-
-  const openSettleModal = (record: FinanceRecord) => {
-    setSettleRecord(record);
-    setSettleForm({
-      paidAmount: String(Number(record.value || 0).toFixed(2)),
-      bankAccountId: record.bank_account_id || '',
-      paymentMethod: record.payment_method || 'Pix',
-      differenceHandling: 'adjust',
-    });
-    setIsSettleModalOpen(true);
-  };
-
-  const handleSettleRecord = async () => {
-    if (!settleRecord) return;
-
-    const paidAmount = Number(settleForm.paidAmount);
-    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
-      alert('Informe um valor de baixa válido.');
-      return;
-    }
-
-    const originalValue = Number(settleRecord.value || 0);
-    const difference = Number((originalValue - paidAmount).toFixed(2));
-    if (settleForm.differenceHandling === 'keep_open' && difference <= 0) {
-      alert('Para manter diferença em aberto, o valor pago deve ser menor que o valor lançado.');
-      return;
-    }
-
-    setSettling(true);
-    try {
-      const response = await fetch('/api/system/finance-records/settle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recordId: settleRecord.id,
-          paidAmount,
-          bankAccountId: settleForm.bankAccountId || null,
-          paymentMethod: settleForm.paymentMethod,
-          differenceHandling: settleForm.differenceHandling,
-        }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || 'Falha ao baixar lançamento.');
-      }
-
-      setIsSettleModalOpen(false);
-      setSettleRecord(null);
-      await fetchData();
-    } catch (err: any) {
-      alert(`Erro ao baixar: ${err?.message || 'Falha inesperada.'}`);
-    } finally {
-      setSettling(false);
-    }
-  };
-
-  const handleAddCategory = async () => {
-    if (!newCategoryName) return;
-    try {
-      const res = await fetch('/api/system/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newCategoryName,
-          type: newRecord.type,
-          parent_id: selectedParentCategory || null
-        })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Erro ao criar categoria');
-      }
-
-      const data = await res.json();
-      setCategories([...categories, data]);
-      setNewRecord({ ...newRecord, category: data.name });
-      setNewCategoryName('');
+              <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex gap-4 shrink-0">
+                <button
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingRecord(null);
+                  }}
+                  className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+                >Cancelar</button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex-[2] bg-[#3b597b] hover:bg-[#2d445d] text-white py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+                >
+                  {saving ? (
+                    <Loader2 className="animate-spin" size={14} />
+                  ) : (
+                    'Confirmar Lançamento'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       setIsAddingCategory(false);
       setSelectedParentCategory('');
     } catch (err: any) {

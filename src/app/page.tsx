@@ -85,6 +85,12 @@ type DateRange = {
   end: string;
 };
 
+type FinancialTotals = {
+  saldoAtual: number | null;
+  contasReceber: number | null;
+  contasPagar: number | null;
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
 }
@@ -92,6 +98,13 @@ function formatCurrency(value: number) {
 function formatDate(value?: string) {
   if (!value) return 'Agora';
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+function formatDateMasked(value: string) {
+  if (!value) return '--';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return '--';
+  return `${day} - ${month} - ${year}`;
 }
 
 function getPeriodLabel(period: PeriodFilter): string {
@@ -173,7 +186,7 @@ export default function Dashboard() {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>('mes');
   const [dateRange, setDateRange] = useState<DateRange>(() => getPeriodRange('mes'));
   const [modal, setModal] = useState<ModalData>({ type: null });
-  const [financialTotals, setFinancialTotals] = useState({ saldoAtual: 0, contasReceber: 0, contasPagar: 0 });
+  const [financialTotals, setFinancialTotals] = useState<FinancialTotals>({ saldoAtual: null, contasReceber: null, contasPagar: null });
   const [ticketTotals, setTicketTotals] = useState<TicketTotals>({ total: 0, emDia: 0, atrasados: 0, resolvidos: 0 });
   const [bottomTab, setBottomTab] = useState<'tickets' | 'lojas'>('tickets');
 
@@ -273,13 +286,16 @@ export default function Dashboard() {
 
         if (alive) {
           setFinancialTotals({
-            saldoAtual: Array.isArray(saldoData) ? saldoData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0,
-            contasReceber: (Array.isArray(receberData) ? receberData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
-            contasPagar: (Array.isArray(pagarData) ? pagarData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : 0),
+            saldoAtual: Array.isArray(saldoData) ? saldoData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
+            contasReceber: Array.isArray(receberData) ? receberData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
+            contasPagar: Array.isArray(pagarData) ? pagarData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
           });
         }
       } catch (err) {
         console.error('Erro ao carregar totais financeiros:', err);
+        if (alive) {
+          setFinancialTotals({ saldoAtual: null, contasReceber: null, contasPagar: null });
+        }
       }
     };
 
@@ -346,6 +362,11 @@ export default function Dashboard() {
   const tenants = data?.tenants || [];
   const latestTenants = tenants.slice(0, 4);
   const healthCount = (totals?.usersExceeded || 0) + (totals?.whatsappUsersExceeded || 0) + (totals?.messagesExceeded || 0);
+
+  const formatMoneyIfReal = (value: number | null) => {
+    if (value === null || Number.isNaN(value)) return '--';
+    return formatCurrency(value);
+  };
 
   const handleCardClick = async (type: 'tickets' | 'financeiro', subtype: string) => {
     setModal({ type, subtype, data: [] });
@@ -591,7 +612,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex-1 flex items-end">
-            <p className="text-[12px] text-slate-500">Contagem sensível ao intervalo: <strong>{dateRange.start}</strong> até <strong>{dateRange.end}</strong></p>
+            <p className="text-[12px] text-slate-500">Contagem sensível ao intervalo: <strong>{formatDateMasked(dateRange.start)}</strong> até <strong>{formatDateMasked(dateRange.end)}</strong></p>
           </div>
         </div>
 
@@ -608,7 +629,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Saldo atual (todas as contas)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-base font-bold text-slate-800">{formatCurrency(financialTotals.saldoAtual)}</p>
+                <p className="text-base font-bold text-slate-800">{formatMoneyIfReal(financialTotals.saldoAtual)}</p>
                 <ChevronRight size={16} className="text-slate-400" />
               </div>
             </button>
@@ -619,7 +640,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-emerald-600">Contas a receber (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-base font-bold text-emerald-700">{formatCurrency(financialTotals.contasReceber)}</p>
+                <p className="text-base font-bold text-emerald-700">{formatMoneyIfReal(financialTotals.contasReceber)}</p>
                 <ChevronRight size={16} className="text-emerald-400" />
               </div>
             </button>
@@ -630,7 +651,7 @@ export default function Dashboard() {
             >
               <p className="text-[11px] uppercase tracking-wider text-red-600">Contas a pagar (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-base font-bold text-red-700">{formatCurrency(financialTotals.contasPagar)}</p>
+                <p className="text-base font-bold text-red-700">{formatMoneyIfReal(financialTotals.contasPagar)}</p>
                 <ChevronRight size={16} className="text-red-400" />
               </div>
             </button>

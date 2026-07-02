@@ -77,10 +77,10 @@ export async function GET(req: Request) {
     let data: any[] = [];
 
     if (section === 'saldo-atual') {
-      // Buscar saldo de cada conta bancária real da holding
+      // Buscar contas com cartões vinculados
       const { data: bankAccounts, error: accountsError } = await supabaseServer
         .from('system_bank_accounts')
-        .select('*')
+        .select('*, cards:system_bank_cards(*)')
         .order('bank_name', { ascending: true })
         .order('name', { ascending: true });
 
@@ -88,10 +88,41 @@ export async function GET(req: Request) {
         console.log('Aviso ao buscar contas bancárias:', accountsError.message);
       }
 
+      // Apura lançamentos pagos para transformar saldo base em saldo atual.
+      const { data: paidRecords, error: paidRecordsError } = await supabaseServer
+        .from('system_finance_records')
+        .select('type, value, bank_account_id, metadata')
+        .eq('status', 'paid');
+
+      if (paidRecordsError && paidRecordsError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar lançamentos pagos:', paidRecordsError.message);
+      }
+
+      const accountAdjustments = new Map<string, number>();
+      const cardAdjustments = new Map<string, number>();
+
+      (paidRecords || []).forEach((record: any) => {
+        const signed = record?.type === 'revenue' ? toNumber(record?.value, 0) : -toNumber(record?.value, 0);
+        const metadata = (record?.metadata && typeof record.metadata === 'object') ? record.metadata : {};
+        const cardId = metadata?.card_id ? String(metadata.card_id) : '';
+        const accountId = record?.bank_account_id ? String(record.bank_account_id) : '';
+
+        if (cardId) {
+          cardAdjustments.set(cardId, toNumber(cardAdjustments.get(cardId), 0) + signed);
+          return;
+        }
+
+        if (accountId) {
+          accountAdjustments.set(accountId, toNumber(accountAdjustments.get(accountId), 0) + signed);
+        }
+      });
+
       if (bankAccounts && bankAccounts.length > 0) {
         const entries: any[] = [];
 
         bankAccounts.forEach((account: any) => {
+          const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
+
           entries.push({
             id: account.id,
             tipo: 'conta',
@@ -99,20 +130,27 @@ export async function GET(req: Request) {
             detalhes: [account.agency ? `Ag. ${account.agency}` : null, account.account_number ? `Conta ${account.account_number}` : null]
               .filter(Boolean)
               .join(' | '),
-            valor: toNumber(account.balance, 0),
+            valor: accountCurrentBalance,
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });
 
           (account.cards || []).forEach((card: any) => {
+            const cardBase = toNumber(card.current_balance, 0);
+            const cardCurrentBalance = cardBase + toNumber(cardAdjustments.get(card.id), 0);
+
             entries.push({
               id: card.id,
               tipo: 'cartao',
               descricao: [account.bank_name, card.name].filter(Boolean).join(' - ') || 'Cartão',
-              detalhes: [card.card_type ? `Tipo ${String(card.card_type).toUpperCase()}` : null, card.last_digits ? `•••• ${card.last_digits}` : null]
+              detalhes: [
+                card.card_type ? `Tipo ${String(card.card_type).toUpperCase()}` : null,
+                card.last_digits ? `•••• ${card.last_digits}` : null,
+                card.credit_limit ? `Limite ${toNumber(card.credit_limit, 0).toFixed(2)}` : null,
+              ]
                 .filter(Boolean)
                 .join(' | '),
-              valor: toNumber(card.credit_limit, 0),
+              valor: cardCurrentBalance,
               data_vencimento: account.updated_at,
               atualizado_em: account.updated_at,
             });

@@ -10,6 +10,38 @@ import {
   type SupportQueue,
 } from '@/lib/support-queue';
 
+const AVATAR_BUCKET = 'equipe-avatars';
+
+async function buildAvatarMap(emails: string[]): Promise<Map<string, string | null>> {
+  const normalized = Array.from(new Set(emails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean)));
+  const avatarMap = new Map<string, string | null>();
+  if (normalized.length === 0) return avatarMap;
+
+  const { data: members } = await supabaseServer
+    .from('equipe_791')
+    .select('email, foto_path')
+    .in('email', normalized);
+
+  for (const row of members || []) {
+    const email = String(row.email || '').trim().toLowerCase();
+    if (!email) continue;
+
+    const fotoPath = row.foto_path ? String(row.foto_path).trim() : '';
+    if (!fotoPath) {
+      avatarMap.set(email, null);
+      continue;
+    }
+
+    const { data: signedAvatar } = await supabaseServer.storage
+      .from(AVATAR_BUCKET)
+      .createSignedUrl(fotoPath, 60 * 60);
+
+    avatarMap.set(email, signedAvatar?.signedUrl || null);
+  }
+
+  return avatarMap;
+}
+
 function toPositiveInt(value: string | null, fallback: number, max: number): number {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return fallback;
@@ -47,7 +79,7 @@ function applySubjectVisibilityFilter(query: any, allowedSubjectIds: string[] | 
   }
 
   if (allowedSubjectIds.length === 0) {
-    return query.eq('subject_id', '__none__');
+    return query.eq('subject_id', '00000000-0000-0000-0000-000000000000');
   }
 
   return query.in('subject_id', allowedSubjectIds);
@@ -123,9 +155,23 @@ export async function GET(req: NextRequest) {
 
     const [allCount, newCount, mineCount, overdueCount, doneCount] = countsResult;
 
+    const assigneeEmails = (data || [])
+      .map((ticket: any) => String(ticket.assigned_to_email || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const assigneeAvatarMap = await buildAvatarMap(assigneeEmails);
+
+    const ticketsWithAvatar = (data || []).map((ticket: any) => {
+      const email = String(ticket.assigned_to_email || '').trim().toLowerCase();
+      return {
+        ...ticket,
+        assigned_to_avatar_url: email ? (assigneeAvatarMap.get(email) ?? null) : null,
+      };
+    });
+
     return NextResponse.json({
       total: count || 0,
-      tickets: data || [],
+      tickets: ticketsWithAvatar,
       counts: {
         all: allCount,
         new: newCount,
@@ -283,9 +329,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: messageError.message || 'Ticket criado, mas falhou ao registrar mensagem inicial.' }, { status: 500 });
     }
 
+    const assigneeMap = await buildAvatarMap([String(created.assigned_to_email || '').trim().toLowerCase()]);
+    const createdWithAvatar = {
+      ...created,
+      assigned_to_avatar_url: created.assigned_to_email
+        ? (assigneeMap.get(String(created.assigned_to_email).trim().toLowerCase()) ?? null)
+        : null,
+    };
+
     return NextResponse.json({
       ok: true,
-      ticket: created,
+      ticket: createdWithAvatar,
       createdBy: auth.user.email,
     });
   } catch (error: any) {

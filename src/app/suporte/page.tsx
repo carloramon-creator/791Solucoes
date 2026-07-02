@@ -18,6 +18,7 @@ type PermissionProfile = {
   id: string;
   name: string;
   active: boolean;
+  userEmails?: string[];
 };
 
 type Ticket = {
@@ -56,11 +57,13 @@ type TicketMessage = {
   message: string;
   is_internal: boolean;
   created_at: string;
+  author_avatar_url?: string | null;
 };
 
 type TeamMember = {
   name: string | null;
   email: string;
+  avatarUrl?: string | null;
 };
 
 type QueueCounts = {
@@ -140,9 +143,23 @@ export default function SuportePage() {
   const [newSubject, setNewSubject] = useState({
     name: '',
     description: '',
-    assigneeEmails: '',
+    assigneeEmails: [] as string[],
     profileIds: [] as string[],
   });
+
+  const availableSubjectUsers = useMemo(() => {
+    if (newSubject.profileIds.length === 0) return team;
+
+    const allowedEmails = new Set(
+      permissionProfiles
+        .filter((profile) => newSubject.profileIds.includes(profile.id))
+        .flatMap((profile) => profile.userEmails || [])
+        .map((email) => String(email || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    return team.filter((member) => allowedEmails.has(String(member.email || '').trim().toLowerCase()));
+  }, [newSubject.profileIds, permissionProfiles, team]);
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId) || null,
@@ -301,10 +318,11 @@ export default function SuportePage() {
     setFeedback(null);
 
     try {
-      const assigneeEmails = newSubject.assigneeEmails
-        .split(',')
-        .map((email) => email.trim().toLowerCase())
-        .filter(Boolean);
+      const assigneeEmails = Array.from(new Set(
+        (newSubject.assigneeEmails || [])
+          .map((email) => String(email || '').trim().toLowerCase())
+          .filter(Boolean)
+      ));
 
       await api('/api/support/subjects', {
         method: 'POST',
@@ -317,7 +335,7 @@ export default function SuportePage() {
       });
 
       setFeedback('Assunto criado com sucesso.');
-      setNewSubject({ name: '', description: '', assigneeEmails: '', profileIds: [] });
+      setNewSubject({ name: '', description: '', assigneeEmails: [], profileIds: [] });
       await loadSupportData(queue, true);
     } catch (err: any) {
       setError(err?.message || 'Falha ao criar assunto.');
@@ -579,25 +597,53 @@ export default function SuportePage() {
               placeholder="Descricao"
               className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             />
-            <input
-              value={newSubject.assigneeEmails}
-              onChange={(e) => setNewSubject((prev) => ({ ...prev, assigneeEmails: e.target.value }))}
-              placeholder="emails (separados por virgula)"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2"
-            />
             <select
               multiple
               value={newSubject.profileIds}
               onChange={(e) => {
                 const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
-                setNewSubject((prev) => ({ ...prev, profileIds: selected }));
+                setNewSubject((prev) => {
+                  const allowedBySelectedProfiles = new Set(
+                    permissionProfiles
+                      .filter((profile) => selected.includes(profile.id))
+                      .flatMap((profile) => profile.userEmails || [])
+                      .map((email) => String(email || '').trim().toLowerCase())
+                      .filter(Boolean)
+                  );
+
+                  const nextAssignees = prev.assigneeEmails.filter((email) =>
+                    selected.length === 0 || allowedBySelectedProfiles.has(String(email || '').trim().toLowerCase())
+                  );
+                  return { ...prev, profileIds: selected, assigneeEmails: nextAssignees };
+                });
               }}
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-4 min-h-[120px]"
+              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2 min-h-[110px]"
             >
               {permissionProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>{profile.name}</option>
               ))}
             </select>
+            <select
+              multiple
+              value={newSubject.assigneeEmails}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
+                setNewSubject((prev) => ({ ...prev, assigneeEmails: selected }));
+              }}
+              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm lg:col-span-2 min-h-[110px]"
+            >
+              {availableSubjectUsers.map((member) => (
+                <option key={member.email} value={member.email}>
+                  {member.name ? `${member.name} (${member.email})` : member.email}
+                </option>
+              ))}
+            </select>
+            <div className="lg:col-span-2 text-[11px] text-slate-500">
+              Perfil/Cargo: selecione um ou mais perfis para controlar o acesso ao assunto.
+            </div>
+            <div className="lg:col-span-2 text-[11px] text-slate-500">
+              Usuarios: selecao multipla de responsaveis; pode ter varios usuarios no mesmo perfil.
+            </div>
             <div className="lg:col-span-4 flex justify-end">
               <button
                 type="submit"
@@ -738,7 +784,9 @@ export default function SuportePage() {
                     >
                       <option value="">Sem responsavel</option>
                       {team.map((member) => (
-                        <option key={member.email} value={member.email}>{member.email}</option>
+                        <option key={member.email} value={member.email}>
+                          {member.name ? `${member.name} (${member.email})` : member.email}
+                        </option>
                       ))}
                     </select>
                   )}
@@ -774,8 +822,17 @@ export default function SuportePage() {
                           ? 'mr-auto bg-white border border-slate-200 text-slate-700'
                           : 'mx-auto bg-amber-50 border border-amber-200 text-amber-800'
                     }`}>
-                      <div className="text-[10px] uppercase tracking-wider opacity-80 mb-1">
-                        {msg.origin} • {msg.author_name || msg.author_email || 'sistema'}
+                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider opacity-80 mb-1">
+                        {msg.author_avatar_url ? (
+                          <img src={msg.author_avatar_url} alt="avatar" className="w-5 h-5 rounded-full object-cover" />
+                        ) : (
+                          <span className="w-5 h-5 rounded-full bg-slate-300/60 inline-flex items-center justify-center text-[9px] font-bold text-slate-700">
+                            {String(msg.author_name || msg.author_email || 'S').slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span>
+                          {msg.origin} • {msg.author_name || msg.author_email || 'sistema'}
+                        </span>
                       </div>
                       <div className="whitespace-pre-wrap">{msg.message}</div>
                       <div className="text-[10px] opacity-70 mt-1">{formatDate(msg.created_at)}</div>

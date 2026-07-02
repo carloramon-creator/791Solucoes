@@ -3,6 +3,28 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { isOpenStatus, parseTicketStatus } from '@/lib/support-queue';
 
+const AVATAR_BUCKET = 'equipe-avatars';
+
+async function getAvatarByEmail(email: string | null | undefined): Promise<string | null> {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+
+  const { data: member } = await supabaseServer
+    .from('equipe_791')
+    .select('foto_path')
+    .eq('email', normalized)
+    .maybeSingle();
+
+  const fotoPath = member?.foto_path ? String(member.foto_path).trim() : '';
+  if (!fotoPath) return null;
+
+  const { data: signedAvatar } = await supabaseServer.storage
+    .from(AVATAR_BUCKET)
+    .createSignedUrl(fotoPath, 60 * 60);
+
+  return signedAvatar?.signedUrl || null;
+}
+
 export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem visualizar ticket de suporte.');
   if (!auth.ok) {
@@ -26,7 +48,13 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     return NextResponse.json({ error: error?.message || 'Ticket nao encontrado.' }, { status: 404 });
   }
 
-  return NextResponse.json({ ticket: data });
+  const assignedToAvatarUrl = await getAvatarByEmail(data.assigned_to_email || null);
+  return NextResponse.json({
+    ticket: {
+      ...data,
+      assigned_to_avatar_url: assignedToAvatarUrl,
+    },
+  });
 }
 
 export async function PATCH(req: Request, context: { params: Promise<{ id: string }> }) {
@@ -125,9 +153,14 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
       return NextResponse.json({ error: updateError?.message || 'Falha ao atualizar ticket.' }, { status: 500 });
     }
 
+    const assignedToAvatarUrl = await getAvatarByEmail(updated.assigned_to_email || null);
+
     return NextResponse.json({
       ok: true,
-      ticket: updated,
+      ticket: {
+        ...updated,
+        assigned_to_avatar_url: assignedToAvatarUrl,
+      },
       updatedBy: auth.user.email,
     });
   } catch (error: any) {

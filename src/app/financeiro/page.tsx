@@ -50,6 +50,27 @@ interface BankAccount {
   id: string;
   name: string;
   bank_name: string;
+  type?: string;
+  balance?: number;
+  account_number?: string;
+  cards?: BankCard[];
+}
+
+interface BankCard {
+  id: string;
+  account_id: string;
+  name: string;
+  last_digits: string;
+  card_type: string;
+  credit_limit: number;
+}
+
+interface FinanceSource {
+  id: string;
+  label: string;
+  kind: 'account' | 'card';
+  amount: number;
+  details?: string;
 }
 
 interface Category {
@@ -75,15 +96,20 @@ export default function FinanceiroPage() {
   const [selectedParentCategory, setSelectedParentCategory] = useState('');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingRecord, setEditingRecord] = useState<FinanceRecord | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'revenue' | 'expense' | 'payable'>('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeSection, setActiveSection] = useState<'lancamentos' | 'abertos'>('lancamentos');
+  const [activeSection, setActiveSection] = useState<'lancamentos' | 'abertos' | 'fluxo'>('lancamentos');
   const [openViewKind, setOpenViewKind] = useState<OpenViewKind>('payable');
   const [openPeriod, setOpenPeriod] = useState<PeriodFilter>('dia');
   const [openDateStart, setOpenDateStart] = useState(new Date().toISOString().split('T')[0]);
   const [openDateEnd, setOpenDateEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [flowPeriod, setFlowPeriod] = useState<PeriodFilter>('dia');
+  const [flowDateStart, setFlowDateStart] = useState(new Date().toISOString().split('T')[0]);
+  const [flowDateEnd, setFlowDateEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [flowSourceId, setFlowSourceId] = useState<'all' | string>('all');
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleRecord, setSettleRecord] = useState<FinanceRecord | null>(null);
   const [settleForm, setSettleForm] = useState({
@@ -171,6 +197,12 @@ export default function FinanceiroPage() {
   }, [openPeriod]);
 
   useEffect(() => {
+    const range = getDateRangeByPeriod(flowPeriod);
+    setFlowDateStart(range.start);
+    setFlowDateEnd(range.end);
+  }, [flowPeriod]);
+
+  useEffect(() => {
     const section = searchParams.get('section');
     const kind = searchParams.get('kind');
     const period = searchParams.get('period');
@@ -256,6 +288,38 @@ export default function FinanceiroPage() {
     return map;
   }, [categories]);
 
+  const sourceOptions = useMemo<FinanceSource[]>(() => {
+    const accountSources = bankAccounts.map((account) => ({
+      id: account.id,
+      label: `${account.bank_name || 'Conta'} - ${account.name}`,
+      kind: 'account' as const,
+      amount: Number(account.balance || 0),
+      details: [account.type, account.account_number].filter(Boolean).join(' · '),
+    }));
+
+    const cardSources = bankAccounts.flatMap((account) => (account.cards || []).map((card) => ({
+      id: card.id,
+      label: `${account.bank_name || 'Cartão'} - ${card.name}`,
+      kind: 'card' as const,
+      amount: Number(card.credit_limit || 0),
+      details: [card.card_type ? String(card.card_type).toUpperCase() : null, card.last_digits ? `•••• ${card.last_digits}` : null]
+        .filter(Boolean)
+        .join(' · '),
+    })));
+
+    return [
+      { id: 'all', label: 'Todas as contas', kind: 'account' as const, amount: accountSources.reduce((sum, item) => sum + item.amount, 0) + cardSources.reduce((sum, item) => sum + item.amount, 0), details: 'Consolidado' },
+      ...accountSources,
+      ...cardSources,
+    ];
+  }, [bankAccounts]);
+
+  const sourceById = useMemo(() => {
+    const map = new Map<string, FinanceSource>();
+    sourceOptions.forEach((source) => map.set(source.id, source));
+    return map;
+  }, [sourceOptions]);
+
   const getClassAndSubclass = (record: FinanceRecord) => {
     const metadataClass = record.metadata?.classe || record.metadata?.class || null;
     const metadataSubclass = record.metadata?.subclasse || record.metadata?.subclass || null;
@@ -291,6 +355,31 @@ export default function FinanceiroPage() {
 
   const getDueDate = (record: FinanceRecord) => {
     return record.metadata?.due_date || record.metadata?.vencimento || record.created_at;
+  };
+
+  const getSourceLabel = (sourceId?: string) => {
+    if (!sourceId) return '—';
+    const source = sourceById.get(sourceId);
+    return source ? source.label : sourceId;
+  };
+
+  const openEditModal = (record: FinanceRecord) => {
+    setEditingRecord(record);
+    setNewRecord({
+      type: record.type,
+      description: record.description || '',
+      value: String(record.value ?? ''),
+      category: record.category || 'Geral',
+      payment_method: record.payment_method || 'Pix',
+      bank_account_id: record.bank_account_id || '',
+      status: record.status,
+      date: (record.created_at || new Date().toISOString()).slice(0, 10),
+      is_recurring: Boolean(record.is_recurring),
+      recurring_period: (record.recurring_period as any) || 'monthly',
+      generateAsaas: false,
+      customerCpfCnpj: '',
+    });
+    setIsModalOpen(true);
   };
 
   const openSettleModal = (record: FinanceRecord) => {
@@ -383,21 +472,23 @@ export default function FinanceiroPage() {
     
     setSaving(true);
     try {
+      const payload = {
+        type: newRecord.type,
+        description: newRecord.description,
+        value: parseFloat(newRecord.value),
+        category: newRecord.category,
+        payment_method: newRecord.payment_method,
+        status: newRecord.status,
+        bank_account_id: newRecord.bank_account_id || null,
+        created_at: new Date(newRecord.date).toISOString(),
+        is_recurring: newRecord.is_recurring,
+        recurring_period: newRecord.is_recurring ? newRecord.recurring_period : null,
+      };
+
       const createRes = await fetch('/api/system/finance-records', {
-        method: 'POST',
+        method: editingRecord ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: newRecord.type,
-          description: newRecord.description,
-          value: parseFloat(newRecord.value),
-          category: newRecord.category,
-          payment_method: newRecord.payment_method,
-          status: newRecord.status,
-          bank_account_id: newRecord.bank_account_id || null,
-          created_at: new Date(newRecord.date).toISOString(),
-          is_recurring: newRecord.is_recurring,
-          recurring_period: newRecord.is_recurring ? newRecord.recurring_period : null
-        })
+        body: JSON.stringify(editingRecord ? { id: editingRecord.id, ...payload } : payload)
       });
 
       const createJson = await createRes.json();
@@ -405,7 +496,7 @@ export default function FinanceiroPage() {
       const data = createJson.record ? [createJson.record] : [];
 
       // Se for receita e pediu Asaas, gera a cobrança
-      if (newRecord.type === 'revenue' && newRecord.generateAsaas && data?.[0]) {
+      if (!editingRecord && newRecord.type === 'revenue' && newRecord.generateAsaas && data?.[0]) {
         const record = data[0];
         try {
           // Busca as chaves do Asaas na API de configuração
@@ -457,6 +548,7 @@ export default function FinanceiroPage() {
       }
       
       setIsModalOpen(false);
+      setEditingRecord(null);
       setNewRecord({
         type: 'expense',
         description: '',
@@ -539,6 +631,39 @@ export default function FinanceiroPage() {
     })
     .sort((a, b) => new Date(getDueDate(a)).getTime() - new Date(getDueDate(b)).getTime());
 
+  const flowRecords = records
+    .filter((record) => record.status === 'paid')
+    .filter((record) => {
+      const recordDate = new Date(record.created_at);
+      const start = new Date(`${flowDateStart}T00:00:00`);
+      const end = new Date(`${flowDateEnd}T23:59:59.999`);
+      if (!Number.isFinite(recordDate.getTime())) return false;
+      if (recordDate < start || recordDate > end) return false;
+      if (flowSourceId === 'all') return true;
+      return record.bank_account_id === flowSourceId;
+    })
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+  const flowCurrentBalance = useMemo(() => {
+    if (flowSourceId === 'all') {
+      return sourceOptions.reduce((sum, source) => (source.id === 'all' ? sum : sum + source.amount), 0);
+    }
+
+    return sourceById.get(flowSourceId)?.amount || 0;
+  }, [flowSourceId, sourceById, sourceOptions]);
+
+  const flowNet = flowRecords.reduce((sum, record) => sum + (record.type === 'revenue' ? Number(record.value || 0) : -Number(record.value || 0)), 0);
+  const flowOpeningBalance = Number((flowCurrentBalance - flowNet).toFixed(2));
+  const flowClosingBalance = Number((flowOpeningBalance + flowNet).toFixed(2));
+
+  const flowRows = (() => {
+    let running = flowOpeningBalance;
+    return flowRecords.map((record) => {
+      running += record.type === 'revenue' ? Number(record.value || 0) : -Number(record.value || 0);
+      return { record, running };
+    });
+  })();
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       
@@ -558,7 +683,10 @@ export default function FinanceiroPage() {
             <Download size={14} /> Exportar
           </button>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setEditingRecord(null);
+              setIsModalOpen(true);
+            }}
             className="bg-[#3b597b] text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#2e4763] transition-all uppercase tracking-widest shadow-lg shadow-blue-900/10"
           >
             <Plus size={14} /> Novo Lançamento
@@ -626,6 +754,12 @@ export default function FinanceiroPage() {
             >
               Contas a receber em aberto
             </button>
+            <button
+              onClick={() => setActiveSection('fluxo')}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === 'fluxo' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Fluxo de caixa
+            </button>
           </div>
 
           {activeSection === 'lancamentos' ? (
@@ -660,34 +794,78 @@ export default function FinanceiroPage() {
               </div>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 {periodOptions.map((period) => (
                   <button
                     key={period}
-                    onClick={() => setOpenPeriod(period)}
-                    className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${openPeriod === period ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                    onClick={() => activeSection === 'fluxo' ? setFlowPeriod(period) : setOpenPeriod(period)}
+                    className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${(activeSection === 'fluxo' ? flowPeriod : openPeriod) === period ? 'bg-[#3b597b] text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                   >
                     {getPeriodLabel(period)}
                   </button>
                 ))}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Início</label>
-                <input
-                  type="date"
-                  value={openDateStart}
-                  onChange={(event) => setOpenDateStart(event.target.value)}
-                  className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
-                />
-                <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest ml-2">Fim</label>
-                <input
-                  type="date"
-                  value={openDateEnd}
-                  onChange={(event) => setOpenDateEnd(event.target.value)}
-                  className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
-                />
-              </div>
+              {activeSection === 'fluxo' ? (
+                <>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Conta / Cartão</p>
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {sourceOptions.map((source) => (
+                        <label key={source.id} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm ${flowSourceId === source.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="radio"
+                              name="flow-source"
+                              checked={flowSourceId === source.id}
+                              onChange={() => setFlowSourceId(source.id)}
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-bold text-slate-800 uppercase">{source.label}</p>
+                              <p className="text-[10px] text-slate-500">{source.details || (source.kind === 'card' ? 'Cartão' : 'Conta')}</p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {source.id === 'all' ? 'Todas' : source.kind}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">Saldo inicial</p>
+                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowOpeningBalance)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] uppercase font-black tracking-widest text-slate-500">Lançamentos</p>
+                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowNet)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
+                      <p className="text-[10px] uppercase font-black tracking-widest text-blue-600">Saldo final</p>
+                      <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(flowClosingBalance)}</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Início</label>
+                  <input
+                    type="date"
+                    value={openDateStart}
+                    onChange={(event) => setOpenDateStart(event.target.value)}
+                    className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
+                  />
+                  <label className="text-[10px] text-slate-500 uppercase font-bold tracking-widest ml-2">Fim</label>
+                  <input
+                    type="date"
+                    value={openDateEnd}
+                    onChange={(event) => setOpenDateEnd(event.target.value)}
+                    className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs"
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -699,65 +877,76 @@ export default function FinanceiroPage() {
                 <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
                   <th className="px-8 py-3">Data / Status</th>
                   <th className="px-8 py-3">Descrição / Categoria</th>
+                  <th className="px-8 py-3">Conta</th>
                   <th className="px-8 py-3 text-center">Método</th>
                   <th className="px-8 py-3 text-right pr-12">Valor</th>
                   <th className="px-6 py-3 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center text-slate-400">
-                      <Loader2 className="animate-spin mx-auto mb-3" size={28} />
-                      <span className="uppercase tracking-[0.2em] text-[10px] font-bold">Sincronizando fluxo de caixa...</span>
-                    </td>
-                  </tr>
-                ) : filteredRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-8 py-20 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
-                      Nenhum lançamento encontrado.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRecords.map((record) => (
-                    <tr key={record.id} className="hover:bg-slate-50/80 transition-all group">
-                      <td className="px-8 py-2.5">
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-bold text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</span>
-                          <span className={`text-[9px] uppercase font-black tracking-tighter flex items-center gap-1 mt-0.5 ${record.status === 'paid' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                            <div className={`w-1.5 h-1.5 rounded-full ${record.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-                            {record.status === 'paid' ? 'Efetivado' : 'Pendente'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-8 py-2.5">
-                        <div className="flex flex-col">
-                          <span className="text-[12px] text-slate-800 font-bold uppercase tracking-tight">{getDisplayDescription(record)}</span>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md font-black uppercase tracking-widest">
-                              {record.category}
-                            </span>
-                            {record.bank_account_id && (
-                              <span className="text-[9px] text-slate-400 flex items-center gap-1 uppercase font-bold">
-                                <Building size={10} /> {bankAccounts.find(a => a.id === record.bank_account_id)?.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-8 py-2.5 text-center">
-                        <div className="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-100 px-3 py-1 rounded-full">
-                          <CreditCard size={10} className="text-slate-400" />
-                          <span className="text-[10px] text-slate-600 font-bold uppercase tracking-tighter">
-                            {record.payment_method}
-                          </span>
-                        </div>
-                      </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : activeSection === 'fluxo' ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                      <th className="px-8 py-3">Data</th>
+                      <th className="px-8 py-3">Lançamento</th>
+                      <th className="px-8 py-3">Conta</th>
+                      <th className="px-8 py-3 text-right">Valor</th>
+                      <th className="px-8 py-3 text-right">Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    <tr className="bg-slate-50/50">
+                      <td className="px-8 py-3 text-[11px] text-slate-500">Saldo inicial</td>
+                      <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Saldo anterior ao período</td>
+                      <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                      <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(0)}</td>
+                      <td className="px-8 py-3 text-right text-[12px] font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
+                    </tr>
+                    {flowRows.length ? flowRows.map(({ record, running }) => (
+                      <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-8 py-2.5 text-[11px] text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</td>
+                        <td className="px-8 py-2.5 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                        <td className="px-8 py-2.5 text-[11px] text-slate-600 uppercase tracking-widest font-bold">{getSourceLabel(record.bank_account_id)}</td>
+                        <td className={`px-8 py-2.5 text-right text-[12px] font-black ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                        </td>
+                        <td className="px-8 py-2.5 text-right text-[12px] font-black text-slate-700">{formatCurrency(running)}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={5} className="px-8 py-14 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                          Nenhum lançamento efetivado no período.
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="bg-slate-50/50">
+                      <td className="px-8 py-3 text-[11px] text-slate-500">Saldo final</td>
+                      <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Consolidado do período</td>
+                      <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                      <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(flowNet)}</td>
+                      <td className="px-8 py-3 text-right text-[12px] font-black text-blue-700">{formatCurrency(flowClosingBalance)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
                       <td className={`px-8 py-2.5 text-right font-black text-sm ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
                         {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
                       </td>
                       <td className="px-6 py-2 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditModal(record)}
+                            className="text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider"
+                            title="Editar lançamento"
+                          >
+                            Editar
+                          </button>
                           {record.status !== 'paid' && (
                             <button
                               onClick={() => openSettleModal(record)}
@@ -793,7 +982,7 @@ export default function FinanceiroPage() {
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : activeSection === 'abertos' ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -841,40 +1030,88 @@ export default function FinanceiroPage() {
                             Baixar
                           </button>
                         </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-xl ${newRecord.type === 'revenue' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                  <Receipt size={18} />
-                </div>
-                <h2 className="text-base font-bold text-slate-800 uppercase tracking-tight">Novo Lançamento Financeiro</h2>
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-full transition-all">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-5 flex-1 overflow-visible">
-              {/* Seletor de Tipo */}
-              <div className="flex p-1 bg-slate-100 rounded-xl gap-1 w-full max-w-xs mx-auto shrink-0">
-                <button 
-                  onClick={() => setNewRecord({...newRecord, type: 'revenue'})}
-                  className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${newRecord.type === 'revenue' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}
-                >Receita</button>
-                <button 
-                  onClick={() => setNewRecord({...newRecord, type: 'expense'})}
+                  ) : activeSection === 'fluxo' ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                            <th className="px-8 py-3">Data</th>
+                            <th className="px-8 py-3">Lançamento</th>
+                            <th className="px-8 py-3">Conta</th>
+                            <th className="px-8 py-3 text-right">Valor</th>
+                            <th className="px-8 py-3 text-right">Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          <tr className="bg-slate-50/50">
+                            <td className="px-8 py-3 text-[11px] text-slate-500">Saldo inicial</td>
+                            <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Saldo anterior ao período</td>
+                            <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                            <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(0)}</td>
+                            <td className="px-8 py-3 text-right text-[12px] font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
+                          </tr>
+                          {flowRows.length ? flowRows.map(({ record, running }) => (
+                            <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-8 py-2.5 text-[11px] text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</td>
+                              <td className="px-8 py-2.5 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                              <td className="px-8 py-2.5 text-[11px] text-slate-600 uppercase tracking-widest font-bold">{getSourceLabel(record.bank_account_id)}</td>
+                              <td className={`px-8 py-2.5 text-right text-[12px] font-black ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                              </td>
+                              <td className="px-8 py-2.5 text-right text-[12px] font-black text-slate-700">{formatCurrency(running)}</td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={5} className="px-8 py-14 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                            <th className="px-8 py-3">Data</th>
+                            <th className="px-8 py-3">Lançamento</th>
+                            <th className="px-8 py-3">Conta</th>
+                            <th className="px-8 py-3 text-right">Valor</th>
+                            <th className="px-8 py-3 text-right">Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          <tr className="bg-slate-50/50">
+                            <td className="px-8 py-3 text-[11px] text-slate-500">Saldo inicial</td>
+                            <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Saldo anterior ao período</td>
+                            <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                            <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(0)}</td>
+                            <td className="px-8 py-3 text-right text-[12px] font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
+                          </tr>
+                          {flowRows.length ? flowRows.map(({ record, running }) => (
+                            <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-8 py-2.5 text-[11px] text-slate-700">{new Date(record.created_at).toLocaleDateString('pt-BR')}</td>
+                              <td className="px-8 py-2.5 text-[12px] font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                              <td className="px-8 py-2.5 text-[11px] text-slate-600 uppercase tracking-widest font-bold">{getSourceLabel(record.bank_account_id)}</td>
+                              <td className={`px-8 py-2.5 text-right text-[12px] font-black ${record.type === 'revenue' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {record.type === 'revenue' ? '+' : '-'} {formatCurrency(record.value)}
+                              </td>
+                              <td className="px-8 py-2.5 text-right text-[12px] font-black text-slate-700">{formatCurrency(running)}</td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={5} className="px-8 py-14 text-center text-slate-400 uppercase tracking-widest text-[10px] font-bold">
+                                Nenhum lançamento efetivado no período.
+                              </td>
+                            </tr>
+                          )}
+                          <tr className="bg-slate-50/50">
+                            <td className="px-8 py-3 text-[11px] text-slate-500">Saldo final</td>
+                            <td className="px-8 py-3 text-[11px] font-bold text-slate-700">Consolidado do período</td>
+                            <td className="px-8 py-3 text-[11px] text-slate-500">{flowSourceId === 'all' ? 'Todas as contas' : getSourceLabel(flowSourceId)}</td>
+                            <td className="px-8 py-3 text-right text-[11px] font-bold text-slate-600">{formatCurrency(flowNet)}</td>
+                            <td className="px-8 py-3 text-right text-[12px] font-black text-blue-700">{formatCurrency(flowClosingBalance)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${newRecord.type === 'expense' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}
                 >Despesa</button>
               </div>
@@ -1027,7 +1264,10 @@ export default function FinanceiroPage() {
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex gap-4 shrink-0">
               <button 
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingRecord(null);
+                }}
                 className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
               >Cancelar</button>
               <button 

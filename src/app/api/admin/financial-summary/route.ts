@@ -89,16 +89,37 @@ export async function GET(req: Request) {
       }
 
       if (bankAccounts && bankAccounts.length > 0) {
-        data = bankAccounts.map((account: any) => ({
-          id: account.id,
-          descricao: [account.bank_name, account.name].filter(Boolean).join(' - ') || 'Conta bancária',
-          detalhes: [account.agency ? `Ag. ${account.agency}` : null, account.account_number ? `Conta ${account.account_number}` : null]
-            .filter(Boolean)
-            .join(' | '),
-          valor: toNumber(account.balance, 0),
-          data_vencimento: account.updated_at,
-          atualizado_em: account.updated_at,
-        }));
+        const entries: any[] = [];
+
+        bankAccounts.forEach((account: any) => {
+          entries.push({
+            id: account.id,
+            tipo: 'conta',
+            descricao: [account.bank_name, account.name].filter(Boolean).join(' - ') || 'Conta bancária',
+            detalhes: [account.agency ? `Ag. ${account.agency}` : null, account.account_number ? `Conta ${account.account_number}` : null]
+              .filter(Boolean)
+              .join(' | '),
+            valor: toNumber(account.balance, 0),
+            data_vencimento: account.updated_at,
+            atualizado_em: account.updated_at,
+          });
+
+          (account.cards || []).forEach((card: any) => {
+            entries.push({
+              id: card.id,
+              tipo: 'cartao',
+              descricao: [account.bank_name, card.name].filter(Boolean).join(' - ') || 'Cartão',
+              detalhes: [card.card_type ? `Tipo ${String(card.card_type).toUpperCase()}` : null, card.last_digits ? `•••• ${card.last_digits}` : null]
+                .filter(Boolean)
+                .join(' | '),
+              valor: toNumber(card.credit_limit, 0),
+              data_vencimento: account.updated_at,
+              atualizado_em: account.updated_at,
+            });
+          });
+        });
+
+        data = entries;
       }
 
     } else if (section === 'contas-receber') {

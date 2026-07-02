@@ -5,6 +5,48 @@ import { useRouter } from 'next/navigation';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { Loader2, Lock, Mail, Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
+const landingRoutes = [
+  { resourceCode: 'menu.dashboard', path: '/' },
+  { resourceCode: 'menu.financeiro', path: '/financeiro' },
+  { resourceCode: 'menu.notas_fiscais', path: '/notas-fiscais' },
+  { resourceCode: 'menu.suporte', path: '/suporte' },
+  { resourceCode: 'menu.assinaturas', path: '/assinaturas' },
+  { resourceCode: 'menu.patrocinadores', path: '/patrocinadores' },
+  { resourceCode: 'menu.planos', path: '/planos' },
+  { resourceCode: 'menu.cupons', path: '/cupons' },
+  { resourceCode: 'menu.configuracoes', path: '/configuracoes' },
+];
+
+async function resolveLandingPath(accessToken?: string | null) {
+  if (!accessToken) {
+    return '/';
+  }
+
+  try {
+    const response = await fetch('/api/admin/permissions/me', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return '/acesso-negado';
+    }
+
+    if (payload.unrestrictedFallback) {
+      return '/';
+    }
+
+    const permissionCodes = new Set(Array.isArray(payload.permissionCodes) ? payload.permissionCodes : []);
+    const firstAllowed = landingRoutes.find((route) => permissionCodes.has(route.resourceCode));
+    return firstAllowed?.path || '/acesso-negado';
+  } catch {
+    return '/acesso-negado';
+  }
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +76,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -50,13 +92,14 @@ export default function LoginPage() {
       if (userData?.user?.user_metadata?.role === 'sponsor') {
         const { data: sp } = await supabase.from('patrocinadores').select('id').eq('email', email).single();
         if (sp) {
-          router.push(`/portal/${sp.id}`);
+          router.replace(`/portal/${sp.id}`);
           router.refresh();
           return;
         }
       }
 
-      router.push('/');
+      const landingPath = await resolveLandingPath(authData.session?.access_token);
+      router.replace(landingPath);
       router.refresh();
     } catch (err) {
       setError('Ocorreu um erro inesperado.');

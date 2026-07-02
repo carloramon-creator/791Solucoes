@@ -381,7 +381,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-4 animate-in fade-in duration-500 px-1 xl:px-2">
+    <div className="mx-auto max-w-[1600px] space-y-3 animate-in fade-in duration-500 px-1 xl:px-2">
       {/* Header com foto do usuário */}
       <div className="mb-4">
         <div className="flex items-center justify-between">
@@ -432,37 +432,33 @@ export default function Dashboard() {
               {getPeriodLabel(period)}
             </button>
           ))}
-          <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#6899c4] text-white tracking-wider ml-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Calendar size={14} className="text-slate-400" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Intervalo aplicado</span>
+            </div>
+            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600">
+              <span>Inicial</span>
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(event) => setDateRange((current) => ({ ...current, start: event.target.value }))}
+                className="bg-transparent text-slate-700 outline-none"
+              />
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600">
+              <span>Fim</span>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(event) => setDateRange((current) => ({ ...current, end: event.target.value }))}
+                className="bg-transparent text-slate-700 outline-none"
+              />
+            </label>
+          </div>
+          <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#6899c4] text-white tracking-wider">
             {totals?.tenants || 0} LOJAS | DADOS AO VIVO | {formatDate(data?.generatedAt)}
           </span>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Calendar size={14} className="text-slate-400" />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Intervalo aplicado</span>
-          </div>
-          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
-            <span>Data inicial</span>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(event) => setDateRange((current) => ({ ...current, start: event.target.value }))}
-              className="bg-transparent text-slate-700 outline-none"
-            />
-          </label>
-          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
-            <span>Data fim</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(event) => setDateRange((current) => ({ ...current, end: event.target.value }))}
-              className="bg-transparent text-slate-700 outline-none"
-            />
-          </label>
-          <p className="text-[11px] text-slate-500">
-            O período do painel considera tudo entre as duas datas, de trás para frente até hoje, a menos que você altere o fim.
-          </p>
         </div>
       </div>
 
@@ -471,89 +467,89 @@ export default function Dashboard() {
       ) : null}
 
       {/* Faturamento (MRR) - 2 cards: período e acumulado */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between min-h-[110px]">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col justify-between min-h-[92px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
             <span>Faturamento - Período ({getPeriodLabel(selectedPeriod)})</span>
           </div>
           <div className="mt-3 flex items-baseline gap-1.5">
-            <h3 className="text-3xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoMesAtual || 0)}</h3>
+            <h3 className="text-2xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoMesAtual || 0)}</h3>
             <p className="text-xs font-medium text-slate-500">neste período</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between min-h-[110px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col justify-between min-h-[92px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
             <span>Faturamento - Acumulado Total</span>
           </div>
           <div className="mt-3 flex items-baseline gap-1.5">
-            <h3 className="text-3xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoAcumulado || 0)}</h3>
+            <h3 className="text-2xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoAcumulado || 0)}</h3>
             <p className="text-xs font-medium text-slate-500">desde o início</p>
           </div>
         </div>
       </div>
 
       {/* Linha 1: Stats principais */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-4">
-        <div className="relative overflow-hidden rounded-xl bg-[#2e5e89] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="relative overflow-hidden rounded-xl bg-[#2e5e89] p-4 text-white shadow-sm flex flex-col justify-center min-h-[88px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-3xl font-bold tracking-tight">{totals?.tenants || 0}</div>
-            <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Lojas ativas</div>
+            <div className="text-2xl font-bold tracking-tight">{totals?.tenants || 0}</div>
+            <div className="text-[11px] text-white/80 font-medium mt-1 uppercase tracking-wider">Lojas ativas</div>
           </div>
           <Building2 size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#528ebf] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#528ebf] p-4 text-white shadow-sm flex flex-col justify-center min-h-[88px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-3xl font-bold tracking-tight">{totals?.registeredUsers || 0}</div>
-            <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Usuários cadastrados</div>
+            <div className="text-2xl font-bold tracking-tight">{totals?.registeredUsers || 0}</div>
+            <div className="text-[11px] text-white/80 font-medium mt-1 uppercase tracking-wider">Usuários cadastrados</div>
           </div>
           <Users size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#68a0c9] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#68a0c9] p-4 text-white shadow-sm flex flex-col justify-center min-h-[88px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-3xl font-bold tracking-tight">{totals?.messagesSent || 0}</div>
-            <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Mensagens WhatsApp</div>
+            <div className="text-2xl font-bold tracking-tight">{totals?.messagesSent || 0}</div>
+            <div className="text-[11px] text-white/80 font-medium mt-1 uppercase tracking-wider">Mensagens WhatsApp</div>
           </div>
           <Zap size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#cc3939] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#cc3939] p-4 text-white shadow-sm flex flex-col justify-center min-h-[88px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-3xl font-bold tracking-tight">{healthCount}</div>
-            <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Necessita revisão</div>
+            <div className="text-2xl font-bold tracking-tight">{healthCount}</div>
+            <div className="text-[11px] text-white/80 font-medium mt-1 uppercase tracking-wider">Necessita revisão</div>
           </div>
           <AlertTriangle size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
       </div>
 
       {/* Linha 2: Resumo operacional, período e financeiro */}
-      <div className="grid grid-cols-1 gap-4 mt-4 min-[1440px]:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 mt-3 min-[1440px]:grid-cols-3">
         {/* Resumo Operacional */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col min-h-[188px]">
           <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <ShieldCheck size={18} />
             <h2>Resumo operacional</h2>
           </div>
-          <div className="grid grid-cols-2 gap-2.5 text-sm mb-3">
-            <div className="rounded-lg bg-slate-50 p-3">
+          <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários ativos</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{totals?.activeUsers || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{totals?.activeUsers || 0}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários WhatsApp</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{totals?.whatsappUsers || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{totals?.whatsappUsers || 0}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Setores</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{totals?.sectors || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{totals?.sectors || 0}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Mensagens WhatsApp</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{totals?.messagesSent || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{totals?.messagesSent || 0}</p>
             </div>
           </div>
           <div className="flex-1 flex items-end">
@@ -561,23 +557,23 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col min-h-[188px]">
           <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <Calendar size={18} />
             <h2>Resumo do período</h2>
           </div>
-          <div className="grid grid-cols-1 gap-2.5 text-sm mb-3">
-            <div className="rounded-lg bg-slate-50 p-3">
+          <div className="grid grid-cols-1 gap-2 text-sm mb-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Lojas ativas no período</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.lojasAtivas || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{periodSummary?.lojasAtivas || 0}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários cadastrados no período</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.usuariosCadastrados || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{periodSummary?.usuariosCadastrados || 0}</p>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
+            <div className="rounded-lg bg-slate-50 p-2.5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários WhatsApp no período</p>
-              <p className="mt-1 text-base font-bold text-slate-800">{periodSummary?.usuariosWhatsapp || 0}</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">{periodSummary?.usuariosWhatsapp || 0}</p>
             </div>
           </div>
           <div className="flex-1 flex items-end">
@@ -586,41 +582,41 @@ export default function Dashboard() {
         </div>
 
         {/* Resumo Financeiro (Clicável) */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col min-h-[188px]">
           <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <BarChart3 size={18} />
             <h2>Resumo financeiro</h2>
           </div>
-          <div className="space-y-3 flex-1">
+          <div className="space-y-2.5 flex-1">
             <button
               onClick={() => handleCardClick('financeiro', 'saldo-atual')}
-              className="w-full rounded-lg bg-slate-50 p-3 hover:bg-blue-50 transition-colors text-left border border-transparent hover:border-blue-200"
+              className="w-full rounded-lg bg-slate-50 p-2.5 hover:bg-blue-50 transition-colors text-left border border-transparent hover:border-blue-200"
             >
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Saldo atual (todas as contas)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-slate-800">{formatCurrency(financialTotals.saldoAtual)}</p>
+                <p className="text-base font-bold text-slate-800">{formatCurrency(financialTotals.saldoAtual)}</p>
                 <ChevronRight size={16} className="text-slate-400" />
               </div>
             </button>
 
             <button
               onClick={() => handleCardClick('financeiro', 'contas-receber')}
-              className="w-full rounded-lg bg-emerald-50 p-3 hover:bg-emerald-100 transition-colors text-left border border-transparent hover:border-emerald-200"
+              className="w-full rounded-lg bg-emerald-50 p-2.5 hover:bg-emerald-100 transition-colors text-left border border-transparent hover:border-emerald-200"
             >
               <p className="text-[11px] uppercase tracking-wider text-emerald-600">Contas a receber (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-emerald-700">{formatCurrency(financialTotals.contasReceber)}</p>
+                <p className="text-base font-bold text-emerald-700">{formatCurrency(financialTotals.contasReceber)}</p>
                 <ChevronRight size={16} className="text-emerald-400" />
               </div>
             </button>
 
             <button
               onClick={() => handleCardClick('financeiro', 'contas-pagar')}
-              className="w-full rounded-lg bg-red-50 p-3 hover:bg-red-100 transition-colors text-left border border-transparent hover:border-red-200"
+              className="w-full rounded-lg bg-red-50 p-2.5 hover:bg-red-100 transition-colors text-left border border-transparent hover:border-red-200"
             >
               <p className="text-[11px] uppercase tracking-wider text-red-600">Contas a pagar (em aberto)</p>
               <div className="mt-1 flex items-center justify-between">
-                <p className="text-lg font-bold text-red-700">{formatCurrency(financialTotals.contasPagar)}</p>
+                <p className="text-base font-bold text-red-700">{formatCurrency(financialTotals.contasPagar)}</p>
                 <ChevronRight size={16} className="text-red-400" />
               </div>
             </button>

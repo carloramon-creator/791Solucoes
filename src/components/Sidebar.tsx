@@ -50,7 +50,8 @@ export function Sidebar() {
           'ADMIN'
         );
         setDisplayEmail(user.email || '');
-      }
+  const [unrestrictedFallback, setUnrestrictedFallback] = useState(false);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
     });
   }, []);
 
@@ -74,8 +75,9 @@ export function Sidebar() {
             Authorization: `Bearer ${token}`,
           },
           cache: 'no-store',
-        });
+            setUnrestrictedFallback(false);
 
+            setPermissionsLoaded(true);
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
           if (active) {
@@ -90,8 +92,9 @@ export function Sidebar() {
           setPermissionCodes(new Set(codes));
           setUnrestrictedFallback(Boolean(json.unrestrictedFallback));
         }
-      } catch {
+            setUnrestrictedFallback(false);
         if (active) {
+            setPermissionsLoaded(true);
           setUnrestrictedFallback(true);
           setPermissionCodes(new Set());
         }
@@ -100,11 +103,13 @@ export function Sidebar() {
 
     loadPermissions();
 
+          setPermissionsLoaded(true);
     return () => {
       active = false;
     };
-  }, [supabase]);
+          setUnrestrictedFallback(false);
 
+          setPermissionsLoaded(true);
   const canAccess = (resourceCode?: string) => {
     if (!resourceCode) return true;
     if (unrestrictedFallback) return true;
@@ -118,6 +123,7 @@ export function Sidebar() {
       setOpenMenus(prev => ({ ...prev, [name]: !prev[name] }));
     }
   };
+    if (!permissionsLoaded) return false;
 
   const handleLogout = async () => {
     try {

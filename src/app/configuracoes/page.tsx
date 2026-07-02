@@ -33,7 +33,7 @@ export default function ConfiguracoesPage() {
     },
     {
       title: 'Contas Bancárias',
-      href: '/configuracoes/permissoes',
+      href: '/financeiro/contas-correntes',
       resourceCode: 'submenu.configuracoes.contas',
       icon: Wallet,
       color: 'text-emerald-600',

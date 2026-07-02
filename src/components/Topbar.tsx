@@ -1,10 +1,51 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import { Bell, Maximize, Moon, Search, Settings } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
+
+type TopbarUser = {
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+};
 
 export function Topbar() {
   const pathname = usePathname();
+  const supabase = createSupabaseBrowser();
+  const [user, setUser] = useState<TopbarUser | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+
+      const currentUser = data.user;
+      if (!currentUser) {
+        setUser(null);
+        return;
+      }
+
+      setUser({
+        name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Admin',
+        email: currentUser.email || '',
+        avatarUrl: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || null,
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const initials = (user?.name || user?.email || 'AD')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'AD';
   
   if (pathname === '/login') return null;
 
@@ -32,8 +73,12 @@ export function Topbar() {
           <span className="absolute top-2 right-2.5 h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-white" />
         </button>
         
-        <div className="ml-2 h-8 w-8 rounded-full bg-slate-200 overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity">
-          <img src="https://i.pravatar.cc/150?u=admin791" alt="Profile" className="h-full w-full object-cover" />
+        <div className="ml-2 h-8 w-8 overflow-hidden rounded-full border border-slate-200 bg-[#3b597b] text-[10px] font-black text-white cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center">
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt={user.name || 'Perfil'} className="h-full w-full object-cover" />
+          ) : (
+            <span>{initials}</span>
+          )}
         </div>
       </div>
     </header>

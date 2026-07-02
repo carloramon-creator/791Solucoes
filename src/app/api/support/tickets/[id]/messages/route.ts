@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { randomUUID } from 'crypto';
 
 const AVATAR_BUCKET = 'equipe-avatars';
+const ATTACHMENT_BUCKET = 'support-ticket-attachments';
 
 async function withAuthorAvatar(messages: any[]) {
   if (!Array.isArray(messages) || messages.length === 0) return [];
@@ -48,6 +50,36 @@ async function withAuthorAvatar(messages: any[]) {
   });
 }
 
+async function withAttachmentUrl(messages: any[]) {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  const paths = Array.from(new Set(messages
+    .map((msg) => String(msg.attachment_path || '').trim())
+    .filter(Boolean)));
+
+  if (paths.length === 0) {
+    return messages.map((msg) => ({ ...msg, attachment_url: null }));
+  }
+
+  const attachmentByPath = new Map<string, string | null>();
+
+  for (const path of paths) {
+    const { data: signedAttachment } = await supabaseServer.storage
+      .from(ATTACHMENT_BUCKET)
+      .createSignedUrl(path, 60 * 60);
+
+    attachmentByPath.set(path, signedAttachment?.signedUrl || null);
+  }
+
+  return messages.map((msg) => {
+    const path = String(msg.attachment_path || '').trim();
+    return {
+      ...msg,
+      attachment_url: path ? (attachmentByPath.get(path) ?? null) : null,
+    };
+  });
+}
+
 export async function GET(req: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem visualizar mensagens do ticket.');
   if (!auth.ok) {
@@ -63,7 +95,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
 
   const { data, error } = await supabaseServer
     .from('support_ticket_messages')
-    .select('id, ticket_id, origin, author_email, author_name, message, is_internal, created_at')
+    .select('id, ticket_id, origin, author_email, author_name, message, is_internal, attachment_file_name, attachment_path, attachment_content_type, attachment_size_bytes, created_at')
     .eq('ticket_id', ticketId)
     .order('created_at', { ascending: true });
 
@@ -71,7 +103,7 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     return NextResponse.json({ error: error.message || 'Falha ao carregar mensagens.' }, { status: 500 });
   }
 
-  const messages = await withAuthorAvatar(data || []);
+  const messages = await withAttachmentUrl(await withAuthorAvatar(data || []));
 
   return NextResponse.json({
     total: (data || []).length,
@@ -93,13 +125,27 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   }
 
   try {
-    const body = await req.json();
-    const message = String(body?.message || '').trim();
-    const origin = body?.origin === 'tenant' || body?.origin === 'system' ? body.origin : 'holding';
-    const isInternal = Boolean(body?.isInternal);
+    const contentType = req.headers.get('content-type') || '';
+    const isMultipart = contentType.includes('multipart/form-data');
+    const body = isMultipart ? await req.formData() : await req.json();
+    const message = String((isMultipart ? body.get('message') : body?.message) || '').trim();
+    const originValue = isMultipart ? body.get('origin') : body?.origin;
+    const origin = originValue === 'tenant' || originValue === 'system' ? originValue : 'holding';
+    const isInternalValue = isMultipart ? body.get('isInternal') : body?.isInternal;
+    const isInternal = isInternalValue === true || isInternalValue === 'true' || isInternalValue === '1';
+    const attachmentEntry = isMultipart ? body.get('attachment') : null;
+    const attachmentFile = attachmentEntry instanceof File && attachmentEntry.size > 0 ? attachmentEntry : null;
 
-    if (!message) {
-      return NextResponse.json({ error: 'Mensagem obrigatoria.' }, { status: 400 });
+    if (!message && !attachmentFile) {
+      return NextResponse.json({ error: 'Mensagem ou anexo obrigatorio.' }, { status: 400 });
+    }
+
+    if (attachmentFile && !String(attachmentFile.type || '').startsWith('image/')) {
+      return NextResponse.json({ error: 'Apenas imagens sao permitidas nos anexos.' }, { status: 400 });
+    }
+
+    if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'O anexo deve ter no maximo 10MB.' }, { status: 400 });
     }
 
     const { data: currentTicket, error: ticketError } = await supabaseServer
@@ -118,6 +164,29 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
     const authorName = body?.authorName ? String(body.authorName).trim() : null;
 
+    const attachmentData: Record<string, unknown> = {};
+    if (attachmentFile) {
+      const safeName = attachmentFile.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const filePath = `support-ticket-attachments/${ticketId}/${randomUUID()}-${safeName}`;
+      const uploadPayload = Buffer.from(await attachmentFile.arrayBuffer());
+
+      const { error: uploadError } = await supabaseServer.storage
+        .from(ATTACHMENT_BUCKET)
+        .upload(filePath, uploadPayload, {
+          contentType: attachmentFile.type || 'image/png',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        return NextResponse.json({ error: uploadError.message || 'Falha ao enviar anexo.' }, { status: 500 });
+      }
+
+      attachmentData.attachment_file_name = attachmentFile.name;
+      attachmentData.attachment_path = filePath;
+      attachmentData.attachment_content_type = attachmentFile.type || null;
+      attachmentData.attachment_size_bytes = attachmentFile.size;
+    }
+
     const { data: created, error: createError } = await supabaseServer
       .from('support_ticket_messages')
       .insert({
@@ -125,10 +194,11 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
         origin,
         author_email: authorEmail,
         author_name: authorName,
-        message,
+        message: message || 'Arquivo anexado',
         is_internal: isInternal,
+        ...attachmentData,
       })
-      .select('id, ticket_id, origin, author_email, author_name, message, is_internal, created_at')
+      .select('id, ticket_id, origin, author_email, author_name, message, is_internal, attachment_file_name, attachment_path, attachment_content_type, attachment_size_bytes, created_at')
       .single();
 
     if (createError || !created) {
@@ -160,7 +230,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
         .eq('id', ticketId);
     }
 
-    const messagesWithAvatar = await withAuthorAvatar([created]);
+    const messagesWithAvatar = await withAttachmentUrl(await withAuthorAvatar([created]));
 
     return NextResponse.json({
       ok: true,

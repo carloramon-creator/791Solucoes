@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import type { SupportQueue } from '@/lib/support-queue';
-import { BellDot, CircleDot, Clock3, LifeBuoy, Loader2, MessageSquare, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
+import { BellDot, CircleDot, Clock3, Eye, EyeOff, LifeBuoy, Loader2, MessageSquare, Paperclip, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
 
 type Subject = {
   id: string;
@@ -19,6 +19,13 @@ type PermissionProfile = {
   name: string;
   active: boolean;
   userEmails?: string[];
+};
+
+type TenantOption = {
+  id: string;
+  nome: string | null;
+  slug: string;
+  ativa: boolean | null;
 };
 
 type Ticket = {
@@ -58,6 +65,9 @@ type TicketMessage = {
   is_internal: boolean;
   created_at: string;
   author_avatar_url?: string | null;
+  attachment_file_name?: string | null;
+  attachment_content_type?: string | null;
+  attachment_url?: string | null;
 };
 
 type TeamMember = {
@@ -115,6 +125,7 @@ export default function SuportePage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [counts, setCounts] = useState<QueueCounts>({ all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [permissionProfiles, setPermissionProfiles] = useState<PermissionProfile[]>([]);
   const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
@@ -123,6 +134,9 @@ export default function SuportePage() {
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [showInactiveSubjects, setShowInactiveSubjects] = useState(false);
+  const [draftAttachment, setDraftAttachment] = useState<File | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -132,13 +146,12 @@ export default function SuportePage() {
 
   const [newTicket, setNewTicket] = useState({
     tenantSlug: '',
+    tenantId: '',
     tenantName: '',
     title: '',
     description: '',
     subjectId: '',
     priority: 'normal',
-    requesterName: '',
-    requesterEmail: '',
     dueAt: '',
   });
 
@@ -168,6 +181,16 @@ export default function SuportePage() {
       return allowedEmails.has(email) || (cargo ? selectedProfileNames.has(cargo) : false);
     });
   }, [newSubject.profileIds, permissionProfiles, team]);
+
+  const visibleSubjects = useMemo(
+    () => (showInactiveSubjects ? subjects : subjects.filter((subject) => subject.active)),
+    [showInactiveSubjects, subjects]
+  );
+
+  const hiddenSubjectsCount = useMemo(
+    () => subjects.filter((subject) => !subject.active).length,
+    [subjects]
+  );
 
   const selectedTicket = useMemo(
     () => tickets.find((ticket) => ticket.id === selectedTicketId) || null,
@@ -209,10 +232,12 @@ export default function SuportePage() {
       throw new Error('Sessao expirada. Faca login novamente.');
     }
 
+    const isFormData = typeof FormData !== 'undefined' && init?.body instanceof FormData;
+
     const response = await fetch(path, {
       ...init,
       headers: {
-        'Content-Type': 'application/json',
+        ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
         Authorization: `Bearer ${token}`,
         ...(init?.headers || {}),
       },
@@ -234,9 +259,10 @@ export default function SuportePage() {
       const { data: userData } = await supabase.auth.getUser();
       setCurrentUserEmail(userData.user?.email?.toLowerCase() || null);
 
-      const [ticketsRes, subjectsRes, teamRes, permissionsRes, meRes] = await Promise.all([
+      const [ticketsRes, subjectsRes, tenantsRes, teamRes, permissionsRes, meRes] = await Promise.all([
         api(`/api/support/tickets?queue=${currentQueue}`),
         api('/api/support/subjects'),
+        api('/api/support/tenants'),
         api('/api/support/team'),
         api('/api/admin/permissions'),
         api('/api/admin/permissions/me'),
@@ -246,6 +272,7 @@ export default function SuportePage() {
       setTickets(loadedTickets);
       setCounts(ticketsRes.counts || { all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
       setSubjects(subjectsRes.subjects || []);
+      setTenants(tenantsRes?.tenants || []);
       setTeam(teamRes.members || []);
       setPermissionProfiles((permissionsRes.profiles || []).filter((profile: PermissionProfile) => profile.active));
       setPermissionCodes(new Set(Array.isArray(meRes.permissionCodes) ? meRes.permissionCodes : []));
@@ -306,13 +333,12 @@ export default function SuportePage() {
         method: 'POST',
         body: JSON.stringify({
           tenantSlug: newTicket.tenantSlug,
+          tenantId: newTicket.tenantId || null,
           tenantName: newTicket.tenantName || null,
           title: newTicket.title,
           description: newTicket.description,
           subjectId: newTicket.subjectId || null,
           priority: newTicket.priority,
-          requesterName: newTicket.requesterName || null,
-          requesterEmail: newTicket.requesterEmail || null,
           dueAt: newTicket.dueAt ? new Date(newTicket.dueAt).toISOString() : null,
         }),
       });
@@ -321,13 +347,12 @@ export default function SuportePage() {
       setShowNewTicket(false);
       setNewTicket({
         tenantSlug: '',
+        tenantId: '',
         tenantName: '',
         title: '',
         description: '',
         subjectId: '',
         priority: 'normal',
-        requesterName: '',
-        requesterEmail: '',
         dueAt: '',
       });
 
@@ -451,22 +476,31 @@ export default function SuportePage() {
   };
 
   const handleSendMessage = async () => {
-    if (!selectedTicket || !draftMessage.trim()) return;
+    if (!selectedTicket || (!draftMessage.trim() && !draftAttachment)) return;
 
     setSendingMessage(true);
     setError(null);
 
     try {
+      const payload = new FormData();
+      payload.append('message', draftMessage);
+      payload.append('origin', 'holding');
+      payload.append('isInternal', 'false');
+
+      if (draftAttachment) {
+        payload.append('attachment', draftAttachment);
+      }
+
       await api(`/api/support/tickets/${selectedTicket.id}/messages`, {
         method: 'POST',
-        body: JSON.stringify({
-          message: draftMessage,
-          origin: 'holding',
-          isInternal: false,
-        }),
+        body: payload,
       });
 
       setDraftMessage('');
+      setDraftAttachment(null);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = '';
+      }
       await loadMessages(selectedTicket.id);
       await loadSupportData(queue, true);
     } catch (err: any) {
@@ -572,26 +606,35 @@ export default function SuportePage() {
         <form onSubmit={handleCreateTicket} className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Abrir novo ticket</h2>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <input
+            <select
               value={newTicket.tenantSlug}
-              onChange={(e) => setNewTicket((prev) => ({ ...prev, tenantSlug: e.target.value }))}
-              placeholder="Tenant slug (obrigatorio)"
+              onChange={(e) => {
+                const slug = e.target.value;
+                const selectedTenant = tenants.find((tenant) => tenant.slug === slug) || null;
+                setNewTicket((prev) => ({
+                  ...prev,
+                  tenantSlug: slug,
+                  tenantId: selectedTenant?.id || '',
+                  tenantName: selectedTenant?.nome || '',
+                }));
+              }}
               required
               className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-            />
-            <input
-              value={newTicket.tenantName}
-              onChange={(e) => setNewTicket((prev) => ({ ...prev, tenantName: e.target.value }))}
-              placeholder="Nome da tenant"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-            />
+            >
+              <option value="">Selecione a vidraçaria</option>
+              {tenants.map((tenant) => (
+                <option key={tenant.id} value={tenant.slug}>
+                  {tenant.nome ? `${tenant.nome} / ${tenant.slug}` : tenant.slug}{tenant.ativa === false ? ' (inativa)' : ''}
+                </option>
+              ))}
+            </select>
             <select
               value={newTicket.subjectId}
               onChange={(e) => setNewTicket((prev) => ({ ...prev, subjectId: e.target.value }))}
               className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
             >
               <option value="">Assunto (opcional)</option>
-              {subjects.filter((subject) => subject.active).map((subject) => (
+              {visibleSubjects.filter((subject) => subject.active).map((subject) => (
                 <option key={subject.id} value={subject.id}>{subject.name}</option>
               ))}
             </select>
@@ -612,18 +655,6 @@ export default function SuportePage() {
               <option value="high">Alta</option>
               <option value="urgent">Urgente</option>
             </select>
-            <input
-              value={newTicket.requesterName}
-              onChange={(e) => setNewTicket((prev) => ({ ...prev, requesterName: e.target.value }))}
-              placeholder="Solicitante (nome)"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-            />
-            <input
-              value={newTicket.requesterEmail}
-              onChange={(e) => setNewTicket((prev) => ({ ...prev, requesterEmail: e.target.value }))}
-              placeholder="Solicitante (e-mail)"
-              className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
-            />
             <input
               value={newTicket.dueAt}
               onChange={(e) => setNewTicket((prev) => ({ ...prev, dueAt: e.target.value }))}
@@ -653,7 +684,17 @@ export default function SuportePage() {
 
       {showSubjectPanel && can('action.support.manage_subjects') && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Assuntos e responsaveis</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Assuntos e responsaveis</h2>
+            <button
+              type="button"
+              onClick={() => setShowInactiveSubjects((prev) => !prev)}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold uppercase tracking-wider hover:bg-slate-50"
+            >
+              {showInactiveSubjects ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showInactiveSubjects ? 'Ocultar inativos' : `Mostrar inativos (${hiddenSubjectsCount})`}
+            </button>
+          </div>
 
           <form onSubmit={handleCreateSubject} className="grid grid-cols-1 xl:grid-cols-4 gap-2 items-start">
             <input
@@ -743,7 +784,7 @@ export default function SuportePage() {
           )}
 
           <div className="space-y-2">
-            {subjects.map((subject) => (
+            {visibleSubjects.map((subject) => (
               <div key={subject.id} className="p-3 border border-slate-200 rounded-xl flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-bold text-slate-800">{subject.name}</div>
@@ -942,6 +983,24 @@ export default function SuportePage() {
                         </span>
                       </div>
                       <div className="whitespace-pre-wrap">{msg.message}</div>
+                      {msg.attachment_url && (
+                        <div className="mt-2 space-y-2">
+                          <img
+                            src={msg.attachment_url}
+                            alt={msg.attachment_file_name || 'Anexo'}
+                            className="max-w-full rounded-lg border border-white/20 bg-white/10"
+                          />
+                          <a
+                            href={msg.attachment_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 text-[11px] font-bold underline"
+                          >
+                            <Paperclip size={12} />
+                            {msg.attachment_file_name || 'Abrir anexo'}
+                          </a>
+                        </div>
+                      )}
                       <div className="text-[10px] opacity-70 mt-1">{formatDate(msg.created_at)}</div>
                     </div>
                   ))
@@ -950,22 +1009,38 @@ export default function SuportePage() {
 
               <div className="p-3 border-t border-slate-100 bg-white">
                 {can('action.support.reply') ? (
-                  <div className="flex items-end gap-2">
+                  <div className="space-y-2">
                     <textarea
                       value={draftMessage}
                       onChange={(e) => setDraftMessage(e.target.value)}
                       rows={2}
                       placeholder="Responder ticket..."
-                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm"
                     />
-                    <button
-                      onClick={handleSendMessage}
-                      disabled={sendingMessage || !draftMessage.trim()}
-                      className="px-3 py-2 rounded-lg bg-[#3b597b] text-white hover:bg-[#2e4763] disabled:opacity-50"
-                      title="Enviar mensagem"
-                    >
-                      {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={attachmentInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setDraftAttachment(e.target.files?.[0] || null)}
+                        className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-slate-200"
+                      />
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={sendingMessage || (!draftMessage.trim() && !draftAttachment)}
+                        className="px-3 py-2 rounded-lg bg-[#3b597b] text-white hover:bg-[#2e4763] disabled:opacity-50 flex items-center gap-2"
+                        title="Enviar mensagem"
+                      >
+                        {sendingMessage ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}
+                        Enviar
+                      </button>
+                    </div>
+                    {draftAttachment && (
+                      <div className="text-xs text-slate-500 flex items-center gap-2">
+                        <Paperclip size={12} />
+                        {draftAttachment.name}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs text-slate-400">Sem permissao para responder tickets.</div>

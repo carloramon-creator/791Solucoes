@@ -286,8 +286,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Titulo e descricao sao obrigatorios.' }, { status: 400 });
     }
 
-    const requesterName = body?.requesterName ? String(body.requesterName).trim() : null;
-    const requesterEmail = body?.requesterEmail ? String(body.requesterEmail).trim().toLowerCase() : null;
+    const requesterName = auth.user.email || null;
+    const requesterEmail = auth.user.email ? String(auth.user.email).trim().toLowerCase() : null;
     const requesterPhone = body?.requesterPhone ? String(body.requesterPhone).trim() : null;
 
     const allowedPriorities = new Set(['low', 'normal', 'high', 'urgent']);

@@ -29,31 +29,31 @@ function getPeriodStart(period: string) {
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'semana':
-      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setDate(now.getDate() - 6);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'quinzena':
-      startDate.setDate(now.getDate() > 15 ? 16 : 1);
+      startDate.setDate(now.getDate() - 14);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'mes':
-      startDate.setDate(1);
+      startDate.setDate(now.getDate() - 29);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'trimestre':
-      startDate.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+      startDate.setDate(now.getDate() - 89);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'semestre':
-      startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+      startDate.setDate(now.getDate() - 179);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'ano':
-      startDate.setMonth(0, 1);
+      startDate.setDate(now.getDate() - 364);
       startDate.setHours(0, 0, 0, 0);
       break;
     default:
-      startDate.setDate(1);
+      startDate.setDate(now.getDate() - 29);
       startDate.setHours(0, 0, 0, 0);
       break;
   }

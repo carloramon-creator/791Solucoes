@@ -118,27 +118,27 @@ function getPeriodRange(period: PeriodFilter): DateRange {
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'semana':
-      startDate.setDate(now.getDate() - now.getDay());
+      startDate.setDate(now.getDate() - 6);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'quinzena':
-      startDate.setDate(now.getDate() > 15 ? 16 : 1);
+      startDate.setDate(now.getDate() - 14);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'mes':
-      startDate.setDate(1);
+      startDate.setDate(now.getDate() - 29);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'trimestre':
-      startDate.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+      startDate.setDate(now.getDate() - 89);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'semestre':
-      startDate.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+      startDate.setDate(now.getDate() - 179);
       startDate.setHours(0, 0, 0, 0);
       break;
     case 'ano':
-      startDate.setMonth(0, 1);
+      startDate.setDate(now.getDate() - 364);
       startDate.setHours(0, 0, 0, 0);
       break;
   }
@@ -374,17 +374,17 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-[1600px] space-y-4 animate-in fade-in duration-500 px-1 xl:px-2">
       {/* Header com foto do usuário */}
-      <div className="mb-8">
+      <div className="mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[13px] text-[#3b597b] font-medium">Bem-vindo, {userProfile?.email?.split('@')[0]?.toUpperCase() || 'ADMINISTRADOR'}</p>
-            <div className="flex items-center gap-3 mt-2">
-              <div className="p-2.5 bg-white rounded-md shadow-sm border border-slate-200">
-                <Building2 size={24} className="text-[#3b597b]" />
+            <p className="text-[12px] text-[#3b597b] font-medium">Bem-vindo, {userProfile?.email?.split('@')[0]?.toUpperCase() || 'ADMINISTRADOR'}</p>
+            <div className="flex items-center gap-2.5 mt-1.5">
+              <div className="p-2 bg-white rounded-md shadow-sm border border-slate-200">
+                <Building2 size={20} className="text-[#3b597b]" />
               </div>
-              <h1 className="text-2xl font-bold text-slate-800 tracking-tight uppercase">791 SOLUÇÕES - HOLDING</h1>
+              <h1 className="text-[28px] leading-none font-bold text-slate-800 tracking-tight uppercase">791 SOLUÇÕES - HOLDING</h1>
             </div>
           </div>
           {/* Avatar do usuário no topo direito */}
@@ -393,7 +393,7 @@ export default function Dashboard() {
               <p className="text-sm font-semibold text-slate-800">{userProfile?.email?.split('@')[0] || 'Admin'}</p>
               <p className="text-[11px] text-slate-500">{userProfile?.email || 'carregando...'}</p>
             </div>
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#3b597b] to-[#6899c4] flex items-center justify-center text-white font-bold">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3b597b] to-[#6899c4] flex items-center justify-center text-white font-bold">
               {userProfile?.user_metadata?.avatar_url ? (
                 <img
                   src={userProfile.user_metadata.avatar_url}
@@ -430,7 +430,7 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
           <div className="flex items-center gap-2">
             <Calendar size={14} className="text-slate-400" />
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Intervalo aplicado</span>
@@ -464,89 +464,89 @@ export default function Dashboard() {
       ) : null}
 
       {/* Faturamento (MRR) - 2 cards: período e acumulado */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[140px]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between min-h-[110px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
             <span>Faturamento - Período ({getPeriodLabel(selectedPeriod)})</span>
           </div>
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoMesAtual || 0)}</h3>
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <h3 className="text-3xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoMesAtual || 0)}</h3>
             <p className="text-xs font-medium text-slate-500">neste período</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between min-h-[140px]">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between min-h-[110px]">
           <div className="flex items-center gap-2 text-slate-600 font-semibold text-sm">
             <BarChart3 size={18} />
             <span>Faturamento - Acumulado Total</span>
           </div>
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <h3 className="text-4xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoAcumulado || 0)}</h3>
+          <div className="mt-3 flex items-baseline gap-1.5">
+            <h3 className="text-3xl font-bold text-[#3b597b]">{formatCurrency(data?.faturamentoAcumulado || 0)}</h3>
             <p className="text-xs font-medium text-slate-500">desde o início</p>
           </div>
         </div>
       </div>
 
       {/* Linha 1: Stats principais */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mt-6">
-        <div className="relative overflow-hidden rounded-xl bg-[#2e5e89] p-6 text-white shadow-sm flex flex-col justify-center min-h-[130px] hover:-translate-y-1 transition-transform cursor-pointer">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-4">
+        <div className="relative overflow-hidden rounded-xl bg-[#2e5e89] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-4xl font-bold tracking-tight">{totals?.tenants || 0}</div>
+            <div className="text-3xl font-bold tracking-tight">{totals?.tenants || 0}</div>
             <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Lojas ativas</div>
           </div>
-          <Building2 size={90} className="absolute -right-4 -bottom-4 text-white opacity-20" />
+          <Building2 size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#528ebf] p-6 text-white shadow-sm flex flex-col justify-center min-h-[130px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#528ebf] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-4xl font-bold tracking-tight">{totals?.registeredUsers || 0}</div>
+            <div className="text-3xl font-bold tracking-tight">{totals?.registeredUsers || 0}</div>
             <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Usuários cadastrados</div>
           </div>
-          <Users size={90} className="absolute -right-4 -bottom-4 text-white opacity-20" />
+          <Users size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#68a0c9] p-6 text-white shadow-sm flex flex-col justify-center min-h-[130px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#68a0c9] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-4xl font-bold tracking-tight">{totals?.messagesSent || 0}</div>
+            <div className="text-3xl font-bold tracking-tight">{totals?.messagesSent || 0}</div>
             <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Mensagens WhatsApp</div>
           </div>
-          <Zap size={90} className="absolute -right-4 -bottom-4 text-white opacity-20" />
+          <Zap size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
 
-        <div className="relative overflow-hidden rounded-xl bg-[#cc3939] p-6 text-white shadow-sm flex flex-col justify-center min-h-[130px] hover:-translate-y-1 transition-transform cursor-pointer">
+        <div className="relative overflow-hidden rounded-xl bg-[#cc3939] p-5 text-white shadow-sm flex flex-col justify-center min-h-[104px] hover:-translate-y-1 transition-transform cursor-pointer">
           <div className="relative z-10">
-            <div className="text-4xl font-bold tracking-tight">{healthCount}</div>
+            <div className="text-3xl font-bold tracking-tight">{healthCount}</div>
             <div className="text-xs text-white/80 font-medium mt-1.5 uppercase tracking-wider">Necessita revisão</div>
           </div>
-          <AlertTriangle size={90} className="absolute -right-4 -bottom-4 text-white opacity-20" />
+          <AlertTriangle size={76} className="absolute -right-3 -bottom-3 text-white opacity-20" />
         </div>
       </div>
 
       {/* Linha 2: Resumo operacional e financeiro */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mt-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-4">
         {/* Resumo Operacional */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[280px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <ShieldCheck size={18} />
             <h2>Resumo operacional</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+          <div className="grid grid-cols-2 gap-2.5 text-sm mb-3">
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários ativos</p>
-              <p className="mt-1 text-lg font-bold text-slate-800">{totals?.activeUsers || 0}</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{totals?.activeUsers || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Usuários WhatsApp</p>
-              <p className="mt-1 text-lg font-bold text-slate-800">{totals?.whatsappUsers || 0}</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{totals?.whatsappUsers || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Setores</p>
-              <p className="mt-1 text-lg font-bold text-slate-800">{totals?.sectors || 0}</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{totals?.sectors || 0}</p>
             </div>
             <div className="rounded-lg bg-slate-50 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">Mensagens WhatsApp</p>
-              <p className="mt-1 text-lg font-bold text-slate-800">{totals?.messagesSent || 0}</p>
+              <p className="mt-1 text-base font-bold text-slate-800">{totals?.messagesSent || 0}</p>
             </div>
           </div>
           <div className="flex-1 flex items-end">
@@ -555,8 +555,8 @@ export default function Dashboard() {
         </div>
 
         {/* Resumo Financeiro (Clicável) */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[280px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <BarChart3 size={18} />
             <h2>Resumo financeiro</h2>
           </div>
@@ -598,53 +598,53 @@ export default function Dashboard() {
       </div>
 
       {/* Linha 3: Cards de Tickets (Clicáveis) */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 mt-6">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[280px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <Clock size={18} />
             <h2>Tickets do período</h2>
           </div>
           <div className="grid grid-cols-2 gap-3 flex-1">
             <button
               onClick={() => handleCardClick('tickets', 'total')}
-              className="rounded-lg bg-blue-50 p-4 hover:bg-blue-100 transition-colors text-left border border-transparent hover:border-blue-200 cursor-pointer"
+              className="rounded-lg bg-blue-50 p-3 hover:bg-blue-100 transition-colors text-left border border-transparent hover:border-blue-200 cursor-pointer"
             >
               <p className="text-[11px] uppercase tracking-wider text-blue-600">Total</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-blue-700">{ticketTotals.total}</p>
+                <p className="text-xl font-bold text-blue-700">{ticketTotals.total}</p>
                 <ChevronRight size={18} className="text-blue-400" />
               </div>
             </button>
 
             <button
               onClick={() => handleCardClick('tickets', 'em-dia')}
-              className="rounded-lg bg-emerald-50 p-4 hover:bg-emerald-100 transition-colors text-left border border-transparent hover:border-emerald-200 cursor-pointer"
+              className="rounded-lg bg-emerald-50 p-3 hover:bg-emerald-100 transition-colors text-left border border-transparent hover:border-emerald-200 cursor-pointer"
             >
               <p className="text-[11px] uppercase tracking-wider text-emerald-600">Em dia</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-emerald-700">{ticketTotals.emDia}</p>
+                <p className="text-xl font-bold text-emerald-700">{ticketTotals.emDia}</p>
                 <ChevronRight size={18} className="text-emerald-400" />
               </div>
             </button>
 
             <button
               onClick={() => handleCardClick('tickets', 'atrasados')}
-              className="rounded-lg bg-orange-50 p-4 hover:bg-orange-100 transition-colors text-left border border-transparent hover:border-orange-200 cursor-pointer"
+              className="rounded-lg bg-orange-50 p-3 hover:bg-orange-100 transition-colors text-left border border-transparent hover:border-orange-200 cursor-pointer"
             >
               <p className="text-[11px] uppercase tracking-wider text-orange-600">Atrasados</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-orange-700">{ticketTotals.atrasados}</p>
+                <p className="text-xl font-bold text-orange-700">{ticketTotals.atrasados}</p>
                 <ChevronRight size={18} className="text-orange-400" />
               </div>
             </button>
 
             <button
               onClick={() => handleCardClick('tickets', 'resolvidos')}
-              className="rounded-lg bg-slate-50 p-4 hover:bg-slate-100 transition-colors text-left border border-transparent hover:border-slate-200 cursor-pointer"
+              className="rounded-lg bg-slate-50 p-3 hover:bg-slate-100 transition-colors text-left border border-transparent hover:border-slate-200 cursor-pointer"
             >
               <p className="text-[11px] uppercase tracking-wider text-slate-600">Resolvidos</p>
               <div className="mt-2 flex items-center justify-between">
-                <p className="text-2xl font-bold text-slate-700">{ticketTotals.resolvidos}</p>
+                <p className="text-xl font-bold text-slate-700">{ticketTotals.resolvidos}</p>
                 <ChevronRight size={18} className="text-slate-400" />
               </div>
             </button>
@@ -652,17 +652,17 @@ export default function Dashboard() {
         </div>
 
         {/* Lojas monitoradas */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col min-h-[280px]">
-          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col min-h-[220px]">
+          <div className="flex items-center gap-2 text-slate-800 font-semibold text-[15px] mb-4">
             <CheckCircle2 size={18} className="text-emerald-500" />
             <h2>Lojas monitoradas</h2>
           </div>
-          <div className="space-y-3 flex-1">
+          <div className="space-y-2.5 flex-1">
             {latestTenants.length ? (
               latestTenants.map((tenant) => (
-                <div key={tenant.id || tenant.slug || tenant.nome} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-3 hover:bg-slate-50 transition-colors">
+                <div key={tenant.id || tenant.slug || tenant.nome} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2.5 hover:bg-slate-50 transition-colors">
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">{tenant.nome_fantasia || tenant.nome || 'Sem nome'}</p>
+                    <p className="text-[13px] font-semibold text-slate-800">{tenant.nome_fantasia || tenant.nome || 'Sem nome'}</p>
                     <p className="text-[11px] text-slate-500">{tenant.slug || 'sem-slug'}</p>
                   </div>
                   <div className="text-right text-[11px] text-slate-500">

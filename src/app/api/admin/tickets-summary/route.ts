@@ -23,27 +23,27 @@ export async function GET(req: Request) {
           date.setHours(0, 0, 0, 0);
           break;
         case 'semana':
-          date.setDate(now.getDate() - now.getDay());
+          date.setDate(now.getDate() - 6);
           date.setHours(0, 0, 0, 0);
           break;
         case 'quinzena':
-          date.setDate(now.getDate() > 15 ? 16 : 1);
+          date.setDate(now.getDate() - 14);
           date.setHours(0, 0, 0, 0);
           break;
         case 'mes':
-          date.setDate(1);
+          date.setDate(now.getDate() - 29);
           date.setHours(0, 0, 0, 0);
           break;
         case 'trimestre':
-          date.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);
+          date.setDate(now.getDate() - 89);
           date.setHours(0, 0, 0, 0);
           break;
         case 'semestre':
-          date.setMonth(now.getMonth() >= 6 ? 6 : 0, 1);
+          date.setDate(now.getDate() - 179);
           date.setHours(0, 0, 0, 0);
           break;
         case 'ano':
-          date.setMonth(0, 1);
+          date.setDate(now.getDate() - 364);
           date.setHours(0, 0, 0, 0);
           break;
       }

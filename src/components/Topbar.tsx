@@ -9,7 +9,6 @@ type TopbarUser = {
   name: string;
   email: string;
   avatarUrl: string | null;
-  fallbackAvatarUrl: string;
 };
 
 export function Topbar() {
@@ -33,7 +32,26 @@ export function Topbar() {
         name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Admin',
         email: currentUser.email || '',
         avatarUrl: currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture || null,
-        fallbackAvatarUrl: `https://i.pravatar.cc/150?u=${encodeURIComponent((currentUser.email || currentUser.id || 'admin').toLowerCase())}`,
+      });
+
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token || !currentUser.email) return;
+
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(currentUser.email.toLowerCase())}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: 'no-store',
+      });
+
+      if (!response.ok) return;
+      const payload = await response.json().catch(() => ({}));
+      const cadastroAvatar = payload?.avatarUrl ? String(payload.avatarUrl) : null;
+      if (!cadastroAvatar) return;
+
+      setUser((prev) => {
+        if (!prev) return prev;
+        return { ...prev, avatarUrl: cadastroAvatar };
       });
     });
 
@@ -77,7 +95,11 @@ export function Topbar() {
         
         <div className="ml-2 h-8 w-8 overflow-hidden rounded-full border border-slate-200 bg-[#3b597b] text-[10px] font-black text-white cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center">
           {user ? (
-            <img src={user.avatarUrl || user.fallbackAvatarUrl} alt={user.name || 'Perfil'} className="h-full w-full object-cover" />
+            user.avatarUrl ? (
+              <img src={user.avatarUrl} alt={user.name || 'Perfil'} className="h-full w-full object-cover" />
+            ) : (
+              <span>{initials}</span>
+            )
           ) : (
             <span>{initials}</span>
           )}

@@ -171,6 +171,32 @@ export default function FinanceiroPage() {
   }, [openPeriod]);
 
   useEffect(() => {
+    const section = searchParams.get('section');
+    const kind = searchParams.get('kind');
+    const period = searchParams.get('period');
+    const start = searchParams.get('start');
+    const end = searchParams.get('end');
+
+    if (section === 'abertos') {
+      setActiveSection('abertos');
+    }
+
+    if (kind === 'payable' || kind === 'receivable') {
+      setOpenViewKind(kind);
+    }
+
+    if (period && periodOptions.includes(period as PeriodFilter)) {
+      setOpenPeriod(period as PeriodFilter);
+    }
+
+    if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+      setOpenDateStart(start);
+    }
+
+    if (end && /^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      setOpenDateEnd(end);
+    }
+
     const settleId = searchParams.get('settleId');
     if (!settleId || records.length === 0) return;
 

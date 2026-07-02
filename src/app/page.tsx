@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
@@ -164,8 +165,8 @@ function toIsoEndOfDay(value: string) {
 
 export default function Dashboard() {
   const supabase = useMemo(() => createSupabaseBrowser(), []);
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [settlingRecordId, setSettlingRecordId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [data, setData] = useState<UsageSummaryResponse | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -381,78 +382,16 @@ export default function Dashboard() {
     setModal({ type: null });
   };
 
-  const handleQuickSettle = async (item: any) => {
+  const handleQuickSettle = (item: any) => {
     const recordId = String(item?.id || '');
     if (!recordId) {
       alert('Lançamento sem ID para baixa.');
       return;
     }
 
-    const paidAmount = Number(item?.valor || 0);
-    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
-      alert('Valor inválido para baixa.');
-      return;
-    }
-
-    if (!confirm(`Confirmar baixa de ${formatCurrency(paidAmount)}?`)) {
-      return;
-    }
-
-    setSettlingRecordId(recordId);
-    try {
-      const response = await fetch('/api/system/finance-records/settle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recordId,
-          paidAmount,
-          paymentMethod: 'Pix',
-          differenceHandling: 'adjust',
-        }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.error || 'Falha ao baixar lançamento.');
-      }
-
-      if (modal.type === 'financeiro' && modal.subtype) {
-        await handleCardClick('financeiro', modal.subtype);
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (token) {
-        const [saldoRes, receberRes, pagarRes] = await Promise.all([
-          fetch(`/api/admin/financial-summary?section=saldo-atual`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: 'no-store',
-          }),
-          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&section=contas-receber`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: 'no-store',
-          }),
-          fetch(`/api/admin/financial-summary?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}&section=contas-pagar`, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: 'no-store',
-          }),
-        ]);
-
-        const saldoData = await saldoRes.json().catch(() => []);
-        const receberData = await receberRes.json().catch(() => []);
-        const pagarData = await pagarRes.json().catch(() => []);
-
-        setFinancialTotals({
-          saldoAtual: Array.isArray(saldoData) ? saldoData.reduce((sum, row) => sum + (Number(row?.valor) || 0), 0) : 0,
-          contasReceber: Array.isArray(receberData) ? receberData.reduce((sum, row) => sum + (Number(row?.valor) || 0), 0) : 0,
-          contasPagar: Array.isArray(pagarData) ? pagarData.reduce((sum, row) => sum + (Number(row?.valor) || 0), 0) : 0,
-        });
-      }
-    } catch (err: any) {
-      alert(`Erro ao baixar: ${err?.message || 'Falha inesperada.'}`);
-    } finally {
-      setSettlingRecordId(null);
-    }
+    const kind = modal.subtype === 'contas-receber' ? 'receivable' : 'payable';
+    router.push(`/financeiro?section=abertos&kind=${kind}&settleId=${encodeURIComponent(recordId)}`);
+    closeModal();
   };
 
   return (
@@ -853,10 +792,9 @@ export default function Dashboard() {
                           <div className="mt-3 flex justify-end">
                             <button
                               onClick={() => handleQuickSettle(item)}
-                              disabled={settlingRecordId === String(item.id)}
-                              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-60"
+                              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 transition-colors hover:bg-emerald-100"
                             >
-                              {settlingRecordId === String(item.id) ? 'Baixando...' : 'Baixar'}
+                              Baixar
                             </button>
                           </div>
                         )}

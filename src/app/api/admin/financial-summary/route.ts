@@ -141,6 +141,7 @@ export async function GET(req: Request) {
 
         bankAccounts.forEach((account: any) => {
           const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
+          const overdraftLimit = toNumber(account.overdraft_limit, 0);
           if (isCurrentAccountType(account.type)) {
             totalAccounts += accountCurrentBalance;
           }
@@ -152,11 +153,11 @@ export async function GET(req: Request) {
             detalhes: [
               account.agency ? `Ag. ${account.agency}` : null,
               account.account_number ? `Conta ${account.account_number}` : null,
-              toNumber(account.overdraft_limit, 0) ? `Cheque especial ${formatCurrencyLabel(toNumber(account.overdraft_limit, 0))}` : null,
             ]
               .filter(Boolean)
               .join(' | '),
             valor: accountCurrentBalance,
+            overdraft_label: overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftLimit)}` : null,
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });
@@ -176,7 +177,7 @@ export async function GET(req: Request) {
             const spentAmount = Math.abs(Math.min(cardCurrentBalance, 0));
             const availableLimit = toNumber(card.credit_limit, 0) - spentAmount;
             const displayedValue = cardType.includes('credit')
-              ? (cardCurrentBalance < 0 ? availableLimit : 0)
+              ? availableLimit
               : cardCurrentBalance;
 
             totalCards += displayedValue;
@@ -217,7 +218,7 @@ export async function GET(req: Request) {
           id: 'total-geral',
           tipo: 'total',
           descricao: 'Total geral',
-          valor: totalAccounts,
+          valor: totalAccounts + totalCards,
         });
 
         data = entries;

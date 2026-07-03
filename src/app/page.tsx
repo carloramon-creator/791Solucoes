@@ -774,24 +774,33 @@ export default function Dashboard() {
                   {modal.type === 'financeiro' && modal.subtype === 'saldo-atual' ? (
                     // Renderização especial para Saldo Atual (dados de contas bancárias)
                     modal.data.map((item, idx) => (
-                      <div key={idx} className="border border-blue-200 rounded-lg p-4 bg-blue-50 hover:bg-blue-100 transition-colors">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="font-bold text-slate-800">{item.descricao || 'Conta Bancária'}</p>
-                            {item.detalhes && (
-                              <p className="text-sm text-slate-600 mt-1">{item.detalhes}</p>
-                            )}
-                            {item.data_vencimento && (
-                              <p className="text-xs text-slate-500 mt-2">Atualizado em: {formatDate(item.data_vencimento)}</p>
+                      item.tipo === 'section' ? (
+                        <div key={idx} className="pt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">{item.descricao}</p>
+                        </div>
+                      ) : (
+                        <div
+                          key={idx}
+                          className={`border rounded-lg p-4 transition-colors ${item.tipo === 'total' ? 'border-slate-200 bg-slate-50' : 'border-blue-200 bg-blue-50 hover:bg-blue-100'}`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <p className={`font-bold ${item.tipo === 'total' ? 'text-slate-900' : 'text-slate-800'}`}>{item.descricao || 'Conta Bancária'}</p>
+                              {item.detalhes && (
+                                <p className="text-sm text-slate-600 mt-1">{item.detalhes}</p>
+                              )}
+                              {item.data_vencimento && item.tipo !== 'total' && (
+                                <p className="text-xs text-slate-500 mt-2">Atualizado em: {formatDate(item.data_vencimento)}</p>
+                              )}
+                            </div>
+                            {item.valor !== undefined && (
+                              <div className="text-right ml-4">
+                                <p className={`text-2xl font-bold ${item.tipo === 'total' ? 'text-slate-900' : Number(item.valor) < 0 ? 'text-red-600' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
+                              </div>
                             )}
                           </div>
-                          {item.valor !== undefined && (
-                            <div className="text-right ml-4">
-                              <p className={`text-2xl font-bold ${Number(item.valor) < 0 ? 'text-red-600' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
-                            </div>
-                          )}
                         </div>
-                      </div>
+                      )
                     ))
                   ) : (
                     // Renderização padrão para outros tipos (Contas a Receber/Pagar, Tickets)

@@ -110,9 +110,22 @@ export default function ContasBancariasPage() {
     statement_subcategory_id: ''
   });
 
-  const getCardSpentAmount = (card?: BankCard | null) => {
-    const balance = Number(card?.current_balance || 0);
-    return Math.abs(Math.min(balance, 0));
+  const getCardSpentAmount = (card?: BankCard | null, records: FinanceRecord[] = financeRecords) => {
+    if (!card) return 0;
+
+    return records.reduce((sum, record: any) => {
+      const recordCardId = String(record?.metadata?.card_id || '');
+      if (recordCardId !== card.id) return sum;
+      if (record.type !== 'expense') return sum;
+
+      const isStatementItem = Boolean(record?.metadata?.card_statement_reference);
+
+      if (record.status === 'pending' && !isStatementItem) {
+        return sum + Number(record.value || 0);
+      }
+
+      return sum;
+    }, 0);
   };
 
   const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit');
@@ -173,7 +186,7 @@ export default function ContasBancariasPage() {
       const allCards = normalizedAccounts.flatMap((account) => account.cards || []);
       const creditCards = allCards.filter((card) => isCreditCard(card));
       const totalLimit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
-      const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
+      const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, nextFinanceRecords), 0);
 
       setTotals({ limit: totalLimit, spent: totalSpent, available: totalLimit - totalSpent });
     }
@@ -386,6 +399,7 @@ export default function ContasBancariasPage() {
   };
 
   const statementSubcategories = categories.filter((category) => category.parent_id && category.type === 'expense');
+  const totalCardLimit = accounts.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card)).reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -596,11 +610,16 @@ export default function ContasBancariasPage() {
             <h2 className="text-xl uppercase tracking-tight">Cartões da Empresa</h2>
             <p className="text-slate-400 text-sm tracking-wide">Visualize os limites de crédito e gastos consolidados da 791 Soluções.</p>
           </div>
-          <div className="flex gap-4">
+           <div className="flex flex-wrap gap-4 justify-end">
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <CreditCard size={20} className="text-blue-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Gasto Atual</p>
                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totals.spent)}</p>
+             </div>
+             <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
+               <ShieldCheck size={20} className="text-slate-200 mb-3" />
+               <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Total</p>
+               <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totalCardLimit)}</p>
              </div>
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <ShieldCheck size={20} className="text-emerald-400 mb-3" />

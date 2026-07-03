@@ -126,9 +126,18 @@ export async function GET(req: Request) {
 
       if (bankAccounts && bankAccounts.length > 0) {
         const entries: any[] = [];
+        let totalAccounts = 0;
+        let totalCards = 0;
+
+        entries.push({
+          id: 'grupo-contas',
+          tipo: 'section',
+          descricao: 'Contas correntes',
+        });
 
         bankAccounts.forEach((account: any) => {
           const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
+          totalAccounts += accountCurrentBalance;
 
           entries.push({
             id: account.id,
@@ -145,7 +154,15 @@ export async function GET(req: Request) {
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });
+        });
 
+        entries.push({
+          id: 'grupo-cartoes',
+          tipo: 'section',
+          descricao: 'Cartões',
+        });
+
+        bankAccounts.forEach((account: any) => {
           (account.cards || []).forEach((card: any) => {
             const cardBase = toNumber(card.current_balance, 0);
             const cardCurrentBalance = cardBase + toNumber(cardAdjustments.get(card.id), 0);
@@ -155,6 +172,8 @@ export async function GET(req: Request) {
             const displayedValue = cardType.includes('credit')
               ? (cardCurrentBalance < 0 ? availableLimit : 0)
               : cardCurrentBalance;
+
+            totalCards += displayedValue;
 
             entries.push({
               id: card.id,
@@ -172,6 +191,27 @@ export async function GET(req: Request) {
               atualizado_em: account.updated_at,
             });
           });
+        });
+
+        entries.push({
+          id: 'total-contas',
+          tipo: 'total',
+          descricao: 'Total de contas',
+          valor: totalAccounts,
+        });
+
+        entries.push({
+          id: 'total-cartoes',
+          tipo: 'total',
+          descricao: 'Total de cartões',
+          valor: totalCards,
+        });
+
+        entries.push({
+          id: 'total-geral',
+          tipo: 'total',
+          descricao: 'Total geral',
+          valor: totalAccounts + totalCards,
         });
 
         data = entries;

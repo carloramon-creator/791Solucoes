@@ -29,6 +29,14 @@ interface BankCard {
   closing_day: number;
   due_day: number;
   current_balance?: number;
+  statement_subcategory_id?: string | null;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  type: string;
+  parent_id?: string | null;
 }
 
 interface FinanceRecord {
@@ -61,6 +69,7 @@ export default function ContasBancariasPage() {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
@@ -97,7 +106,8 @@ export default function ContasBancariasPage() {
     card_type: 'credit',
     credit_limit: 0,
     closing_day: 1,
-    due_day: 10
+    due_day: 10,
+    statement_subcategory_id: ''
   });
 
   const getCardSpentAmount = (card?: BankCard | null) => {
@@ -108,15 +118,22 @@ export default function ContasBancariasPage() {
   const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit');
 
   const loadAccounts = async () => {
-    const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
+    const [accRes, financeRes, categoriesRes] = await Promise.all([
+      fetch('/api/system/bank-accounts', { cache: 'no-store' }),
+      fetch('/api/system/finance-records', { cache: 'no-store' }),
+      fetch('/api/system/categories', { cache: 'no-store' }),
+    ]);
+
     const accJson = await accRes.json();
+    const financeJson = await financeRes.json();
+    const categoriesJson = await categoriesRes.json();
+
     const accData: BankAccount[] = accJson.success ? accJson.accounts : [];
+    const nextFinanceRecords = financeJson.success ? financeJson.records : [];
+    setFinanceRecords(nextFinanceRecords);
+    setCategories(Array.isArray(categoriesJson) ? categoriesJson : []);
 
     if (accData) {
-      const financeRes = await fetch('/api/system/finance-records', { cache: 'no-store' });
-      const financeJson = await financeRes.json();
-      const nextFinanceRecords = financeJson.success ? financeJson.records : [];
-      setFinanceRecords(nextFinanceRecords);
 
       const accountAdjustments = new Map<string, number>();
       const cardAdjustments = new Map<string, number>();
@@ -232,7 +249,8 @@ export default function ContasBancariasPage() {
         card_type: 'credit',
         credit_limit: 0,
         closing_day: 1,
-        due_day: 10
+        due_day: 10,
+        statement_subcategory_id: ''
       });
     } finally {
       setSaving(false);
@@ -263,6 +281,7 @@ export default function ContasBancariasPage() {
       credit_limit: Number(card.credit_limit || 0),
       closing_day: Number(card.closing_day || 1),
       due_day: Number(card.due_day || 10),
+      statement_subcategory_id: String(card.statement_subcategory_id || ''),
     });
     setIsCardModalOpen(true);
   };
@@ -365,6 +384,8 @@ export default function ContasBancariasPage() {
       maximumFractionDigits: 2
     }).format(value);
   };
+
+  const statementSubcategories = categories.filter((category) => category.parent_id && category.type === 'expense');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -505,7 +526,8 @@ export default function ContasBancariasPage() {
                           card_type: 'credit',
                           credit_limit: 0,
                           closing_day: 1,
-                          due_day: 10
+                          due_day: 10,
+                          statement_subcategory_id: ''
                         });
                         setIsCardModalOpen(true);
                       }}
@@ -793,6 +815,22 @@ export default function ContasBancariasPage() {
                       />
                    </div>
                 </div>
+
+                {String(cardFormData.card_type || '').toLowerCase().includes('credit') && (
+                  <div className="col-span-2">
+                    <label className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Subcategoria padrão da fatura</label>
+                    <select
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 h-[44px] text-sm focus:outline-none"
+                      value={cardFormData.statement_subcategory_id}
+                      onChange={(e) => setCardFormData({ ...cardFormData, statement_subcategory_id: e.target.value })}
+                    >
+                      <option value="">Selecione...</option>
+                      {statementSubcategories.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="pt-6 flex items-center justify-end gap-3">

@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
     const { data: card, error: cardError } = await supabaseServer
       .from('system_bank_cards')
-      .select('id, account_id, name, card_type, due_day, brand, last_digits, accounts:system_bank_accounts(id, name, bank_name)')
+      .select('id, account_id, name, card_type, due_day, brand, last_digits, statement_subcategory_id, accounts:system_bank_accounts(id, name, bank_name)')
       .eq('id', cardId)
       .single();
 
@@ -61,6 +61,37 @@ export async function POST(req: Request) {
     const dueDate = getNextDueDate(toNumber(card.due_day, 1));
     const statementReference = getStatementReference(dueDate);
 
+    let statementCategoryName = 'Cartão de crédito';
+    let statementParentCategoryName: string | null = null;
+    let statementParentCategoryId: string | null = null;
+    let statementSubcategoryName: string | null = null;
+    let statementSubcategoryId: string | null = null;
+
+    if (card.statement_subcategory_id) {
+      const { data: statementCategory } = await supabaseServer
+        .from('system_finance_categories')
+        .select('id, name, parent_id')
+        .eq('id', card.statement_subcategory_id)
+        .maybeSingle();
+
+      if (statementCategory) {
+        statementSubcategoryId = statementCategory.id;
+        statementSubcategoryName = statementCategory.name;
+        statementCategoryName = statementCategory.name;
+        statementParentCategoryId = statementCategory.parent_id || null;
+
+        if (statementCategory.parent_id) {
+          const { data: parentCategory } = await supabaseServer
+            .from('system_finance_categories')
+            .select('id, name')
+            .eq('id', statementCategory.parent_id)
+            .maybeSingle();
+
+          statementParentCategoryName = parentCategory?.name || null;
+        }
+      }
+    }
+
     const { data: existingStatement } = await supabaseServer
       .from('system_finance_records')
       .select('id')
@@ -87,7 +118,7 @@ export async function POST(req: Request) {
         type: 'expense',
         value: outstandingAmount,
         description: `Fatura cartão ${card.name} - ${statementReference}`,
-        category: 'Cartão de crédito',
+        category: statementCategoryName,
         payment_method: 'CartaoCredito',
         status: 'pending',
         bank_account_id: card.account_id,
@@ -101,6 +132,10 @@ export async function POST(req: Request) {
           card_statement_generated: true,
           card_statement_item_ids: recordIds,
           linked_account_name: accountLabel,
+          category_parent_id: statementParentCategoryId,
+          category_parent_name: statementParentCategoryName,
+          category_subcategory_id: statementSubcategoryId,
+          category_subcategory_name: statementSubcategoryName,
         },
       })
       .select('id')

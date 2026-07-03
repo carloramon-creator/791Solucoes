@@ -210,6 +210,7 @@ export default function FinancePage() {
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleRecord, setSettleRecord] = useState<FinanceRecord | null>(null);
+  const [undoingStatement, setUndoingStatement] = useState(false);
 
   const [form, setForm] = useState({
     type: "expense" as FinanceType,
@@ -560,6 +561,14 @@ export default function FinancePage() {
     setIsModalOpen(true);
   };
 
+  const statementItemRecords = useMemo(() => {
+    if (!editingRecord) return [];
+    const metadata = (editingRecord.metadata && typeof editingRecord.metadata === 'object') ? editingRecord.metadata : {};
+    const itemIds = Array.isArray(metadata.card_statement_item_ids) ? metadata.card_statement_item_ids.map((value: unknown) => String(value || '')).filter(Boolean) : [];
+    if (itemIds.length === 0) return [];
+    return records.filter((record) => itemIds.includes(record.id));
+  }, [editingRecord, records]);
+
   const openSettleModal = (record: FinanceRecord) => {
     setSettleRecord(record);
     setSettleForm({
@@ -711,6 +720,35 @@ export default function FinancePage() {
       await loadData();
     } catch (err: any) {
       alert(`Erro ao excluir: ${err?.message || "desconhecido"}`);
+    }
+  };
+
+  const handleUndoStatement = async () => {
+    if (!editingRecord) return;
+    const metadata = (editingRecord.metadata && typeof editingRecord.metadata === 'object') ? editingRecord.metadata : {};
+    if (!metadata.card_statement_generated) return;
+
+    const confirmed = confirm('Deseja desfazer esta fatura? Os lançamentos voltarão a aparecer no fechamento do cartão.');
+    if (!confirmed) return;
+
+    setUndoingStatement(true);
+    try {
+      const response = await fetch('/api/system/finance-records/card-statement/undo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statementId: editingRecord.id }),
+      });
+
+      const json = await response.json();
+      if (!json?.success) throw new Error(json?.error || 'Falha ao desfazer fatura.');
+
+      setIsModalOpen(false);
+      setEditingRecord(null);
+      await loadData();
+    } catch (err: any) {
+      alert(`Erro ao desfazer: ${err?.message || 'desconhecido'}`);
+    } finally {
+      setUndoingStatement(false);
     }
   };
 
@@ -1149,6 +1187,52 @@ export default function FinancePage() {
                   ))}
                 </select>
               </div>
+
+              {editingRecord && (editingRecord.metadata?.card_statement_generated || Array.isArray(editingRecord.metadata?.card_statement_item_ids)) && (
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lançamentos que compõem esta fatura</p>
+                      <p className="text-xs text-slate-500">{statementItemRecords.length} lançamento(s) vinculado(s)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleUndoStatement}
+                      disabled={undoingStatement}
+                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-red-700 hover:bg-red-100 disabled:opacity-60"
+                    >
+                      {undoingStatement ? 'Desfazendo...' : 'Desfazer cartão'}
+                    </button>
+                  </div>
+
+                  <div className="max-h-56 overflow-auto rounded-xl border border-slate-200 bg-white">
+                    {statementItemRecords.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs uppercase tracking-widest text-slate-400">Nenhum lançamento detalhado encontrado.</div>
+                    ) : (
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-100 bg-slate-50/70">
+                            <th className="px-4 py-2">Data</th>
+                            <th className="px-4 py-2">Lançamento</th>
+                            <th className="px-4 py-2">Categoria</th>
+                            <th className="px-4 py-2 text-right">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {statementItemRecords.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-4 py-2 text-xs text-slate-600">{formatDate(item.created_at)}</td>
+                              <td className="px-4 py-2 text-sm text-slate-800">{item.description}</td>
+                              <td className="px-4 py-2 text-xs uppercase tracking-widest text-slate-500">{item.category || 'Geral'}</td>
+                              <td className="px-4 py-2 text-right text-sm font-black text-red-600">{formatCurrency(Number(item.value || 0))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/60 flex gap-3">

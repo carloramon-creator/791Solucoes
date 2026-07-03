@@ -1039,10 +1039,10 @@ export default function SuportePage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{ticket.protocol}</span>
-                    <span className="text-[13px] text-slate-500">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
+                    <span className="text-[13px] text-black">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
                   </div>
-                  <div className="text-sm font-semibold text-slate-800 mt-1 line-clamp-1">{ticket.title}</div>
-                  <div className="text-xs text-slate-500 mt-1 line-clamp-1">
+                  <div className="text-sm font-semibold text-black mt-1 line-clamp-1">{ticket.title}</div>
+                  <div className="text-xs text-black mt-1 line-clamp-1">
                     {(ticket.tenant_name || ticket.tenant_slug)} • {ticket.subject?.name || 'Sem assunto'}
                   </div>
                   <div className="mt-2 flex items-center gap-2 flex-wrap">

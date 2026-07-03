@@ -63,6 +63,7 @@ export function Sidebar() {
   const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
   const [unrestrictedFallback, setUnrestrictedFallback] = useState(false);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [newAssignedTicketCount, setNewAssignedTicketCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -78,6 +79,55 @@ export function Sidebar() {
       active = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let active = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    async function loadSupportBadge() {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+
+        if (!token) {
+          if (active) setNewAssignedTicketCount(0);
+          return;
+        }
+
+        const response = await fetch('/api/support/tickets?queue=mine&limit=200', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (active) setNewAssignedTicketCount(0);
+          return;
+        }
+
+        const tickets = Array.isArray(payload?.tickets) ? payload.tickets : [];
+        const count = tickets.filter((ticket: any) => String(ticket?.status || '') === 'new').length;
+
+        if (active) {
+          setNewAssignedTicketCount(count);
+        }
+      } catch {
+        if (active) setNewAssignedTicketCount(0);
+      }
+    }
+
+    if (permissionsLoaded && (unrestrictedFallback || permissionCodes.has('menu.suporte'))) {
+      loadSupportBadge();
+      intervalId = setInterval(loadSupportBadge, 60000);
+    } else {
+      setNewAssignedTicketCount(0);
+    }
+
+    return () => {
+      active = false;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [permissionCodes, permissionsLoaded, supabase, unrestrictedFallback]);
 
   useEffect(() => {
     let active = true;
@@ -199,6 +249,13 @@ export function Sidebar() {
                     <span className={!isActive && item.name === item.name.toUpperCase() ? 'text-xs font-semibold tracking-wider' : ''}>
                       {item.name}
                     </span>
+                    {item.href === '/suporte' && newAssignedTicketCount > 0 && (
+                      <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
+                        isActive ? 'bg-red-500 text-white' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {newAssignedTicketCount}
+                      </span>
+                    )}
                   </div>
 
                   {item.hasSubmenu && hasVisibleSubItems && (

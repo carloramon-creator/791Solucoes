@@ -28,6 +28,7 @@ export default function CategoriasConfigPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingMode, setEditingMode] = useState<'category' | 'subcategory'>('category');
   
   const [newCategory, setNewCategory] = useState({
     id: '' as string,
@@ -60,6 +61,7 @@ export default function CategoriasConfigPage() {
     setSaving(true);
     try {
       const isEditing = !!newCategory.id;
+      const parentId = editingMode === 'subcategory' ? (newCategory.parent_id || null) : null;
       const res = await fetch('/api/system/categories', {
         method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -67,7 +69,7 @@ export default function CategoriasConfigPage() {
           id: newCategory.id || undefined,
           name: newCategory.name,
           type: newCategory.type,
-          parent_id: newCategory.parent_id || null
+          parent_id: parentId
         })
       });
 
@@ -77,6 +79,7 @@ export default function CategoriasConfigPage() {
       }
       
       setIsModalOpen(false);
+      setEditingMode('category');
       setNewCategory({ id: '', name: '', type: 'expense', parent_id: '' });
       fetchCategories();
     } catch (err: any) {
@@ -115,6 +118,7 @@ export default function CategoriasConfigPage() {
                 <button 
                   onClick={() => {
                     setNewCategory({ id: parent.id, name: parent.name, type: parent.type, parent_id: parent.parent_id || '' });
+                    setEditingMode('category');
                     setIsModalOpen(true);
                   }}
                   className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
@@ -125,6 +129,7 @@ export default function CategoriasConfigPage() {
                 <button 
                   onClick={() => {
                     setNewCategory({ id: '', name: '', type, parent_id: parent.id });
+                    setEditingMode('subcategory');
                     setIsModalOpen(true);
                   }}
                   className="p-1.5 text-slate-400 hover:text-[#3b597b] transition-colors"
@@ -152,6 +157,7 @@ export default function CategoriasConfigPage() {
                     <button 
                       onClick={() => {
                         setNewCategory({ id: sub.id, name: sub.name, type: sub.type, parent_id: sub.parent_id || '' });
+                        setEditingMode('subcategory');
                         setIsModalOpen(true);
                       }}
                       className="p-1 text-slate-300 hover:text-blue-500"
@@ -206,6 +212,7 @@ export default function CategoriasConfigPage() {
             <button 
               onClick={() => {
                 setNewCategory({ id: '', name: '', type: 'revenue', parent_id: '' });
+                setEditingMode('category');
                 setIsModalOpen(true);
               }}
               className="text-[10px] bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest hover:bg-emerald-100 transition-all"
@@ -223,6 +230,7 @@ export default function CategoriasConfigPage() {
             <button 
               onClick={() => {
                 setNewCategory({ id: '', name: '', type: 'expense', parent_id: '' });
+                setEditingMode('category');
                 setIsModalOpen(true);
               }}
               className="text-[10px] bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold uppercase tracking-widest hover:bg-red-100 transition-all"
@@ -239,9 +247,15 @@ export default function CategoriasConfigPage() {
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">
-                {newCategory.id ? 'Editar Categoria' : 'Nova Categoria'}
+                {newCategory.id ? (editingMode === 'subcategory' ? 'Editar Subcategoria' : 'Editar Categoria') : (editingMode === 'subcategory' ? 'Nova Subcategoria' : 'Nova Categoria')}
               </h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400">✕</button>
+              <button
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingMode('category');
+                }}
+                className="text-slate-400"
+              >✕</button>
             </div>
 
             <div className="p-8 space-y-6">
@@ -259,6 +273,7 @@ export default function CategoriasConfigPage() {
                 </div>
               </div>
 
+              {editingMode === 'subcategory' && (
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2 ml-1">Pertence a</label>
                 <select 
@@ -272,6 +287,7 @@ export default function CategoriasConfigPage() {
                   ))}
                 </select>
               </div>
+              )}
 
               <div>
                 <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2 ml-1">Nome da Categoria</label>
@@ -288,7 +304,10 @@ export default function CategoriasConfigPage() {
 
             <div className="p-6 border-t border-slate-100 bg-slate-50/30 flex gap-3">
               <button 
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingMode('category');
+                }}
                 className="flex-1 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400"
               >Cancelar</button>
               <button 

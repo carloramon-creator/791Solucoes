@@ -63,9 +63,64 @@ export class PaymentProcessor {
     // 1. Registrar na Holding (system_finance_records)
     const holdingSupabase = createClient(supabaseUrl, supabaseServiceKey);
     try {
+      let tenantName = tenantId;
+      if (saasType === 'glass' && glassServiceKey) {
+        const glassLookup = createClient(glassUrl, glassServiceKey);
+        const { data: tenantRow } = await glassLookup
+          .from('vidracarias')
+          .select('nome_fantasia, nome')
+          .eq('id', tenantId)
+          .maybeSingle();
+
+        tenantName = String(tenantRow?.nome_fantasia || tenantRow?.nome || tenantId);
+      }
+
+      const DRE_ROOT_NAME = 'Receita de Software';
+      const DRE_SUB_NAME = 'Assinatura SaaS';
+
+      const { data: revenueCategories } = await holdingSupabase
+        .from('system_finance_categories')
+        .select('id, name, parent_id, type')
+        .eq('type', 'revenue');
+
+      let rootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && String(cat.name || '').toLowerCase() === DRE_ROOT_NAME.toLowerCase());
+
+      if (!rootCategory) {
+        const { data: createdRoot } = await holdingSupabase
+          .from('system_finance_categories')
+          .insert([{ name: DRE_ROOT_NAME, type: 'revenue', parent_id: null }])
+          .select('id, name, parent_id, type')
+          .single();
+        rootCategory = createdRoot || null;
+      }
+
+      let subCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && String(cat.name || '').toLowerCase() === DRE_SUB_NAME.toLowerCase());
+
+      if (!subCategory && rootCategory?.id) {
+        const { data: createdSub } = await holdingSupabase
+          .from('system_finance_categories')
+          .insert([{ name: DRE_SUB_NAME, type: 'revenue', parent_id: rootCategory.id }])
+          .select('id, name, parent_id, type')
+          .single();
+        subCategory = createdSub || null;
+      }
+
+      const { data: asaasAccount } = await holdingSupabase
+        .from('system_bank_accounts')
+        .select('id, name, bank_name')
+        .or('name.ilike.%asaas%,bank_name.ilike.%asaas%')
+        .limit(1)
+        .maybeSingle();
+
+      const categoryLabel = subCategory?.name || rootCategory?.name || DRE_SUB_NAME;
+
       const metadata = {
         ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),
         tenant_id: tenantId,
+        tenant_name: tenantName,
+        category_parent: rootCategory?.name || null,
+        category_subcategory: subCategory?.name || null,
+        source: 'asaas_webhook',
         external_reference: payload.externalReference,
       };
 
@@ -73,10 +128,11 @@ export class PaymentProcessor {
         business_unit: saasType,
         type: 'revenue',
         value: payload.value,
-        description: `Assinatura SaaS ${saasType} - Tenant: ${tenantId}`,
+        description: `Assinatura SaaS ${saasType} - Tenant: ${tenantName}`,
         payment_method: payload.paymentMethod,
         bank_id: payload.bankId,
-        category: 'SaaS Revenue',
+        bank_account_id: asaasAccount?.id || null,
+        category: categoryLabel,
         metadata,
       });
     } catch (financeErr: any) {

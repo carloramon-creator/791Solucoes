@@ -133,6 +133,15 @@ function formatTicketPriority(priority: Ticket['priority'] | string | null | und
   return labels[value] || value || '--';
 }
 
+function getTicketCardPriorityClass(priority: Ticket['priority'] | string | null | undefined) {
+  const value = String(priority || '').trim();
+
+  if (value === 'normal') return 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200';
+  if (value === 'high') return 'bg-amber-50 hover:bg-amber-100 border-amber-200';
+  if (value === 'urgent') return 'bg-red-50 hover:bg-red-100 border-red-200';
+  return 'bg-white hover:bg-slate-50 border-slate-200';
+}
+
 function formatRelativeDeadline(targetIso: string | null) {
   if (!targetIso) return 'Sem prazo definido';
   const target = new Date(targetIso);
@@ -999,8 +1008,8 @@ export default function SuportePage() {
                 <button
                   key={ticket.id}
                   onClick={() => setSelectedTicketId(ticket.id)}
-                  className={`w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors ${
-                    selectedTicketId === ticket.id ? 'bg-slate-50' : ''
+                  className={`w-full text-left px-4 py-3 transition-colors border-b ${getTicketCardPriorityClass(ticket.priority)} ${
+                    selectedTicketId === ticket.id ? 'ring-1 ring-inset ring-[#3b597b]' : ''
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">

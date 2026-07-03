@@ -86,7 +86,9 @@ function applyQueueFilters(query: any, queue: SupportQueue, currentEmail: string
     if (!currentEmail) {
       return query.eq('assigned_to_email', '__none__');
     }
-    return query.eq('assigned_to_email', currentEmail.toLowerCase()).in('status', OPEN_STATUSES);
+    return query
+      .in('status', OPEN_STATUSES)
+      .or(`assigned_to_email.eq.${currentEmail.toLowerCase()},created_by_email.eq.${currentEmail.toLowerCase()}`);
   }
 
   if (queue === 'overdue') {

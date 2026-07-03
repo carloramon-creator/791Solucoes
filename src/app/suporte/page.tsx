@@ -1106,7 +1106,7 @@ export default function SuportePage() {
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{ticket.protocol}</span>
                     <span className="text-[13px] text-black">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
                   </div>
-                  <div className="text-[15px] font-semibold text-black mt-1 line-clamp-1">{ticket.title}</div>
+                  <div className="text-[17px] font-semibold text-black mt-1 line-clamp-1">{ticket.title}</div>
                   <div className="text-xs text-black mt-1 line-clamp-1">
                     {(ticket.tenant_name || ticket.tenant_slug)} • {ticket.subject?.name || 'Sem assunto'}
                   </div>
@@ -1132,7 +1132,7 @@ export default function SuportePage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{selectedTicket.protocol}</div>
-                    <div className="text-[15px] font-bold text-slate-800">{selectedTicket.title}</div>
+                    <div className="text-[17px] font-bold text-slate-800">{selectedTicket.title}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {!['resolved', 'closed'].includes(selectedTicket.status) && (
@@ -1202,11 +1202,13 @@ export default function SuportePage() {
 
                       return (
                         <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-[15px] border border-slate-200 bg-white text-slate-700">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                            <p><span className="font-bold text-slate-500">Data:</span> {formatDateOnly(msg.created_at)}</p>
-                            <p><span className="font-bold text-slate-500">Hora:</span> {formatTimeOnly(msg.created_at)}</p>
-                            <p className="md:col-span-1"><span className="font-bold text-slate-500">Enviado por:</span> {getHistoryActor(msg)}</p>
-                            <p className="md:col-span-1"><span className="font-bold text-slate-500">Ato:</span> {getHistoryAction(msg)}</p>
+                          <div className="text-[11px] flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                            <div className="flex items-center gap-2 whitespace-nowrap">
+                              <p><span className="font-bold text-slate-500">Data:</span> {formatDateOnly(msg.created_at)}</p>
+                              <p><span className="font-bold text-slate-500">Hora:</span> {formatTimeOnly(msg.created_at)}</p>
+                            </div>
+                            <p className="md:min-w-[230px] md:max-w-[230px] truncate"><span className="font-bold text-slate-500">Enviado por:</span> {getHistoryActor(msg)}</p>
+                            <p className="md:flex-1 truncate"><span className="font-bold text-slate-500">Ato:</span> {getHistoryAction(msg)}</p>
                           </div>
 
                           {showRawText && <div className="whitespace-pre-wrap mt-1 text-[13px]">{rawText}</div>}

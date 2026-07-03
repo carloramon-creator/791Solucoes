@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import {
   Calendar,
   CheckCircle2,
@@ -10,6 +11,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Printer,
   Receipt,
   Search,
   Trash2,
@@ -196,10 +198,12 @@ function isCreditCard(card?: BankCard | null) {
 
 export default function FinancePage() {
   const searchParams = useSearchParams();
+  const supabase = useMemo(() => createSupabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settling, setSettling] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -853,6 +857,96 @@ export default function FinancePage() {
   const rootCategories = categories.filter((category) => !category.parent_id && category.type === form.type);
   const subcategoriesForForm = categories.filter((category) => category.parent_id && categories.find((parent) => parent.id === category.parent_id)?.type === form.type && (!form.categoryId || category.parent_id === form.categoryId));
 
+  const buildPdfPayload = (userLabel: string) => {
+    const generatedAt = new Date().toISOString();
+
+    if (activeSection === "records") {
+      return {
+        title: `Extrato financeiro - ${filter === "all" ? "Tudo" : filter === "revenue" ? "Receitas" : "Despesas"}`,
+        sectionLabel: "Lançamentos",
+        userLabel,
+        generatedAt,
+        periodLabel: "Dados consolidados da visualização atual",
+        columns: ["Data", "Status", "Descrição", "Conta", "Método", "Valor"],
+        rows: filteredRecords.map((record) => [
+          formatDate(record.created_at),
+          record.status === "paid" ? "Pago" : "Pendente",
+          getDisplayDescription(record),
+          record.source_label || "Sem conta",
+          record.payment_method || "Pix",
+          `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
+        ]),
+      };
+    }
+
+    if (activeSection === "payable" || activeSection === "receivable") {
+      const list = openRecords.filter((record) => activeSection === "payable" ? record.type === "expense" : record.type === "revenue");
+      return {
+        title: activeSection === "payable" ? "Extrato de contas a pagar em aberto" : "Extrato de contas a receber em aberto",
+        sectionLabel: activeSection === "payable" ? "Contas a pagar" : "Contas a receber",
+        userLabel,
+        generatedAt,
+        periodLabel: `Período selecionado: ${formatDate(openDateStart)} até ${formatDate(openDateEnd)}`,
+        columns: ["Data", "Lançamento", "Conta", "Categoria", "Valor"],
+        rows: list.map((record) => [
+          formatDate(record.created_at),
+          getDisplayDescription(record),
+          record.source_label || "Sem conta",
+          record.category || "Geral",
+          `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
+        ]),
+      };
+    }
+
+    return {
+      title: "Extrato de fluxo de caixa",
+      sectionLabel: "Fluxo de caixa",
+      userLabel,
+      generatedAt,
+      periodLabel: `${formatDate(flowDateStart)} até ${formatDate(flowDateEnd)} | ${sourceLabelSummary}`,
+      columns: ["Data", "Lançamento", "Conta", "Valor", "Saldo"],
+      rows: [
+        ["Saldo inicial", "Saldo final do dia anterior", sourceLabelSummary, formatCurrency(0), formatCurrency(flowOpeningBalance)],
+        ...flowRows.map(({ record, running }) => [
+          formatDate(record.created_at),
+          getDisplayDescription(record),
+          record.source_label || "Sem conta",
+          `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
+          formatCurrency(running),
+        ]),
+      ],
+    };
+  };
+
+  const handlePrintPdf = async () => {
+    setPrinting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userLabel = sessionData?.session?.user?.email || "Usuário";
+      const payload = buildPdfPayload(userLabel);
+
+      const response = await fetch("/api/system/finance-records/statement-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({}));
+        throw new Error(json?.error || "Falha ao gerar PDF do extrato.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+    } catch (err: any) {
+      alert(`Erro ao gerar PDF: ${err?.message || "desconhecido"}`);
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -865,6 +959,13 @@ export default function FinancePage() {
             Fluxo de caixa consolidado com contas e cartoes da holding.
           </p>
         </div>
+        <button
+          onClick={handlePrintPdf}
+          disabled={printing}
+          className="bg-white text-[#3b597b] border border-[#3b597b]/20 px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#f3f7fb] transition-all uppercase tracking-widest"
+        >
+          {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Imprimir PDF
+        </button>
         <button
           onClick={openNewModal}
           className="bg-[#3b597b] text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#2e4763] transition-all uppercase tracking-widest shadow-lg shadow-blue-900/10"

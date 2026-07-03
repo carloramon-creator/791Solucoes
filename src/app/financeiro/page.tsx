@@ -445,18 +445,13 @@ export default function FinancePage() {
   }, [normalizedRecords, filter, searchTerm]);
 
   const openRecords = useMemo(() => {
-    const start = startOfDay(new Date(`${openDateStart}T00:00:00`));
-    const end = endOfDay(new Date(`${openDateEnd}T00:00:00`));
     const kind = activeSection === "receivable" ? "receivable" : "payable";
+
     return normalizedRecords
       .filter((record) => record.status !== "paid")
       .filter((record) => kind === "payable" ? record.type === "expense" : record.type === "revenue")
-      .filter((record) => {
-        const date = new Date(record.created_at);
-        return date >= start && date <= end;
-      })
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  }, [normalizedRecords, activeSection, openDateStart, openDateEnd]);
+  }, [normalizedRecords, activeSection]);
 
   const flowRecords = useMemo(() => {
     const start = startOfDay(new Date(`${flowDateStart}T00:00:00`));
@@ -893,11 +888,6 @@ export default function FinancePage() {
 
           {activeSection === "records" && (
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <button onClick={() => setFilter("all")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "all" ? "bg-[#3b597b] text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Tudo</button>
-                <button onClick={() => setFilter("revenue")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "revenue" ? "bg-emerald-500 text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Receitas</button>
-                <button onClick={() => setFilter("expense")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "expense" ? "bg-red-500 text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Despesas</button>
-              </div>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
                 <input type="text" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="bg-white border border-slate-200 rounded-xl pl-9 pr-4 h-[38px] text-xs w-full md:w-72" placeholder="Pesquisar descricao, categoria ou conta..." />

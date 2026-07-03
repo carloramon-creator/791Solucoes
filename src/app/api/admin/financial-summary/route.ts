@@ -185,7 +185,7 @@ export async function GET(req: Request) {
               .filter(Boolean)
               .join(' | '),
             valor: accountCurrentBalance,
-            overdraft_label: overdraftLimit > 0 ? `Restante do cheque especial ${formatCurrencyLabel(overdraftRemaining)}` : null,
+            overdraft_label: overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftRemaining)}` : null,
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });

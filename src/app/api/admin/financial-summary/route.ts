@@ -61,6 +61,10 @@ function getDateFromParam(value: string | null, fallback: Date) {
   return Number.isFinite(date.getTime()) ? date : fallback;
 }
 
+function isCurrentAccountType(type: unknown) {
+  return String(type || '').toLowerCase().includes('corrente');
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
   if (!auth.ok) {
@@ -137,7 +141,9 @@ export async function GET(req: Request) {
 
         bankAccounts.forEach((account: any) => {
           const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
-          totalAccounts += accountCurrentBalance;
+          if (isCurrentAccountType(account.type)) {
+            totalAccounts += accountCurrentBalance;
+          }
 
           entries.push({
             id: account.id,

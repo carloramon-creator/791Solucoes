@@ -118,9 +118,14 @@ export default function ContasBancariasPage() {
       if (recordCardId !== card.id) return sum;
       if (record.type !== 'expense') return sum;
 
-      const isStatementItem = Boolean(record?.metadata?.card_statement_reference);
+      const cardStatementReference = String(record?.metadata?.card_statement_reference || '');
+      const cardStatementGenerated = Boolean(record?.metadata?.card_statement_generated);
 
-      if (record.status === 'pending' && !isStatementItem) {
+      if (record.status === 'paid' && !cardStatementReference) {
+        return sum + Number(record.value || 0);
+      }
+
+      if (record.status === 'pending' && cardStatementGenerated) {
         return sum + Number(record.value || 0);
       }
 
@@ -128,7 +133,20 @@ export default function ContasBancariasPage() {
     }, 0);
   };
 
-  const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit');
+  const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit') || Number(card?.credit_limit || 0) > 0;
+  const isCurrentAccount = (account?: BankAccount | null) => String(account?.type || '').toLowerCase().includes('corrente');
+
+  const getOverdraftRemaining = (account?: BankAccount | null) => {
+    if (!account || !isCurrentAccount(account)) return 0;
+
+    const currentBalance = Number(account.current_balance ?? account.balance ?? 0);
+    const overdraftLimit = Number(account.overdraft_limit || 0);
+
+    if (overdraftLimit <= 0) return 0;
+    if (currentBalance >= 0) return overdraftLimit;
+
+    return Math.max(overdraftLimit - Math.abs(currentBalance), 0);
+  };
 
   const loadAccounts = async () => {
     const [accRes, financeRes, categoriesRes] = await Promise.all([
@@ -256,7 +274,9 @@ export default function ContasBancariasPage() {
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao salvar cartão');
-      if (json.card) loadAccounts();
+      if (json.card) {
+        await loadAccounts();
+      }
       setIsCardModalOpen(false);
       setEditingCard(null);
       setCardFormData({
@@ -535,6 +555,12 @@ export default function ContasBancariasPage() {
                   <h4 className={`text-2xl tracking-tight ${(account.current_balance ?? account.balance) >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
                     {formatCurrency(account.current_balance ?? account.balance)}
                   </h4>
+                          {isCurrentAccount(account) && Number(account.current_balance ?? account.balance ?? 0) < 0 && Number(account.overdraft_limit || 0) > 0 && (
+                            <div className="mt-1">
+                              <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5">Restante do cheque especial</p>
+                              <p className="text-sm font-medium text-blue-600">{formatCurrency(getOverdraftRemaining(account))}</p>
+                            </div>
+                          )}
                 </div>
 
                 {/* Cartões Vinculados */}
@@ -932,6 +958,12 @@ export default function ContasBancariasPage() {
                  <div>
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-2">Saldo Disponível</p>
                     <h3 className="text-3xl text-slate-800 tracking-tighter">{formatCurrency(detailModalAccount.current_balance ?? detailModalAccount.balance)}</h3>
+                    {isCurrentAccount(detailModalAccount) && Number(detailModalAccount.current_balance ?? detailModalAccount.balance ?? 0) < 0 && Number(detailModalAccount.overdraft_limit || 0) > 0 && (
+                      <div className="mt-2">
+                        <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5">Restante do cheque especial</p>
+                        <p className="text-sm font-medium text-blue-600">{formatCurrency(getOverdraftRemaining(detailModalAccount))}</p>
+                      </div>
+                    )}
                  </div>
                  <div className="space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-slate-200">

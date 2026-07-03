@@ -285,8 +285,14 @@ export default function Dashboard() {
         const pagarData = await pagarRes.json().catch(() => []);
 
         if (alive) {
+          const saldoAtual = Array.isArray(saldoData)
+            ? saldoData
+                .filter((item) => item?.tipo === 'conta')
+                .reduce((sum, item) => sum + (Number(item?.valor) || 0), 0)
+            : null;
+
           setFinancialTotals({
-            saldoAtual: Array.isArray(saldoData) ? saldoData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
+            saldoAtual,
             contasReceber: Array.isArray(receberData) ? receberData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
             contasPagar: Array.isArray(pagarData) ? pagarData.reduce((sum, item) => sum + (Number(item?.valor) || 0), 0) : null,
           });
@@ -785,7 +791,7 @@ export default function Dashboard() {
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <p className={`font-bold ${item.tipo === 'total' ? 'text-slate-900' : 'text-slate-800'}`}>{item.descricao || 'Conta Bancária'}</p>
+                              <p className={`font-bold ${item.tipo === 'total' && Number(item.valor) < 0 ? 'text-red-600' : item.tipo === 'total' ? 'text-slate-900' : 'text-slate-800'}`}>{item.descricao || 'Conta Bancária'}</p>
                               {item.detalhes && (
                                 <p className="text-sm text-slate-600 mt-1">{item.detalhes}</p>
                               )}
@@ -795,7 +801,7 @@ export default function Dashboard() {
                             </div>
                             {item.valor !== undefined && (
                               <div className="text-right ml-4">
-                                <p className={`text-2xl font-bold ${item.tipo === 'total' ? 'text-slate-900' : Number(item.valor) < 0 ? 'text-red-600' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
+                                <p className={`text-2xl font-bold ${Number(item.valor) < 0 ? 'text-red-600' : item.tipo === 'total' ? 'text-slate-900' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
                               </div>
                             )}
                           </div>

@@ -93,6 +93,7 @@ export default function ContasBancariasPage() {
   const [statementCard, setStatementCard] = useState<(BankCard & { accountName?: string }) | null>(null);
   const [selectedStatementRecordIds, setSelectedStatementRecordIds] = useState<string[]>([]);
   const [totals, setTotals] = useState({ limit: 0, spent: 0, available: 0 });
+  const [cardTotals, setCardTotals] = useState({ limit: 0, spent: 0, available: 0 });
   
   // Ações
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -135,6 +136,18 @@ export default function ContasBancariasPage() {
 
   const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit') || Number(card?.credit_limit || 0) > 0;
   const isCurrentAccount = (account?: BankAccount | null) => String(account?.type || '').toLowerCase().includes('corrente');
+
+  const calculateCardTotals = (accountList: BankAccount[], records: FinanceRecord[]) => {
+    const creditCards = accountList.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card));
+    const limit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
+    const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, records), 0);
+
+    return {
+      limit,
+      spent,
+      available: limit - spent,
+    };
+  };
 
   const getOverdraftRemaining = (account?: BankAccount | null) => {
     if (!account || !isCurrentAccount(account)) return 0;
@@ -207,6 +220,7 @@ export default function ContasBancariasPage() {
       const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, nextFinanceRecords), 0);
 
       setTotals({ limit: totalLimit, spent: totalSpent, available: totalLimit - totalSpent });
+      setCardTotals(calculateCardTotals(normalizedAccounts, nextFinanceRecords));
     }
     setLoading(false);
   };
@@ -423,17 +437,6 @@ export default function ContasBancariasPage() {
   };
 
   const statementSubcategories = categories.filter((category) => category.parent_id && category.type === 'expense');
-  const cardSummary = useMemo(() => {
-    const creditCards = accounts.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card));
-    const limit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
-    const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
-
-    return {
-      limit,
-      spent,
-      available: limit - spent,
-    };
-  }, [accounts, financeRecords]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -654,17 +657,17 @@ export default function ContasBancariasPage() {
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <CreditCard size={20} className="text-blue-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Gasto Atual</p>
-                <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.spent)}</p>
+                <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardTotals.spent)}</p>
              </div>
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                <ShieldCheck size={20} className="text-slate-200 mb-3" />
                <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Total</p>
-               <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.limit)}</p>
+               <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardTotals.limit)}</p>
              </div>
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <ShieldCheck size={20} className="text-emerald-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Disponível</p>
-                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.available)}</p>
+                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardTotals.available)}</p>
              </div>
           </div>
         </div>

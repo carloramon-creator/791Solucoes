@@ -136,9 +136,9 @@ function formatTicketPriority(priority: Ticket['priority'] | string | null | und
 function getTicketCardPriorityClass(priority: Ticket['priority'] | string | null | undefined) {
   const value = String(priority || '').trim();
 
-  if (value === 'normal') return 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200';
-  if (value === 'high') return 'bg-amber-50 hover:bg-amber-100 border-amber-200';
-  if (value === 'urgent') return 'bg-red-50 hover:bg-red-100 border-red-200';
+  if (value === 'normal') return 'bg-emerald-100 hover:bg-emerald-200 border-emerald-200';
+  if (value === 'high') return 'bg-amber-100 hover:bg-amber-200 border-amber-200';
+  if (value === 'urgent') return 'bg-red-100 hover:bg-red-200 border-red-200';
   return 'bg-white hover:bg-slate-50 border-slate-200';
 }
 
@@ -194,6 +194,7 @@ export default function SuportePage() {
   const [loading, setLoading] = useState(true);
   const [queueLoading, setQueueLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [concludingTicket, setConcludingTicket] = useState(false);
   const [deletingTicket, setDeletingTicket] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -584,6 +585,30 @@ export default function SuportePage() {
       setError(err?.message || 'Falha ao excluir ticket.');
     } finally {
       setDeletingTicket(false);
+    }
+  };
+
+  const handleConcludeTicket = async () => {
+    if (!selectedTicket) return;
+    const confirmed = window.confirm(`Concluir o ticket ${selectedTicket.protocol}?`);
+    if (!confirmed) return;
+
+    setConcludingTicket(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      await api(`/api/support/tickets/${selectedTicket.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'resolved' }),
+      });
+
+      setFeedback('Ticket concluido com sucesso.');
+      await loadSupportData(queue, true);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao concluir ticket.');
+    } finally {
+      setConcludingTicket(false);
     }
   };
 
@@ -1045,6 +1070,15 @@ export default function SuportePage() {
                     <div className="text-sm font-bold text-slate-800">{selectedTicket.title}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {!['resolved', 'closed'].includes(selectedTicket.status) && (
+                      <button
+                        onClick={handleConcludeTicket}
+                        disabled={concludingTicket}
+                        className="px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold uppercase tracking-wider hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {concludingTicket ? 'Concluindo...' : 'Concluir'}
+                      </button>
+                    )}
                     {can('action.support.delete_ticket') && (
                       <button
                         onClick={handleDeleteTicket}

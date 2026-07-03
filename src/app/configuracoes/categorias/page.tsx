@@ -21,6 +21,7 @@ interface Category {
   name: string;
   parent_id: string | null;
   type: 'revenue' | 'expense';
+  use_webhook?: boolean;
 }
 
 export default function CategoriasConfigPage() {
@@ -34,7 +35,8 @@ export default function CategoriasConfigPage() {
     id: '' as string,
     name: '',
     type: 'expense' as 'revenue' | 'expense',
-    parent_id: '' as string
+    parent_id: '' as string,
+    use_webhook: false
   });
 
   useEffect(() => {
@@ -69,7 +71,8 @@ export default function CategoriasConfigPage() {
           id: newCategory.id || undefined,
           name: newCategory.name,
           type: newCategory.type,
-          parent_id: parentId
+          parent_id: parentId,
+          use_webhook: newCategory.use_webhook
         })
       });
 
@@ -80,7 +83,7 @@ export default function CategoriasConfigPage() {
       
       setIsModalOpen(false);
       setEditingMode('category');
-      setNewCategory({ id: '', name: '', type: 'expense', parent_id: '' });
+      setNewCategory({ id: '', name: '', type: 'expense', parent_id: '', use_webhook: false });
       fetchCategories();
     } catch (err: any) {
       alert('Erro ao salvar categoria: ' + err.message);
@@ -117,7 +120,7 @@ export default function CategoriasConfigPage() {
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => {
-                    setNewCategory({ id: parent.id, name: parent.name, type: parent.type, parent_id: parent.parent_id || '' });
+                    setNewCategory({ id: parent.id, name: parent.name, type: parent.type, parent_id: parent.parent_id || '', use_webhook: Boolean((parent as any).use_webhook) });
                     setEditingMode('category');
                     setIsModalOpen(true);
                   }}
@@ -128,7 +131,7 @@ export default function CategoriasConfigPage() {
                 </button>
                 <button 
                   onClick={() => {
-                    setNewCategory({ id: '', name: '', type, parent_id: parent.id });
+                    setNewCategory({ id: '', name: '', type, parent_id: parent.id, use_webhook: false });
                     setEditingMode('subcategory');
                     setIsModalOpen(true);
                   }}
@@ -156,7 +159,7 @@ export default function CategoriasConfigPage() {
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
                     <button 
                       onClick={() => {
-                        setNewCategory({ id: sub.id, name: sub.name, type: sub.type, parent_id: sub.parent_id || '' });
+                        setNewCategory({ id: sub.id, name: sub.name, type: sub.type, parent_id: sub.parent_id || '', use_webhook: Boolean((sub as any).use_webhook) });
                         setEditingMode('subcategory');
                         setIsModalOpen(true);
                       }}
@@ -211,7 +214,7 @@ export default function CategoriasConfigPage() {
             </h2>
             <button 
               onClick={() => {
-                setNewCategory({ id: '', name: '', type: 'revenue', parent_id: '' });
+                setNewCategory({ id: '', name: '', type: 'revenue', parent_id: '', use_webhook: false });
                 setEditingMode('category');
                 setIsModalOpen(true);
               }}
@@ -229,7 +232,7 @@ export default function CategoriasConfigPage() {
             </h2>
             <button 
               onClick={() => {
-                setNewCategory({ id: '', name: '', type: 'expense', parent_id: '' });
+                setNewCategory({ id: '', name: '', type: 'expense', parent_id: '', use_webhook: false });
                 setEditingMode('category');
                 setIsModalOpen(true);
               }}
@@ -272,6 +275,16 @@ export default function CategoriasConfigPage() {
                   >Despesa</button>
                 </div>
               </div>
+
+              <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={Boolean(newCategory.use_webhook)}
+                  onChange={(e) => setNewCategory({ ...newCategory, use_webhook: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-[#3b597b] focus:ring-[#3b597b]"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Usar em webhook</span>
+              </label>
 
               {editingMode === 'subcategory' && (
               <div>

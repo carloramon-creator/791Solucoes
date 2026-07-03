@@ -43,6 +43,7 @@ interface BankAccount {
   credit_limit: number;
   overdraft_limit: number;
   status: string;
+  current_balance?: number;
   cards?: BankCard[];
 }
 
@@ -84,38 +85,67 @@ export default function ContasBancariasPage() {
     due_day: 10
   });
 
-  useEffect(() => {
-    async function loadAccounts() {
-      const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
-      const accJson = await accRes.json();
-      const accData: BankAccount[] = accJson.success ? accJson.accounts : [];
-      
-      if (accData) {
-        setAccounts(accData);
-        
-        // Calcula Limite Total
-        const totalLimit = accData.reduce((acc: number, curr: BankAccount) => {
-          const cardLimit = curr.cards?.reduce((cAcc: number, cCurr: any) => cAcc + Number(cCurr.credit_limit), 0) || 0;
-          return acc + cardLimit;
-        }, 0);
+  const loadAccounts = async () => {
+    const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
+    const accJson = await accRes.json();
+    const accData: BankAccount[] = accJson.success ? accJson.accounts : [];
 
-        // Busca Gasto Atual (Soma de despesas do mês)
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
+    if (accData) {
+      const financeRes = await fetch('/api/system/finance-records', { cache: 'no-store' });
+      const financeJson = await financeRes.json();
+      const financeRecords = financeJson.success ? financeJson.records : [];
 
-        const financeRes = await fetch('/api/system/finance-records', { cache: 'no-store' });
-        const financeJson = await financeRes.json();
-        const financeData = (financeJson.success ? financeJson.records : []).filter((item: any) =>
-          item.type === 'expense' && item.created_at >= startOfMonth.toISOString()
-        );
+      const accountAdjustments = new Map<string, number>();
+      const cardAdjustments = new Map<string, number>();
 
-        const totalSpent = financeData?.reduce((acc: number, curr: any) => acc + Number(curr.value), 0) || 0;
+      financeRecords.forEach((record: any) => {
+        if (record.status !== 'paid') return;
 
-        setTotals({ limit: totalLimit, spent: totalSpent });
-      }
-      setLoading(false);
+        const signedValue = record.type === 'revenue' ? Number(record.value || 0) : -Number(record.value || 0);
+        const recordAccountId = record.bank_account_id ? String(record.bank_account_id) : '';
+        const recordCardId = record.metadata?.card_id ? String(record.metadata.card_id) : '';
+
+        if (recordCardId) {
+          cardAdjustments.set(recordCardId, (cardAdjustments.get(recordCardId) || 0) + signedValue);
+          return;
+        }
+
+        if (recordAccountId) {
+          accountAdjustments.set(recordAccountId, (accountAdjustments.get(recordAccountId) || 0) + signedValue);
+        }
+      });
+
+      setAccounts(
+        accData.map((account) => ({
+          ...account,
+          current_balance: Number(account.balance || 0) + (accountAdjustments.get(account.id) || 0),
+          cards: (account.cards || []).map((card: any) => ({
+            ...card,
+            current_balance: Number(card.current_balance || 0) + (cardAdjustments.get(card.id) || 0),
+          })),
+        }))
+      );
+
+      // Calcula Limite Total
+      const totalLimit = accData.reduce((acc: number, curr: BankAccount) => {
+        const cardLimit = curr.cards?.reduce((cAcc: number, cCurr: any) => cAcc + Number(cCurr.credit_limit), 0) || 0;
+        return acc + cardLimit;
+      }, 0);
+
+      // Busca Gasto Atual (Soma de despesas do mês)
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const financeData = financeRecords.filter((item: any) => item.type === 'expense' && item.created_at >= startOfMonth.toISOString());
+      const totalSpent = financeData?.reduce((acc: number, curr: any) => acc + Number(curr.value), 0) || 0;
+
+      setTotals({ limit: totalLimit, spent: totalSpent });
     }
+    setLoading(false);
+  };
+
+  useEffect(() => {
     loadAccounts();
   }, []);
 
@@ -131,9 +161,7 @@ export default function ContasBancariasPage() {
         });
         const json = await res.json();
         if (!json.success) throw new Error(json.error || 'Erro ao atualizar conta');
-        if (json.account) {
-          setAccounts(prev => prev.map(acc => acc.id === editingAccount.id ? { ...json.account, cards: acc.cards } : acc));
-        }
+        if (json.account) loadAccounts();
       } else {
         const res = await fetch('/api/system/bank-accounts', {
           method: 'POST',
@@ -142,7 +170,7 @@ export default function ContasBancariasPage() {
         });
         const json = await res.json();
         if (!json.success) throw new Error(json.error || 'Erro ao criar conta');
-        if (json.account) setAccounts([...accounts, json.account]);
+        if (json.account) loadAccounts();
       }
 
       setIsModalOpen(false);
@@ -178,13 +206,7 @@ export default function ContasBancariasPage() {
       if (!json.success) throw new Error(json.error || 'Erro ao salvar cartão');
       const data = json.card ? [json.card] : [];
       
-      if (data) {
-        setAccounts(prev => prev.map(acc => 
-          acc.id === selectedAccountId 
-            ? { ...acc, cards: [...(acc.cards || []), data[0]] }
-            : acc
-        ));
-      }
+      if (data) loadAccounts();
       setIsCardModalOpen(false);
       setCardFormData({
         name: '',
@@ -359,8 +381,8 @@ export default function ContasBancariasPage() {
               <div className="p-6 space-y-4 flex-1">
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Saldo em Conta</p>
-                  <h4 className={`text-2xl tracking-tight ${account.balance >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                    {formatCurrency(account.balance)}
+                  <h4 className={`text-2xl tracking-tight ${(account.current_balance ?? account.balance) >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
+                    {formatCurrency(account.current_balance ?? account.balance)}
                   </h4>
                 </div>
 
@@ -708,7 +730,7 @@ export default function ContasBancariasPage() {
               <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div>
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-2">Saldo Disponível</p>
-                    <h3 className="text-3xl text-slate-800 tracking-tighter">{formatCurrency(detailModalAccount.balance)}</h3>
+                    <h3 className="text-3xl text-slate-800 tracking-tighter">{formatCurrency(detailModalAccount.current_balance ?? detailModalAccount.balance)}</h3>
                  </div>
                  <div className="space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-slate-200">
@@ -717,7 +739,7 @@ export default function ContasBancariasPage() {
                     </div>
                     <div className="flex justify-between items-center">
                        <span className="text-[10px] text-slate-500 uppercase tracking-widest">Total com Limite</span>
-                       <span className="text-sm text-slate-800 font-bold">{formatCurrency(detailModalAccount.balance + detailModalAccount.overdraft_limit)}</span>
+                       <span className="text-sm text-slate-800 font-bold">{formatCurrency((detailModalAccount.current_balance ?? detailModalAccount.balance) + detailModalAccount.overdraft_limit)}</span>
                     </div>
                  </div>
               </div>

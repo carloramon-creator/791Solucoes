@@ -156,6 +156,22 @@ function signedValue(record: FinanceRecord) {
   return record.type === "revenue" ? Number(record.value || 0) : -Number(record.value || 0);
 }
 
+function formatCurrencyInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const amount = Number(digits) / 100;
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function parseCurrencyInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return (Number(digits) / 100).toFixed(2);
+}
+
 function getDisplayDescription(record: FinanceRecord) {
   const tenantName = record.tenant_name || (record.metadata && typeof record.metadata === "object" ? record.metadata?.tenant_name : null);
   if (!tenantName) return record.description;
@@ -199,7 +215,9 @@ export default function FinancePage() {
     type: "expense" as FinanceType,
     description: "",
     value: "",
-    category: "",
+    valueDisplay: "",
+    categoryId: "",
+    subcategoryId: "",
     payment_method: "Pix",
     sourceId: "",
     status: "paid" as FinanceStatus,
@@ -317,15 +335,7 @@ export default function FinancePage() {
       cardId: card.id,
     })));
 
-    const externalSources: SourceOption[] = Array.from(externalAdjustments.entries()).map(([id, amount]) => ({
-      id,
-      kind: "external",
-      label: id.replace("external:", ""),
-      details: "Origem externa",
-      amount,
-    }));
-
-    const allWithoutVirtual = [...accountSources, ...cardSources, ...externalSources];
+    const allWithoutVirtual = [...accountSources, ...cardSources];
     const allAmount = allWithoutVirtual.reduce((sum, item) => sum + item.amount, 0);
 
     return [{ id: "all", kind: "all", label: "Todas as contas e cartoes", amount: allAmount }, ...allWithoutVirtual];
@@ -477,7 +487,9 @@ export default function FinancePage() {
       type: "expense",
       description: "",
       value: "",
-      category: "",
+      valueDisplay: "",
+      categoryId: "",
+      subcategoryId: "",
       payment_method: "Pix",
       sourceId: "",
       status: "paid",
@@ -489,12 +501,20 @@ export default function FinancePage() {
   };
 
   const openEditModal = (record: FinanceRecord) => {
+    const recordMetadata = (record.metadata && typeof record.metadata === 'object') ? record.metadata : {};
+    const recordCategoryParentId = String(recordMetadata?.category_parent_id || '');
+    const recordCategorySubcategoryId = String(recordMetadata?.category_subcategory_id || '');
+    const directCategory = categories.find((category) => category.name === record.category) || null;
+    const directParent = directCategory?.parent_id ? categories.find((category) => category.id === directCategory.parent_id) || null : null;
+
     setEditingRecord(record);
     setForm({
       type: record.type,
       description: getDisplayDescription(record) || "",
       value: String(Number(record.value || 0)),
-      category: record.category || "",
+      valueDisplay: formatCurrencyInput(String(Number(record.value || 0) * 100)),
+      categoryId: recordCategoryParentId || directParent?.id || (directCategory?.parent_id ? directCategory.parent_id : directCategory?.id || ""),
+      subcategoryId: recordCategorySubcategoryId || (directCategory?.parent_id ? directCategory.id : ""),
       payment_method: record.payment_method || "Pix",
       sourceId: record.source_id || (record.bank_id ? `external:${record.bank_id}` : ""),
       status: record.status,
@@ -577,12 +597,15 @@ export default function FinancePage() {
     try {
       const { bankAccountId, bankId, metadataPatch } = parseSourceSelection(form.sourceId);
       const previousMetadata = (editingRecord?.metadata && typeof editingRecord.metadata === "object") ? editingRecord.metadata : {};
+      const selectedRoot = categories.find((category) => category.id === form.categoryId) || null;
+      const selectedSubcategory = categories.find((category) => category.id === form.subcategoryId) || null;
+      const finalCategoryName = selectedSubcategory?.name || selectedRoot?.name || "Geral";
 
       const payload = {
         type: form.type,
         description: form.description,
         value: Number(form.value),
-        category: form.category || "Geral",
+        category: finalCategoryName,
         payment_method: form.payment_method,
         status: form.status,
         bank_account_id: bankAccountId,
@@ -592,6 +615,10 @@ export default function FinancePage() {
         recurring_period: form.is_recurring ? form.recurring_period : null,
         metadata: {
           ...previousMetadata,
+          category_parent_id: selectedSubcategory ? selectedSubcategory.parent_id : selectedRoot?.id || null,
+          category_parent_name: selectedSubcategory ? (categories.find((category) => category.id === selectedSubcategory.parent_id)?.name || null) : selectedRoot?.name || null,
+          category_subcategory_id: selectedSubcategory?.id || null,
+          category_subcategory_name: selectedSubcategory?.name || null,
           ...metadataPatch,
         },
       };
@@ -679,6 +706,8 @@ export default function FinancePage() {
   };
 
   const sourceOptionsForForm = sourceOptions.filter((source) => source.id !== "all");
+  const rootCategories = categories.filter((category) => !category.parent_id && category.type === form.type);
+  const subcategoriesForForm = categories.filter((category) => category.parent_id && categories.find((parent) => parent.id === category.parent_id)?.type === form.type && (!form.categoryId || category.parent_id === form.categoryId));
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -775,26 +804,37 @@ export default function FinancePage() {
                     {getPeriodLabel(period)}
                   </button>
                 ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
-                <Calendar size={13} /> Inicio
-                <input type="date" value={activeSection === "fluxo" ? flowDateStart : openDateStart} onChange={(e) => activeSection === "fluxo" ? setFlowDateStart(e.target.value) : setOpenDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
-                Fim
-                <input type="date" value={activeSection === "fluxo" ? flowDateEnd : openDateEnd} onChange={(e) => activeSection === "fluxo" ? setFlowDateEnd(e.target.value) : setOpenDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
-              </div>
-
-              {activeSection === "fluxo" && (
-                <div className="space-y-3">
-                  <div className="relative inline-block">
+                {activeSection === "fluxo" && (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2 ml-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                      <Calendar size={13} /> Inicio
+                      <input type="date" value={flowDateStart} onChange={(e) => setFlowDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                      Fim
+                      <input type="date" value={flowDateEnd} onChange={(e) => setFlowDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                    </div>
                     <button
                       onClick={() => setSourceDropdownOpen((prev) => !prev)}
-                      className="h-[36px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
+                      className="h-[34px] rounded-full border border-slate-200 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
                     >
                       <Filter size={13} />
                       Contas e cartoes
                     </button>
+                  </>
+                )}
+              </div>
 
+              {activeSection !== "fluxo" && (
+                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                  <Calendar size={13} /> Inicio
+                  <input type="date" value={openDateStart} onChange={(e) => setOpenDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                  Fim
+                  <input type="date" value={openDateEnd} onChange={(e) => setOpenDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                </div>
+              )}
+
+              {activeSection === "fluxo" && (
+                <div className="space-y-3">
+                  <div className="relative inline-block">
                     {sourceDropdownOpen && (
                       <div className="absolute z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
                         {sourceOptions.map((source) => {
@@ -817,15 +857,15 @@ export default function FinancePage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p>
-                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowOpeningBalance)}</p>
+                      <p className={`mt-1 text-xl font-bold ${flowOpeningBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lancamentos</p>
-                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowNet)}</p>
+                      <p className={`mt-1 text-xl font-bold ${flowNet >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowNet)}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
                       <p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p>
-                      <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(flowClosingBalance)}</p>
+                      <p className={`mt-1 text-xl font-bold ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</p>
                     </div>
                   </div>
                 </div>
@@ -936,7 +976,7 @@ export default function FinancePage() {
                   <td className="px-6 py-3 text-xs font-bold text-slate-700">Saldo final do dia anterior</td>
                   <td className="px-6 py-3 text-xs text-slate-500">{sourceLabelSummary}</td>
                   <td className="px-6 py-3 text-right text-xs font-bold text-slate-600">{formatCurrency(0)}</td>
-                  <td className="px-6 py-3 text-right text-sm font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
+                  <td className={`px-6 py-3 text-right text-sm font-black ${flowOpeningBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</td>
                 </tr>
 
                 {flowRows.length ? flowRows.map(({ record, running }) => (
@@ -945,7 +985,7 @@ export default function FinancePage() {
                     <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
                     <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
-                    <td className="px-6 py-3 text-right text-sm font-black text-slate-700">{formatCurrency(running)}</td>
+                    <td className={`px-6 py-3 text-right text-sm font-black ${running >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(running)}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -958,7 +998,7 @@ export default function FinancePage() {
                   <td className="px-6 py-3 text-xs font-bold text-slate-700">Saldo inicial + lancamentos do periodo</td>
                   <td className="px-6 py-3 text-xs text-slate-500">{sourceLabelSummary}</td>
                   <td className="px-6 py-3 text-right text-xs font-bold text-slate-600">{formatCurrency(flowNet)}</td>
-                  <td className="px-6 py-3 text-right text-sm font-black text-blue-700">{formatCurrency(flowClosingBalance)}</td>
+                  <td className={`px-6 py-3 text-right text-sm font-black ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</td>
                 </tr>
               </tbody>
             </table>
@@ -985,7 +1025,16 @@ export default function FinancePage() {
 
               <div>
                 <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Valor</label>
-                <input type="number" value={form.value} onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm" />
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.valueDisplay}
+                  onChange={(e) => {
+                    const formatted = formatCurrencyInput(e.target.value);
+                    setForm((p) => ({ ...p, valueDisplay: formatted, value: parseCurrencyInput(formatted) }));
+                  }}
+                  className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm"
+                />
               </div>
 
               <div className="md:col-span-2">
@@ -1008,10 +1057,31 @@ export default function FinancePage() {
 
               <div>
                 <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Categoria</label>
-                <select value={form.category} onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm">
-                  <option value="">Selecione...</option>
-                  {categories.filter((cat) => cat.type === form.type).map((cat) => (
-                    <option key={cat.id} value={cat.name}>{cat.name}</option>
+                <select value={form.categoryId} onChange={(e) => setForm((p) => ({ ...p, categoryId: e.target.value, subcategoryId: "" }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm">
+                  <option value="">Selecione a categoria...</option>
+                  {categories.filter((cat) => !cat.parent_id && cat.type === form.type).map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Subcategoria</label>
+                <select
+                  value={form.subcategoryId}
+                  onChange={(e) => {
+                    const selectedSubcategory = categories.find((category) => category.id === e.target.value) || null;
+                    setForm((p) => ({
+                      ...p,
+                      subcategoryId: e.target.value,
+                      categoryId: selectedSubcategory?.parent_id || p.categoryId,
+                    }));
+                  }}
+                  className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm"
+                >
+                  <option value="">Selecione a subcategoria...</option>
+                  {categories.filter((cat) => cat.parent_id && (!form.categoryId || cat.parent_id === form.categoryId)).map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
                   ))}
                 </select>
               </div>

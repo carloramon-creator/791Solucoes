@@ -77,12 +77,14 @@ export class PaymentProcessor {
 
       const { data: revenueCategories } = await holdingSupabase
         .from('system_finance_categories')
-        .select('id, name, parent_id, type')
+        .select('*')
         .eq('type', 'revenue');
 
       const normalized = (value: unknown) => String(value || '').toLowerCase();
-      const rootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && /software|saas|assinatura/.test(normalized(cat.name)));
-      const subCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && /assinatura|mensalidade|saas/.test(normalized(cat.name)));
+      const markedRootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && cat.use_webhook);
+      const rootCategory = markedRootCategory || (revenueCategories || []).find((cat: any) => !cat.parent_id && /software|saas|assinatura/.test(normalized(cat.name)));
+      const markedSubCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && cat.use_webhook);
+      const subCategory = markedSubCategory || (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && /assinatura|mensalidade|saas/.test(normalized(cat.name)));
 
       const { data: asaasAccount } = await holdingSupabase
         .from('system_bank_accounts')

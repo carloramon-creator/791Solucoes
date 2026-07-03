@@ -35,12 +35,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Nenhuma coluna recebida para gerar o extrato.' }, { status: 400 });
     }
 
-    const doc = new PDFDocument({ size: 'A4', margin: 30 });
+    const appFontBuffer = Buffer.from(notoSansBase64, 'base64');
+    const doc = new PDFDocument({ size: 'A4', margin: 30, font: appFontBuffer as any });
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
 
     // Use embedded font to avoid runtime dependency on pdfkit AFM font files.
-    const appFontBuffer = Buffer.from(notoSansBase64, 'base64');
     doc.registerFont('AppFont', appFontBuffer);
     doc.font('AppFont');
 

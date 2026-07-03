@@ -19,8 +19,7 @@ import {
 
 type FinanceType = "revenue" | "expense";
 type FinanceStatus = "paid" | "pending";
-type Section = "lancamentos" | "abertos" | "fluxo";
-type OpenViewKind = "payable" | "receivable";
+type Section = "records" | "payable" | "receivable" | "fluxo";
 type DifferenceHandling = "adjust" | "keep_open";
 type PeriodFilter = "dia" | "semana" | "quinzena" | "mes" | "trimestre" | "semestre" | "ano";
 
@@ -178,6 +177,10 @@ function getDisplayDescription(record: FinanceRecord) {
   return String(record.description || "").replace(/Tenant:\s*[0-9a-f-]+/i, `Tenant: ${tenantName}`);
 }
 
+function isCreditCard(card?: BankCard | null) {
+  return String(card?.card_type || "").toLowerCase().includes("credit") || Number(card?.credit_limit || 0) > 0;
+}
+
 export default function FinancePage() {
   const searchParams = useSearchParams();
 
@@ -189,9 +192,8 @@ export default function FinancePage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
-  const [activeSection, setActiveSection] = useState<Section>("lancamentos");
-  const [openViewKind, setOpenViewKind] = useState<OpenViewKind>("payable");
-  const [filter, setFilter] = useState<"all" | "revenue" | "expense" | "payable">("all");
+  const [activeSection, setActiveSection] = useState<Section>("records");
+  const [filter, setFilter] = useState<"all" | "revenue" | "expense">("all");
   const [searchTerm, setSearchTerm] = useState("");
 
   const [flowPeriod, setFlowPeriod] = useState<PeriodFilter>("dia");
@@ -246,6 +248,34 @@ export default function FinancePage() {
     });
     return map;
   }, [accounts]);
+
+  const getCardSpentAmount = (card?: BankCard | null, records: FinanceRecord[] = normalizedRecords) => {
+    if (!card) return 0;
+
+    return records.reduce((sum, record: any) => {
+      const recordCardId = String(record?.metadata?.card_id || '');
+      if (recordCardId !== card.id) return sum;
+      if (record.type !== 'expense') return sum;
+
+      const cardStatementReference = String(record?.metadata?.card_statement_reference || '');
+      const cardStatementGenerated = Boolean(record?.metadata?.card_statement_generated);
+
+      if (record.status === 'paid' && !cardStatementReference) {
+        return sum + Number(record.value || 0);
+      }
+
+      if (record.status === 'pending' && cardStatementGenerated) {
+        return sum + Number(record.value || 0);
+      }
+
+      return sum;
+    }, 0);
+  };
+
+  const getCardAvailableLimit = (card?: BankCard | null, records: FinanceRecord[] = normalizedRecords) => {
+    const limit = Number(card?.credit_limit || 0);
+    return Number((limit - getCardSpentAmount(card, records)).toFixed(2));
+  };
 
   const findAsaasAccount = (record: FinanceRecord) => {
     const metadata = (record.metadata && typeof record.metadata === "object") ? record.metadata : {};
@@ -360,7 +390,7 @@ export default function FinancePage() {
       kind: "card" as const,
       label: `${acc.bank_name || "Banco"} - ${card.name}`,
       details: [card.card_type ? String(card.card_type).toUpperCase() : null, card.last_digits ? `•••• ${card.last_digits}` : null].filter(Boolean).join(" | "),
-      amount: Number(card.current_balance || 0) + Number(cardAdjustments.get(card.id) || 0),
+      amount: getCardAvailableLimit(card, normalizedRecords),
       accountId: acc.id,
       cardId: card.id,
     })));
@@ -407,8 +437,7 @@ export default function FinancePage() {
       const matchesFilter =
         filter === "all" ||
         (filter === "revenue" && record.type === "revenue") ||
-        (filter === "expense" && record.type === "expense") ||
-        (filter === "payable" && record.type === "expense" && record.status !== "paid");
+        (filter === "expense" && record.type === "expense");
       const text = `${getDisplayDescription(record)} ${record.category} ${record.source_label || ""}`.toLowerCase();
       const matchesSearch = text.includes(searchTerm.toLowerCase());
       return matchesFilter && matchesSearch;
@@ -418,15 +447,16 @@ export default function FinancePage() {
   const openRecords = useMemo(() => {
     const start = startOfDay(new Date(`${openDateStart}T00:00:00`));
     const end = endOfDay(new Date(`${openDateEnd}T00:00:00`));
+    const kind = activeSection === "receivable" ? "receivable" : "payable";
     return normalizedRecords
       .filter((record) => record.status !== "paid")
-      .filter((record) => openViewKind === "payable" ? record.type === "expense" : record.type === "revenue")
+      .filter((record) => kind === "payable" ? record.type === "expense" : record.type === "revenue")
       .filter((record) => {
         const date = new Date(record.created_at);
         return date >= start && date <= end;
       })
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  }, [normalizedRecords, openViewKind, openDateStart, openDateEnd]);
+  }, [normalizedRecords, activeSection, openDateStart, openDateEnd]);
 
   const flowRecords = useMemo(() => {
     const start = startOfDay(new Date(`${flowDateStart}T00:00:00`));
@@ -461,6 +491,18 @@ export default function FinancePage() {
       return { record, running };
     });
   }, [flowRecords, flowOpeningBalance]);
+
+  const cardSummary = useMemo(() => {
+    const creditCards = accounts.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card));
+    const limit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
+    const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, normalizedRecords), 0);
+
+    return {
+      limit,
+      spent,
+      available: Number((limit - spent).toFixed(2)),
+    };
+  }, [accounts, normalizedRecords]);
 
   const sourceLabelSummary = useMemo(() => {
     if (selectedSourceIds.includes("all") || selectedSourceIds.length === 0) return "Todas as contas e cartoes";
@@ -513,9 +555,7 @@ export default function FinancePage() {
     const section = searchParams.get("section");
     const kind = searchParams.get("kind");
     if (section === "abertos") {
-      setActiveSection("abertos");
-      if (kind === "receivable") setOpenViewKind("receivable");
-      if (kind === "payable") setOpenViewKind("payable");
+      setActiveSection(kind === "receivable" ? "receivable" : "payable");
     }
   }, [searchParams]);
 
@@ -843,138 +883,91 @@ export default function FinancePage() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-slate-100 bg-slate-50/40 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setActiveSection("lancamentos")}
-              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "lancamentos" ? "bg-[#3b597b] text-white" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              Lancamentos
-            </button>
-            <button
-              onClick={() => { setActiveSection("abertos"); setOpenViewKind("payable"); }}
-              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "payable" ? "bg-red-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              Contas a pagar em aberto
-            </button>
-            <button
-              onClick={() => { setActiveSection("abertos"); setOpenViewKind("receivable"); }}
-              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "receivable" ? "bg-emerald-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              Contas a receber em aberto
-            </button>
-            <button
-              onClick={() => setActiveSection("fluxo")}
-              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "fluxo" ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              Fluxo de caixa
-            </button>
+            <button onClick={() => setActiveSection("records")} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "records" ? "bg-[#3b597b] text-white" : "text-slate-500 hover:text-slate-700"}`}>Tudo</button>
+            <button onClick={() => { setActiveSection("records"); setFilter("revenue"); }} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "records" && filter === "revenue" ? "bg-emerald-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>Receitas</button>
+            <button onClick={() => { setActiveSection("records"); setFilter("expense"); }} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "records" && filter === "expense" ? "bg-red-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>Despesas</button>
+            <button onClick={() => setActiveSection("payable")} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "payable" ? "bg-amber-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>Contas a pagar</button>
+            <button onClick={() => setActiveSection("receivable")} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "receivable" ? "bg-emerald-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>Contas a receber</button>
+            <button onClick={() => setActiveSection("fluxo")} className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "fluxo" ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>Fluxo de caixa</button>
           </div>
 
-          {activeSection === "lancamentos" ? (
+          {activeSection === "records" && (
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => setFilter("all")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "all" ? "bg-[#3b597b] text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Tudo</button>
                 <button onClick={() => setFilter("revenue")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "revenue" ? "bg-emerald-500 text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Receitas</button>
                 <button onClick={() => setFilter("expense")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "expense" ? "bg-red-500 text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Despesas</button>
-                <button onClick={() => setFilter("payable")} className={`text-[10px] px-3 py-1.5 rounded-full font-bold uppercase ${filter === "payable" ? "bg-amber-500 text-white" : "bg-white text-slate-500 border border-slate-200"}`}>Contas a pagar</button>
               </div>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl pl-9 pr-4 h-[38px] text-xs w-full md:w-72"
-                  placeholder="Pesquisar descricao, categoria ou conta..."
-                />
+                <input type="text" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="bg-white border border-slate-200 rounded-xl pl-9 pr-4 h-[38px] text-xs w-full md:w-72" placeholder="Pesquisar descricao, categoria ou conta..." />
               </div>
             </div>
-          ) : (
+          )}
+
+          {activeSection === "payable" || activeSection === "receivable" ? (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 {periodOptions.map((period) => (
-                  <button
-                    key={period}
-                    onClick={() => activeSection === "fluxo" ? setFlowPeriod(period) : setOpenPeriod(period)}
-                    className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold ${(activeSection === "fluxo" ? flowPeriod : openPeriod) === period ? "bg-[#3b597b] text-white" : "bg-white border border-slate-200 text-slate-500"}`}
-                  >
-                    {getPeriodLabel(period)}
-                  </button>
+                  <button key={period} onClick={() => setOpenPeriod(period)} className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold ${openPeriod === period ? "bg-[#3b597b] text-white" : "bg-white border border-slate-200 text-slate-500"}`}>{getPeriodLabel(period)}</button>
                 ))}
-                {activeSection === "fluxo" && (
-                  <>
-                    <div className="flex flex-wrap items-center gap-2 ml-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
-                      <Calendar size={13} /> Inicio
-                      <input type="date" value={flowDateStart} onChange={(e) => setFlowDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
-                      Fim
-                      <input type="date" value={flowDateEnd} onChange={(e) => setFlowDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
-                    </div>
-                    <div className="relative inline-block">
-                      <button
-                        onClick={() => setSourceDropdownOpen((prev) => !prev)}
-                        className="h-[34px] rounded-full border border-slate-200 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
-                      >
-                        <Filter size={13} />
-                        Contas e cartoes
-                      </button>
-
-                      {sourceDropdownOpen && (
-                        <div className="absolute left-0 top-full z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
-                          {sourceOptions.map((source) => {
-                            const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
-                            return (
-                              <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
-                                <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
-                                  <p className="text-[10px] text-slate-500">{source.details || ""}</p>
-                                </div>
-                                <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {activeSection !== "fluxo" && (
-                <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                <div className="flex flex-wrap items-center gap-2 ml-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
                   <Calendar size={13} /> Inicio
                   <input type="date" value={openDateStart} onChange={(e) => setOpenDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
                   Fim
                   <input type="date" value={openDateEnd} onChange={(e) => setOpenDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
                 </div>
-              )}
+              </div>
+            </div>
+          ) : null}
 
-              {activeSection === "fluxo" && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p>
-                      <p className={`mt-1 text-xl font-bold ${flowOpeningBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Entrada</p>
-                      <p className="mt-1 text-xl font-bold text-emerald-600">{formatCurrency(flowIncoming)}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saida</p>
-                      <p className="mt-1 text-xl font-bold text-red-600">{formatCurrency(flowOutgoing)}</p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p>
-                      <p className={`mt-1 text-xl font-bold ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</p>
-                    </div>
-                  </div>
+          {activeSection === "fluxo" && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {periodOptions.map((period) => (
+                  <button key={period} onClick={() => setFlowPeriod(period)} className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold ${flowPeriod === period ? "bg-[#3b597b] text-white" : "bg-white border border-slate-200 text-slate-500"}`}>{getPeriodLabel(period)}</button>
+                ))}
+                <div className="flex flex-wrap items-center gap-2 ml-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                  <Calendar size={13} /> Inicio
+                  <input type="date" value={flowDateStart} onChange={(e) => setFlowDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                  Fim
+                  <input type="date" value={flowDateEnd} onChange={(e) => setFlowDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
                 </div>
-              )}
+                <div className="relative inline-block">
+                  <button onClick={() => setSourceDropdownOpen((prev) => !prev)} className="h-[34px] rounded-full border border-slate-200 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2">
+                    <Filter size={13} /> Contas e cartoes
+                  </button>
+                  {sourceDropdownOpen && (
+                    <div className="absolute left-0 top-full z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+                      {sourceOptions.map((source) => {
+                        const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
+                        return (
+                          <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
+                            <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
+                              <p className="text-[10px] text-slate-500">{source.details || ""}</p>
+                            </div>
+                            <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p><p className={`mt-1 text-xl font-bold ${flowOpeningBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Entrada</p><p className="mt-1 text-xl font-bold text-emerald-600">{formatCurrency(flowIncoming)}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saida</p><p className="mt-1 text-xl font-bold text-red-600">{formatCurrency(flowOutgoing)}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-blue-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p><p className={`mt-1 text-xl font-bold ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</p></div>
+              </div>
             </div>
           )}
         </div>
 
-        {activeSection === "lancamentos" && (
+        {activeSection === "records" && (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -1023,7 +1016,7 @@ export default function FinancePage() {
           </div>
         )}
 
-        {activeSection === "abertos" && (
+        {activeSection === "payable" && (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -1039,9 +1032,44 @@ export default function FinancePage() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
-                ) : openRecords.length === 0 ? (
-                  <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-xs uppercase tracking-widest">Nenhuma conta em aberto para o periodo.</td></tr>
-                ) : openRecords.map((record) => (
+                ) : openRecords.filter((record) => record.type === "expense").length === 0 ? (
+                  <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-xs uppercase tracking-widest">Nenhuma conta a pagar para o periodo.</td></tr>
+                ) : openRecords.filter((record) => record.type === "expense").map((record) => (
+                  <tr key={record.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-3 text-xs text-slate-700">{formatDate(record.created_at)}</td>
+                    <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>
+                    <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
+                    <td className="px-6 py-3 text-xs text-slate-600">{record.category || "Geral"}</td>
+                    <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
+                    <td className="px-6 py-3 text-right">
+                      <button onClick={() => openSettleModal(record)} className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><CheckCircle2 size={12} />Baixar</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeSection === "receivable" && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
+                  <th className="px-6 py-3">Data</th>
+                  <th className="px-6 py-3">Lancamento</th>
+                  <th className="px-6 py-3">Conta</th>
+                  <th className="px-6 py-3">Categoria</th>
+                  <th className="px-6 py-3 text-right">Valor</th>
+                  <th className="px-6 py-3 text-right">Acao</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400"><Loader2 className="animate-spin mx-auto" /></td></tr>
+                ) : openRecords.filter((record) => record.type === "revenue").length === 0 ? (
+                  <tr><td colSpan={6} className="px-6 py-10 text-center text-slate-400 text-xs uppercase tracking-widest">Nenhuma conta a receber para o periodo.</td></tr>
+                ) : openRecords.filter((record) => record.type === "revenue").map((record) => (
                   <tr key={record.id} className="hover:bg-slate-50">
                     <td className="px-6 py-3 text-xs text-slate-700">{formatDate(record.created_at)}</td>
                     <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>

@@ -93,7 +93,7 @@ export default function ContasBancariasPage() {
   const [statementCard, setStatementCard] = useState<(BankCard & { accountName?: string }) | null>(null);
   const [selectedStatementRecordIds, setSelectedStatementRecordIds] = useState<string[]>([]);
   const [totals, setTotals] = useState({ limit: 0, spent: 0, available: 0 });
-  const [cardTotals, setCardTotals] = useState({ limit: 0, spent: 0, available: 0 });
+  const [cardTotals, setCardTotals] = useState<{ limit: number; spent: number; available: number }>({ limit: 0, spent: 0, available: 0 });
   
   // Ações
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -138,15 +138,10 @@ export default function ContasBancariasPage() {
   const isCurrentAccount = (account?: BankAccount | null) => String(account?.type || '').toLowerCase().includes('corrente');
 
   const calculateCardTotals = (accountList: BankAccount[], records: FinanceRecord[]) => {
-    const creditCards = accountList.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card));
+    const creditCards = accountList.flatMap(account => account.cards || []).filter(card => isCreditCard(card));
     const limit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
     const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, records), 0);
-
-    return {
-      limit,
-      spent,
-      available: limit - spent,
-    };
+    return { limit, spent, available: Number((limit - spent).toFixed(2)) };
   };
 
   const getOverdraftRemaining = (account?: BankAccount | null) => {
@@ -607,7 +602,7 @@ export default function ContasBancariasPage() {
                           </div>
                           <div className="text-right">
                              <span className="block text-[10px] text-slate-600">Limite {formatCurrency(card.credit_limit)}</span>
-                             <span className="block text-[10px] text-red-600">Gasto {formatCurrency(getCardSpentAmount(card))}</span>
+                             <span className="block text-[10px] text-blue-600">Disponível {formatCurrency(getCardAvailableLimit(card))}</span>
                              {isCreditCard(card) && (
                                <button
                                  onClick={() => handleCloseCard(card.id)}
@@ -1003,6 +998,7 @@ export default function ContasBancariasPage() {
                               <div className="text-right">
                                  <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Gasto atual</p>
                                  <p className="text-sm text-red-600 mb-2">{formatCurrency(getCardSpentAmount(card))}</p>
+                                                                 <p className="text-sm text-red-600 mb-2">{formatCurrency(getCardAvailableLimit(card))}</p>
                                  <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Limite</p>
                                  <p className="text-sm text-slate-800">{formatCurrency(card.credit_limit)}</p>
                               </div>

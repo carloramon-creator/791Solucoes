@@ -32,6 +32,7 @@ interface FinanceRecord {
   type: FinanceType;
   value: number;
   description: string;
+  documento?: string | null;
   tenant_name?: string | null;
   category: string;
   status: FinanceStatus;
@@ -867,11 +868,12 @@ export default function FinancePage() {
         userLabel,
         generatedAt,
         periodLabel: "Dados consolidados da visualização atual",
-        columns: ["Data", "Status", "Descrição", "Conta", "Método", "Valor"],
+        columns: ["Data", "Status", "Lançamento", "Documento", "Conta", "Método", "Valor"],
         rows: filteredRecords.map((record) => [
           formatDate(record.created_at),
           record.status === "paid" ? "Pago" : "Pendente",
           getDisplayDescription(record),
+          String(record.documento || "--"),
           record.source_label || "Sem conta",
           record.payment_method || "Pix",
           `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
@@ -887,10 +889,11 @@ export default function FinancePage() {
         userLabel,
         generatedAt,
         periodLabel: `Período selecionado: ${formatDate(openDateStart)} até ${formatDate(openDateEnd)}`,
-        columns: ["Data", "Lançamento", "Conta", "Categoria", "Valor"],
+        columns: ["Data", "Lançamento", "Documento", "Conta", "Categoria", "Valor"],
         rows: list.map((record) => [
           formatDate(record.created_at),
           getDisplayDescription(record),
+          String(record.documento || "--"),
           record.source_label || "Sem conta",
           record.category || "Geral",
           `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
@@ -904,12 +907,13 @@ export default function FinancePage() {
       userLabel,
       generatedAt,
       periodLabel: `${formatDate(flowDateStart)} até ${formatDate(flowDateEnd)} | ${sourceLabelSummary}`,
-      columns: ["Data", "Lançamento", "Conta", "Valor", "Saldo"],
+      columns: ["Data", "Lançamento", "Documento", "Conta", "Valor", "Saldo"],
       rows: [
-        ["Saldo inicial", "Saldo final do dia anterior", sourceLabelSummary, formatCurrency(0), formatCurrency(flowOpeningBalance)],
+        ["Saldo inicial", "Saldo final do dia anterior", "--", sourceLabelSummary, formatCurrency(0), formatCurrency(flowOpeningBalance)],
         ...flowRows.map(({ record, running }) => [
           formatDate(record.created_at),
           getDisplayDescription(record),
+          String(record.documento || "--"),
           record.source_label || "Sem conta",
           `${record.type === "revenue" ? "+" : "-"} ${formatCurrency(Number(record.value || 0))}`,
           formatCurrency(running),

@@ -95,11 +95,12 @@ export async function POST(req: Request) {
 
     const explicitWidths = columns.map((column) => {
       const key = String(column || '').toLowerCase();
-      if (key.includes('data')) return 56;
+      if (key.includes('data')) return 52;
       if (key.includes('status')) return 58;
-      if (key.includes('valor')) return 68;
-      if (key.includes('saldo')) return 68;
-      if (key.includes('lançamento') || key.includes('lancamento') || key.includes('descrição') || key.includes('descricao')) return 180;
+      if (key.includes('valor')) return 62;
+      if (key.includes('saldo')) return 56;
+      if (key.includes('lançamento') || key.includes('lancamento') || key.includes('descrição') || key.includes('descricao')) return 194;
+      if (key.includes('documento')) return 88;
       if (key.includes('conta')) return 92;
       if (key.includes('método') || key.includes('metodo')) return 72;
       if (key.includes('categoria')) return 86;
@@ -149,7 +150,7 @@ export async function POST(req: Request) {
 
     const drawRow = (row: string[], isEven: boolean) => {
       let x = doc.page.margins.left;
-      const rowHeight = 20;
+      const rowHeight = 19;
       const backgroundColor = isEven ? '#FFFFFF' : '#F8FAFC';
 
       row.forEach((cell, index) => {
@@ -164,7 +165,7 @@ export async function POST(req: Request) {
         doc.fillColor(isNumericColumn ? (isNegative ? '#DC2626' : isPositive ? '#15803D' : '#0F172A') : '#0F172A')
           .font('AppFont')
           .fontSize(8)
-          .text(value, x + 6, y + 6, {
+          .text(value, x + 6, y + 5.5, {
           width: width - 12,
           height: rowHeight - 8,
           align: isNumericColumn ? 'right' : 'left',
@@ -197,7 +198,7 @@ export async function POST(req: Request) {
     const range = doc.bufferedPageRange();
     for (let index = 0; index < range.count; index += 1) {
       doc.switchToPage(range.start + index);
-      const footerY = doc.page.height - doc.page.margins.bottom + 8;
+      const footerY = doc.page.height - doc.page.margins.bottom - 8;
       doc.fillColor('#64748B').font('AppFont').fontSize(8).text(`${index + 1}/${range.count}`, doc.page.margins.left, footerY, {
         width: pageWidth,
         align: 'right',

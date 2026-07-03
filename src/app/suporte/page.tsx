@@ -110,6 +110,36 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
+function formatDateOnly(value: string | null) {
+  if (!value) return '--/--/----';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '--/--/----';
+  return date.toLocaleDateString('pt-BR');
+}
+
+function formatTimeOnly(value: string | null) {
+  if (!value) return '--:--';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '--:--';
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getHistoryActor(msg: TicketMessage) {
+  return String(msg.author_name || msg.author_email || (msg.origin === 'system' ? 'Sistema' : 'Nao informado'));
+}
+
+function getHistoryAction(msg: TicketMessage) {
+  const text = String(msg.message || '').trim();
+  if (/^Ato:\s*/i.test(text)) {
+    return text.replace(/^Ato:\s*/i, '').trim() || 'Atualizacao do ticket';
+  }
+
+  if (msg.origin === 'system') return 'Atualizacao do ticket';
+  if (msg.attachment_url && (!text || text === 'Arquivo anexado')) return 'Anexo enviado';
+  if (msg.attachment_url) return 'Mensagem com anexo';
+  return 'Mensagem enviada';
+}
+
 function formatTicketStatus(status: Ticket['status'] | string | null | undefined) {
   const value = String(status || '').trim();
   const labels: Record<string, string> = {
@@ -1164,39 +1194,54 @@ export default function SuportePage() {
                 ) : messages.length === 0 ? (
                   <div className="text-xs text-slate-400 text-center py-8">Sem mensagens ainda.</div>
                 ) : (
-                  messages.map((msg) => (
-                    <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-sm border border-slate-200 bg-white text-slate-700">
-                      {!msg.attachment_url && <div className="whitespace-pre-wrap">{msg.message}</div>}
-                      {msg.attachment_url && (
-                        <div className="space-y-2">
-                          {String(msg.attachment_content_type || '').startsWith('image/') && (
-                            <img
-                              src={msg.attachment_url}
-                              alt={msg.attachment_file_name || 'Anexo'}
-                              className="max-w-full rounded-lg border border-white/20 bg-white/10"
-                            />
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Historico do ticket</p>
+                    {messages.map((msg) => {
+                      const rawText = String(msg.message || '').trim();
+                      const showRawText = rawText.length > 0 && !/^Ato:\s*/i.test(rawText) && rawText !== 'Arquivo anexado';
+
+                      return (
+                        <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-sm border border-slate-200 bg-white text-slate-700">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                            <p><span className="font-bold text-slate-500">Data:</span> {formatDateOnly(msg.created_at)}</p>
+                            <p><span className="font-bold text-slate-500">Hora:</span> {formatTimeOnly(msg.created_at)}</p>
+                            <p className="md:col-span-1"><span className="font-bold text-slate-500">Enviado por:</span> {getHistoryActor(msg)}</p>
+                            <p className="md:col-span-1"><span className="font-bold text-slate-500">Ato:</span> {getHistoryAction(msg)}</p>
+                          </div>
+
+                          {showRawText && <div className="whitespace-pre-wrap mt-1 text-xs">{rawText}</div>}
+
+                          {msg.attachment_url && (
+                            <div className="space-y-2 mt-1">
+                              {String(msg.attachment_content_type || '').startsWith('image/') && (
+                                <img
+                                  src={msg.attachment_url}
+                                  alt={msg.attachment_file_name || 'Anexo'}
+                                  className="max-w-full rounded-lg border border-white/20 bg-white/10"
+                                />
+                              )}
+                              {String(msg.attachment_content_type || '').startsWith('video/') && (
+                                <video
+                                  src={msg.attachment_url}
+                                  controls
+                                  className="max-w-full max-h-64 rounded-lg border border-white/20 bg-black/30"
+                                />
+                              )}
+                              <a
+                                href={msg.attachment_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 text-[11px] font-bold underline"
+                              >
+                                <Paperclip size={12} />
+                                {msg.attachment_file_name || 'Abrir anexo'}
+                              </a>
+                            </div>
                           )}
-                          {String(msg.attachment_content_type || '').startsWith('video/') && (
-                            <video
-                              src={msg.attachment_url}
-                              controls
-                              className="max-w-full max-h-64 rounded-lg border border-white/20 bg-black/30"
-                            />
-                          )}
-                          <a
-                            href={msg.attachment_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 text-[11px] font-bold underline"
-                          >
-                            <Paperclip size={12} />
-                            {msg.attachment_file_name || 'Abrir anexo'}
-                          </a>
                         </div>
-                      )}
-                      <div className="text-[10px] text-slate-500 mt-1">{formatDate(msg.created_at)}</div>
-                    </div>
-                  ))
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 

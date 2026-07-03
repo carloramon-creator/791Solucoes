@@ -235,6 +235,7 @@ export default function FinancePage() {
   const [form, setForm] = useState({
     type: "expense" as FinanceType,
     description: "",
+    documento: "",
     value: "",
     valueDisplay: "",
     categoryId: "",
@@ -577,6 +578,7 @@ export default function FinancePage() {
     setForm({
       type: "expense",
       description: "",
+      documento: "",
       value: "",
       valueDisplay: "",
       categoryId: "",
@@ -601,6 +603,7 @@ export default function FinancePage() {
     setForm({
       type: record.type,
       description: getDisplayDescription(record) || "",
+      documento: String(record.documento || ""),
       value: String(Number(record.value || 0)),
       valueDisplay: formatCurrencyInput(String(Number(record.value || 0) * 100)),
       categoryId: recordCategoryParentId || directParent?.id || (directCategory?.parent_id ? directCategory.parent_id : directCategory?.id || ""),
@@ -723,7 +726,8 @@ export default function FinancePage() {
 
       const payload = {
         type: form.type,
-        description: form.description,
+        description: form.description.trim(),
+        documento: form.documento.trim() || null,
         value: Number(form.value),
         category: finalCategoryName,
         payment_method: paymentMethod,
@@ -1270,6 +1274,11 @@ export default function FinancePage() {
               <div className="md:col-span-2">
                 <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Descricao</label>
                 <input type="text" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm" />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Documento</label>
+                <input type="text" value={form.documento} onChange={(e) => setForm((p) => ({ ...p, documento: e.target.value }))} placeholder="Nota, contrato, boleto, protocolo..." className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm" />
               </div>
 
               <div>

@@ -25,6 +25,16 @@ function sanitizeCell(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function toShortDateLabel(value: string) {
+  const text = sanitizeCell(value);
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    const [, day, month, year] = match;
+    return `${day}/${month}/${year.slice(-2)}`;
+  }
+  return text;
+}
+
 function parseCurrencyNumber(value: string) {
   const text = String(value || '').trim();
   if (!text) return 0;
@@ -98,7 +108,7 @@ export async function POST(req: Request) {
       if (key.includes('data')) return 52;
       if (key.includes('status')) return 58;
       if (key.includes('valor')) return 62;
-      if (key.includes('saldo')) return 56;
+      if (key.includes('saldo')) return 58;
       if (key.includes('lançamento') || key.includes('lancamento') || key.includes('descrição') || key.includes('descricao')) return 194;
       if (key.includes('documento')) return 88;
       if (key.includes('conta')) return 92;
@@ -140,6 +150,7 @@ export async function POST(req: Request) {
           width: width - 12,
           height: headerHeight - 8,
           align: rightAlignedIndexes.has(index) ? 'right' : 'left',
+          lineBreak: false,
           ellipsis: true,
         });
         x += width;
@@ -169,6 +180,7 @@ export async function POST(req: Request) {
           width: width - 12,
           height: rowHeight - 8,
           align: isNumericColumn ? 'right' : 'left',
+          lineBreak: false,
           ellipsis: true,
         });
         x += width;
@@ -186,7 +198,12 @@ export async function POST(req: Request) {
         drawHeader();
       }
 
-      const normalizedRow = columns.map((_, colIndex) => sanitizeCell(row?.[colIndex] || ''));
+      const normalizedRow = columns.map((_, colIndex) => {
+        const columnKey = String(columns[colIndex] || '').toLowerCase();
+        const cell = sanitizeCell(row?.[colIndex] || '');
+        if (columnKey.includes('data')) return toShortDateLabel(cell);
+        return cell;
+      });
       drawRow(normalizedRow, index % 2 === 0);
     });
 

@@ -1082,7 +1082,7 @@ export default function SuportePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 text-xs font-bold uppercase tracking-wider text-slate-500">
             Tickets da fila
@@ -1195,21 +1195,21 @@ export default function SuportePage() {
                   <div className="text-xs text-slate-400 text-center py-8">Sem mensagens ainda.</div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Historico do ticket</p>
+                    <p className="text-[11px] uppercase tracking-wider font-bold text-slate-500">Historico do ticket</p>
                     {messages.map((msg) => {
                       const rawText = String(msg.message || '').trim();
                       const showRawText = rawText.length > 0 && !/^Ato:\s*/i.test(rawText) && rawText !== 'Arquivo anexado';
 
                       return (
-                        <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-sm border border-slate-200 bg-white text-slate-700">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+                        <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-[15px] border border-slate-200 bg-white text-slate-700">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
                             <p><span className="font-bold text-slate-500">Data:</span> {formatDateOnly(msg.created_at)}</p>
                             <p><span className="font-bold text-slate-500">Hora:</span> {formatTimeOnly(msg.created_at)}</p>
                             <p className="md:col-span-1"><span className="font-bold text-slate-500">Enviado por:</span> {getHistoryActor(msg)}</p>
                             <p className="md:col-span-1"><span className="font-bold text-slate-500">Ato:</span> {getHistoryAction(msg)}</p>
                           </div>
 
-                          {showRawText && <div className="whitespace-pre-wrap mt-1 text-xs">{rawText}</div>}
+                          {showRawText && <div className="whitespace-pre-wrap mt-1 text-[13px]">{rawText}</div>}
 
                           {msg.attachment_url && (
                             <div className="space-y-2 mt-1">

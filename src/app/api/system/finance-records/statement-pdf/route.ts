@@ -143,7 +143,7 @@ export async function POST(req: Request) {
       stream.on('error', reject);
     });
 
-    return new NextResponse(buffer, {
+    return new Response(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="extrato-financeiro.pdf"`,

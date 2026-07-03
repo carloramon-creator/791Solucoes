@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { isOpenStatus, parseTicketStatus } from '@/lib/support-queue';
+import { userCanAccessResource } from '@/lib/holding-permissions';
 
 const AVATAR_BUCKET = 'equipe-avatars';
+const SUPPORT_DELETE_TICKET_PERMISSION = 'action.support.delete_ticket';
 
 async function getAvatarByEmail(email: string | null | undefined): Promise<string | null> {
   const normalized = String(email || '').trim().toLowerCase();
@@ -166,4 +168,34 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Falha ao atualizar ticket.' }, { status: 500 });
   }
+}
+
+export async function DELETE(req: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem excluir ticket de suporte.');
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+
+  const allowed = await userCanAccessResource(auth.user.email, SUPPORT_DELETE_TICKET_PERMISSION);
+  if (!allowed) {
+    return NextResponse.json({ error: 'Sem permissao para excluir ticket.' }, { status: 403 });
+  }
+
+  const { id } = await context.params;
+  const ticketId = String(id || '').trim();
+
+  if (!ticketId) {
+    return NextResponse.json({ error: 'ID do ticket invalido.' }, { status: 400 });
+  }
+
+  const { error } = await supabaseServer
+    .from('support_tickets')
+    .delete()
+    .eq('id', ticketId);
+
+  if (error) {
+    return NextResponse.json({ error: error.message || 'Falha ao excluir ticket.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, deletedId: ticketId, deletedBy: auth.user.email });
 }

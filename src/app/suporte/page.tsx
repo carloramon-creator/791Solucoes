@@ -137,6 +137,7 @@ export default function SuportePage() {
   const [queueLoading, setQueueLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [savingTicket, setSavingTicket] = useState(false);
+  const [deletingTicket, setDeletingTicket] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [creatingSubject, setCreatingSubject] = useState(false);
@@ -533,6 +534,28 @@ export default function SuportePage() {
       setError(err?.message || 'Falha ao atualizar ticket.');
     } finally {
       setSavingTicket(false);
+    }
+  };
+
+  const handleDeleteTicket = async () => {
+    if (!selectedTicket) return;
+    const confirmed = window.confirm(`Excluir o ticket ${selectedTicket.protocol}? Esta acao nao pode ser desfeita.`);
+    if (!confirmed) return;
+
+    setDeletingTicket(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      await api(`/api/support/tickets/${selectedTicket.id}`, { method: 'DELETE' });
+      setFeedback('Ticket excluido com sucesso.');
+      setSelectedTicketId(null);
+      setMessages([]);
+      await loadSupportData(queue, false);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao excluir ticket.');
+    } finally {
+      setDeletingTicket(false);
     }
   };
 
@@ -993,13 +1016,24 @@ export default function SuportePage() {
                     <div className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{selectedTicket.protocol}</div>
                     <div className="text-sm font-bold text-slate-800">{selectedTicket.title}</div>
                   </div>
-                  <button
-                    onClick={handleSaveTicket}
-                    disabled={savingTicket}
-                    className="px-3 py-2 rounded-lg bg-[#3b597b] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#2e4763] disabled:opacity-50"
-                  >
-                    {savingTicket ? 'Salvando...' : 'Salvar'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {can('action.support.delete_ticket') && (
+                      <button
+                        onClick={handleDeleteTicket}
+                        disabled={deletingTicket}
+                        className="px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-bold uppercase tracking-wider hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {deletingTicket ? 'Excluindo...' : 'Excluir'}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleSaveTicket}
+                      disabled={savingTicket}
+                      className="px-3 py-2 rounded-lg bg-[#3b597b] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#2e4763] disabled:opacity-50"
+                    >
+                      {savingTicket ? 'Salvando...' : 'Salvar'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import {
@@ -89,6 +89,7 @@ interface SourceOption {
 
 const periodOptions: PeriodFilter[] = ["dia", "semana", "quinzena", "mes", "trimestre", "semestre", "ano"];
 const paymentMethods = ["Pix", "Boleto", "CartaoCredito", "CartaoDebito", "Asaas", "Dinheiro", "Transferencia"];
+const FINANCE_MANAGE_PAID_RECORDS_PERMISSION = "action.finance.manage_paid_records";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -209,6 +210,8 @@ export default function FinancePage() {
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [permissionCodes, setPermissionCodes] = useState<Set<string>>(new Set());
+  const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
 
   const [activeSection, setActiveSection] = useState<Section>("records");
   const [filter, setFilter] = useState<"all" | "revenue" | "expense">("all");
@@ -523,9 +526,30 @@ export default function FinancePage() {
     return selectedSourceIds.map((id) => sourceById.get(id)?.label || id).join(" | ");
   }, [selectedSourceIds, sourceById]);
 
+  const canManagePaidRecords = unrestrictedFallback || permissionCodes.has(FINANCE_MANAGE_PAID_RECORDS_PERMISSION);
+
+  const getAccessToken = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || null;
+  }, [supabase]);
+
+  const fetchWithAuth = useCallback(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const token = await getAccessToken();
+    const headers: HeadersInit = {
+      ...(init.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    return fetch(input, {
+      ...init,
+      headers,
+    });
+  }, [getAccessToken]);
+
   const loadData = async () => {
     setLoading(true);
     try {
+      const token = await getAccessToken();
       const [recordsRes, accountsRes, categoriesRes] = await Promise.all([
         fetch("/api/system/finance-records", { cache: "no-store" }),
         fetch("/api/system/bank-accounts", { cache: "no-store" }),
@@ -539,6 +563,19 @@ export default function FinancePage() {
       setRecords(recordsJson?.success ? recordsJson.records || [] : []);
       setAccounts(accountsJson?.success ? accountsJson.accounts || [] : []);
       setCategories(Array.isArray(categoriesJson) ? categoriesJson : []);
+
+      if (token) {
+        const meRes = await fetch("/api/admin/permissions/me", {
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (meRes.ok) {
+          const meJson = await meRes.json();
+          setPermissionCodes(new Set(Array.isArray(meJson?.permissionCodes) ? meJson.permissionCodes : []));
+          setUnrestrictedFallback(Boolean(meJson?.unrestrictedFallback));
+        }
+      }
     } catch (err) {
       console.error("Erro ao carregar financeiro:", err);
       setRecords([]);
@@ -593,6 +630,11 @@ export default function FinancePage() {
   };
 
   const openEditModal = (record: FinanceRecord) => {
+    if (record.status === "paid" && !canManagePaidRecords) {
+      alert("Seu perfil nao pode editar lancamentos ja pagos.");
+      return;
+    }
+
     const recordMetadata = (record.metadata && typeof record.metadata === 'object') ? record.metadata : {};
     const recordCategoryParentId = String(recordMetadata?.category_parent_id || '');
     const recordCategorySubcategoryId = String(recordMetadata?.category_subcategory_id || '');
@@ -747,7 +789,11 @@ export default function FinancePage() {
         },
       };
 
-      const response = await fetch("/api/system/finance-records", {
+      if (editingRecord?.status === "paid" && !canManagePaidRecords) {
+        throw new Error("Seu perfil nao pode editar lancamentos ja pagos.");
+      }
+
+      const response = await fetchWithAuth("/api/system/finance-records", {
         method: editingRecord ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingRecord ? { id: editingRecord.id, ...payload } : payload),
@@ -766,12 +812,17 @@ export default function FinancePage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (record: FinanceRecord) => {
+    if (record.status === "paid" && !canManagePaidRecords) {
+      alert("Seu perfil nao pode excluir lancamentos ja pagos.");
+      return;
+    }
+
     const confirmed = confirm("Tem certeza que deseja excluir este lancamento?");
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/system/finance-records?id=${id}`, { method: "DELETE" });
+      const response = await fetchWithAuth(`/api/system/finance-records?id=${record.id}`, { method: "DELETE" });
       const json = await response.json();
       if (!json?.success) throw new Error(json?.error || "Falha ao excluir.");
       await loadData();
@@ -1116,11 +1167,21 @@ export default function FinancePage() {
                     <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
                     <td className="px-6 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => openEditModal(record)} className="text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><Pencil size={12} />Editar</button>
+                        <button
+                          onClick={() => openEditModal(record)}
+                          disabled={record.status === "paid" && !canManagePaidRecords}
+                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para editar lancamento pago" : undefined}
+                          className="text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        ><Pencil size={12} />Editar</button>
                         {record.status !== "paid" && (
                           <button onClick={() => openSettleModal(record)} className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><CheckCircle2 size={12} />Baixar</button>
                         )}
-                        <button onClick={() => handleDelete(record.id)} className="text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><Trash2 size={12} />Excluir</button>
+                        <button
+                          onClick={() => handleDelete(record)}
+                          disabled={record.status === "paid" && !canManagePaidRecords}
+                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para excluir lancamento pago" : undefined}
+                          className="text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                        ><Trash2 size={12} />Excluir</button>
                       </div>
                     </td>
                   </tr>

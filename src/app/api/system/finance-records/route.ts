@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { userCanAccessResource } from '@/lib/holding-permissions';
+
+const FINANCE_MANAGE_PAID_RECORDS_PERMISSION = 'action.finance.manage_paid_records';
 
 export async function GET() {
   try {
@@ -65,11 +69,33 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem editar lancamentos financeiros.');
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
+
   try {
     const body = await req.json();
     const { id, ...updates } = body;
 
     if (!id) throw new Error('ID é obrigatório');
+
+    const { data: current, error: currentError } = await supabaseServer
+      .from('system_finance_records')
+      .select('id, status')
+      .eq('id', id)
+      .single();
+
+    if (currentError || !current) {
+      return NextResponse.json({ success: false, error: currentError?.message || 'Lancamento nao encontrado.' }, { status: 404 });
+    }
+
+    if (String(current.status) === 'paid') {
+      const allowed = await userCanAccessResource(auth.user.email, FINANCE_MANAGE_PAID_RECORDS_PERMISSION);
+      if (!allowed) {
+        return NextResponse.json({ success: false, error: 'Sem permissao para editar lancamento ja pago.' }, { status: 403 });
+      }
+    }
 
     const { data, error } = await supabaseServer
       .from('system_finance_records')
@@ -86,11 +112,33 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem excluir lancamentos financeiros.');
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
 
     if (!id) throw new Error('ID é obrigatório');
+
+    const { data: current, error: currentError } = await supabaseServer
+      .from('system_finance_records')
+      .select('id, status')
+      .eq('id', id)
+      .single();
+
+    if (currentError || !current) {
+      return NextResponse.json({ success: false, error: currentError?.message || 'Lancamento nao encontrado.' }, { status: 404 });
+    }
+
+    if (String(current.status) === 'paid') {
+      const allowed = await userCanAccessResource(auth.user.email, FINANCE_MANAGE_PAID_RECORDS_PERMISSION);
+      if (!allowed) {
+        return NextResponse.json({ success: false, error: 'Sem permissao para excluir lancamento ja pago.' }, { status: 403 });
+      }
+    }
 
     const { error } = await supabaseServer
       .from('system_finance_records')

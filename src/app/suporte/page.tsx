@@ -136,7 +136,6 @@ export default function SuportePage() {
   const [loading, setLoading] = useState(true);
   const [queueLoading, setQueueLoading] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
-  const [savingTicket, setSavingTicket] = useState(false);
   const [deletingTicket, setDeletingTicket] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -505,35 +504,6 @@ export default function SuportePage() {
       await loadSupportData(queue, true);
     } catch (err: any) {
       setError(err?.message || 'Falha ao atualizar assunto.');
-    }
-  };
-
-  const handleSaveTicket = async () => {
-    if (!selectedTicket) return;
-
-    setSavingTicket(true);
-    setError(null);
-    setFeedback(null);
-
-    try {
-      const dueAt = editState.dueAt ? new Date(editState.dueAt).toISOString() : null;
-
-      await api(`/api/support/tickets/${selectedTicket.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: editState.status,
-          priority: editState.priority,
-          assignedToEmail: editState.assignedToEmail || null,
-          dueAt,
-        }),
-      });
-
-      setFeedback('Ticket atualizado com sucesso.');
-      await loadSupportData(queue, true);
-    } catch (err: any) {
-      setError(err?.message || 'Falha ao atualizar ticket.');
-    } finally {
-      setSavingTicket(false);
     }
   };
 
@@ -1026,13 +996,6 @@ export default function SuportePage() {
                         {deletingTicket ? 'Excluindo...' : 'Excluir'}
                       </button>
                     )}
-                    <button
-                      onClick={handleSaveTicket}
-                      disabled={savingTicket}
-                      className="px-3 py-2 rounded-lg bg-[#3b597b] text-white text-xs font-bold uppercase tracking-wider hover:bg-[#2e4763] disabled:opacity-50"
-                    >
-                      {savingTicket ? 'Salvando...' : 'Salvar'}
-                    </button>
                   </div>
                 </div>
 
@@ -1040,6 +1003,7 @@ export default function SuportePage() {
                   <select
                     value={editState.status}
                     onChange={(e) => setEditState((prev) => ({ ...prev, status: e.target.value }))}
+                    disabled
                     className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
                   >
                     <option value="new">new</option>
@@ -1052,6 +1016,7 @@ export default function SuportePage() {
                   <select
                     value={editState.priority}
                     onChange={(e) => setEditState((prev) => ({ ...prev, priority: e.target.value }))}
+                    disabled
                     className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
                   >
                     <option value="low">low</option>
@@ -1064,6 +1029,7 @@ export default function SuportePage() {
                     <select
                       value={editState.assignedToEmail}
                       onChange={(e) => setEditState((prev) => ({ ...prev, assignedToEmail: e.target.value }))}
+                      disabled
                       className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
                     >
                       <option value="">Sem responsavel</option>
@@ -1079,6 +1045,7 @@ export default function SuportePage() {
                     type="datetime-local"
                     value={editState.dueAt}
                     onChange={(e) => setEditState((prev) => ({ ...prev, dueAt: e.target.value }))}
+                    disabled
                     className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
                   />
                 </div>

@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { MainLayoutWrapper } from "@/components/MainLayoutWrapper";
-
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "791 Soluções - Command Center",
@@ -21,7 +15,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${inter.variable} font-sans h-full antialiased`}
+      className="font-sans h-full antialiased"
     >
       <body className="h-full bg-[#f8fafc] text-slate-900 overflow-hidden">
         <MainLayoutWrapper>{children}</MainLayoutWrapper>

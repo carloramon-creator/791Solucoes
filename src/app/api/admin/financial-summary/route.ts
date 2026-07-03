@@ -65,6 +65,30 @@ function isCurrentAccountType(type: unknown) {
   return String(type || '').toLowerCase().includes('corrente');
 }
 
+function getCardSpentAmount(cardId: string, records: any[]) {
+  return (records || []).reduce((sum, record: any) => {
+    const metadata = (record?.metadata && typeof record.metadata === 'object') ? record.metadata : {};
+    const recordCardId = metadata?.card_id ? String(metadata.card_id) : '';
+
+    if (recordCardId !== cardId) return sum;
+    if (String(record?.type || '') !== 'expense') return sum;
+
+    const cardStatementReference = String(metadata?.card_statement_reference || '');
+    const cardStatementGenerated = Boolean(metadata?.card_statement_generated);
+    const recordValue = toNumber(record?.value, 0);
+
+    if (record?.status === 'paid' && !cardStatementReference) {
+      return sum + recordValue;
+    }
+
+    if (record?.status === 'pending' && cardStatementGenerated) {
+      return sum + recordValue;
+    }
+
+    return sum;
+  }, 0);
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar resumo financeiro.');
   if (!auth.ok) {
@@ -99,27 +123,26 @@ export async function GET(req: Request) {
         console.log('Aviso ao buscar contas bancárias:', accountsError.message);
       }
 
-      // Apura lançamentos pagos para transformar saldo base em saldo atual.
-      const { data: paidRecords, error: paidRecordsError } = await supabaseServer
+      // Carrega lançamentos para saldo atual e apuração de limite disponível dos cartões.
+      const { data: financeRecords, error: financeRecordsError } = await supabaseServer
         .from('system_finance_records')
-        .select('type, value, bank_account_id, metadata')
-        .eq('status', 'paid');
+        .select('type, value, status, bank_account_id, metadata');
 
-      if (paidRecordsError && paidRecordsError.code !== 'PGRST116') {
-        console.log('Aviso ao buscar lançamentos pagos:', paidRecordsError.message);
+      if (financeRecordsError && financeRecordsError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar lançamentos financeiros:', financeRecordsError.message);
       }
 
       const accountAdjustments = new Map<string, number>();
-      const cardAdjustments = new Map<string, number>();
 
-      (paidRecords || []).forEach((record: any) => {
+      (financeRecords || []).forEach((record: any) => {
+        if (record?.status !== 'paid') return;
+
         const signed = record?.type === 'revenue' ? toNumber(record?.value, 0) : -toNumber(record?.value, 0);
         const metadata = (record?.metadata && typeof record.metadata === 'object') ? record.metadata : {};
         const cardId = metadata?.card_id ? String(metadata.card_id) : '';
         const accountId = record?.bank_account_id ? String(record.bank_account_id) : '';
 
         if (cardId) {
-          cardAdjustments.set(cardId, toNumber(cardAdjustments.get(cardId), 0) + signed);
           return;
         }
 
@@ -142,6 +165,10 @@ export async function GET(req: Request) {
         bankAccounts.forEach((account: any) => {
           const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
           const overdraftLimit = toNumber(account.overdraft_limit, 0);
+          const overdraftRemaining = accountCurrentBalance < 0
+            ? Math.max(overdraftLimit - Math.abs(accountCurrentBalance), 0)
+            : overdraftLimit;
+
           if (isCurrentAccountType(account.type)) {
             totalAccounts += accountCurrentBalance;
           }
@@ -153,11 +180,12 @@ export async function GET(req: Request) {
             detalhes: [
               account.agency ? `Ag. ${account.agency}` : null,
               account.account_number ? `Conta ${account.account_number}` : null,
+              overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftLimit)}` : null,
             ]
               .filter(Boolean)
               .join(' | '),
             valor: accountCurrentBalance,
-            overdraft_label: overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftLimit)}` : null,
+            overdraft_label: overdraftLimit > 0 ? `Restante do cheque especial ${formatCurrencyLabel(overdraftRemaining)}` : null,
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });
@@ -171,14 +199,13 @@ export async function GET(req: Request) {
 
         bankAccounts.forEach((account: any) => {
           (account.cards || []).forEach((card: any) => {
-            const cardBase = toNumber(card.current_balance, 0);
-            const cardCurrentBalance = cardBase + toNumber(cardAdjustments.get(card.id), 0);
+            const cardId = String(card.id || '');
             const cardType = String(card.card_type || '').toLowerCase();
-            const spentAmount = Math.abs(Math.min(cardCurrentBalance, 0));
+            const spentAmount = getCardSpentAmount(cardId, financeRecords || []);
             const availableLimit = toNumber(card.credit_limit, 0) - spentAmount;
             const displayedValue = cardType.includes('credit')
               ? availableLimit
-              : cardCurrentBalance;
+              : toNumber(card.current_balance, 0);
 
             totalCards += displayedValue;
 

@@ -92,8 +92,6 @@ export default function ContasBancariasPage() {
   const [closingCardId, setClosingCardId] = useState<string | null>(null);
   const [statementCard, setStatementCard] = useState<(BankCard & { accountName?: string }) | null>(null);
   const [selectedStatementRecordIds, setSelectedStatementRecordIds] = useState<string[]>([]);
-  const [totals, setTotals] = useState({ limit: 0, spent: 0, available: 0 });
-  const [cardTotals, setCardTotals] = useState<{ limit: number; spent: number; available: number }>({ limit: 0, spent: 0, available: 0 });
   
   // Ações
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -152,6 +150,11 @@ export default function ContasBancariasPage() {
     const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, records), 0);
     return { limit, spent, available: Number((limit - spent).toFixed(2)) };
   };
+
+  const cardTotals = useMemo(
+    () => calculateCardTotals(accounts, financeRecords),
+    [accounts, financeRecords]
+  );
 
   const getOverdraftRemaining = (account?: BankAccount | null) => {
     if (!account || !isCurrentAccount(account)) return 0;
@@ -218,13 +221,6 @@ export default function ContasBancariasPage() {
         setDetailModalAccount(normalizedAccounts.find((account) => account.id === detailModalAccount.id) || null);
       }
 
-      const allCards = normalizedAccounts.flatMap((account) => account.cards || []);
-      const creditCards = allCards.filter((card) => isCreditCard(card));
-      const totalLimit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
-      const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card, nextFinanceRecords), 0);
-
-      setTotals({ limit: totalLimit, spent: totalSpent, available: totalLimit - totalSpent });
-      setCardTotals(calculateCardTotals(normalizedAccounts, nextFinanceRecords));
     }
     setLoading(false);
   };

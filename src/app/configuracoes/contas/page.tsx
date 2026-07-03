@@ -141,7 +141,7 @@ export default function ContasBancariasPage() {
       const totalLimit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
       const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
 
-      setTotals({ limit: totalLimit, spent: totalSpent, available: Math.max(totalLimit - totalSpent, 0) });
+      setTotals({ limit: totalLimit, spent: totalSpent, available: totalLimit - totalSpent });
     }
     setLoading(false);
   };

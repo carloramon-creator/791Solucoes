@@ -218,7 +218,6 @@ export default function FinancePage() {
     valueDisplay: "",
     categoryId: "",
     subcategoryId: "",
-    payment_method: "Pix",
     sourceId: "",
     status: "paid" as FinanceStatus,
     date: toDateInput(new Date()),
@@ -528,7 +527,6 @@ export default function FinancePage() {
       valueDisplay: "",
       categoryId: "",
       subcategoryId: "",
-      payment_method: "Pix",
       sourceId: "",
       status: "paid",
       date: toDateInput(new Date()),
@@ -553,7 +551,6 @@ export default function FinancePage() {
       valueDisplay: formatCurrencyInput(String(Number(record.value || 0) * 100)),
       categoryId: recordCategoryParentId || directParent?.id || (directCategory?.parent_id ? directCategory.parent_id : directCategory?.id || ""),
       subcategoryId: recordCategorySubcategoryId || (directCategory?.parent_id ? directCategory.id : ""),
-      payment_method: record.payment_method || "Pix",
       sourceId: record.source_id || (record.bank_id ? `external:${record.bank_id}` : ""),
       status: record.status,
       date: toDateInput(new Date(record.created_at)),
@@ -621,6 +618,28 @@ export default function FinancePage() {
     return { bankAccountId: null, bankId: null, metadataPatch: {} };
   };
 
+  const inferPaymentMethodFromSource = (sourceId: string, fallback?: string | null) => {
+    if (!sourceId) return fallback || "Pix";
+
+    if (sourceId.startsWith("card:")) {
+      const cardId = sourceId.replace("card:", "");
+      const card = cardById.get(cardId);
+      return card?.card_type === "debit" ? "CartaoDebito" : "CartaoCredito";
+    }
+
+    if (sourceId.startsWith("account:")) {
+      return fallback || "Transferencia";
+    }
+
+    if (sourceId.startsWith("external:")) {
+      const external = sourceId.replace("external:", "").toLowerCase();
+      if (external.includes("asaas")) return "Asaas";
+      return fallback || sourceId.replace("external:", "") || "Pix";
+    }
+
+    return fallback || "Pix";
+  };
+
   const handleSave = async () => {
     if (!form.description.trim()) {
       alert("Informe a descricao do lancamento.");
@@ -638,13 +657,14 @@ export default function FinancePage() {
       const selectedRoot = categories.find((category) => category.id === form.categoryId) || null;
       const selectedSubcategory = categories.find((category) => category.id === form.subcategoryId) || null;
       const finalCategoryName = selectedSubcategory?.name || selectedRoot?.name || "Geral";
+      const paymentMethod = inferPaymentMethodFromSource(form.sourceId, editingRecord?.payment_method);
 
       const payload = {
         type: form.type,
         description: form.description,
         value: Number(form.value),
         category: finalCategoryName,
-        payment_method: form.payment_method,
+        payment_method: paymentMethod,
         status: form.status,
         bank_account_id: bankAccountId,
         bank_id: bankId,
@@ -1126,15 +1146,6 @@ export default function FinancePage() {
                   <option value="">Sem conta</option>
                   {sourceOptionsForForm.map((source) => (
                     <option key={source.id} value={source.id}>{source.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Metodo</label>
-                <select value={form.payment_method} onChange={(e) => setForm((p) => ({ ...p, payment_method: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm">
-                  {paymentMethods.map((method) => (
-                    <option key={method} value={method}>{method}</option>
                   ))}
                 </select>
               </div>

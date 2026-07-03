@@ -959,19 +959,21 @@ export default function FinancePage() {
             Fluxo de caixa consolidado com contas e cartoes da holding.
           </p>
         </div>
-        <button
-          onClick={handlePrintPdf}
-          disabled={printing}
-          className="bg-white text-[#3b597b] border border-[#3b597b]/20 px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#f3f7fb] transition-all uppercase tracking-widest"
-        >
-          {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Imprimir PDF
-        </button>
-        <button
-          onClick={openNewModal}
-          className="bg-[#3b597b] text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#2e4763] transition-all uppercase tracking-widest shadow-lg shadow-blue-900/10"
-        >
-          <Plus size={14} /> Novo lancamento
-        </button>
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          <button
+            onClick={handlePrintPdf}
+            disabled={printing}
+            className="bg-white text-[#3b597b] border border-[#3b597b]/20 px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#f3f7fb] transition-all uppercase tracking-widest"
+          >
+            {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Imprimir PDF
+          </button>
+          <button
+            onClick={openNewModal}
+            className="bg-[#3b597b] text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#2e4763] transition-all uppercase tracking-widest shadow-lg shadow-blue-900/10"
+          >
+            <Plus size={14} /> Novo lancamento
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

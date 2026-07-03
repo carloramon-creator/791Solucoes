@@ -25,6 +25,18 @@ function sanitizeCell(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
+function parseCurrencyNumber(value: string) {
+  const text = String(value || '').trim();
+  if (!text) return 0;
+  const normalized = text
+    .replace(/R\$/gi, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : 0;
+}
+
 export async function POST(req: Request) {
   try {
     const payload = (await req.json()) as StatementPayload;
@@ -36,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     const appFontBuffer = Buffer.from(notoSansBase64, 'base64');
-    const doc = new PDFDocument({ size: 'A4', margin: 30, font: appFontBuffer as any });
+    const doc = new PDFDocument({ size: 'A4', margin: 30, font: appFontBuffer as any, bufferPages: true });
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
 
@@ -60,36 +72,65 @@ export async function POST(req: Request) {
 
     const logoPath = path.join(process.cwd(), 'public', 'logo.png');
     if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, doc.page.margins.left, y, { width: 52 });
+      doc.image(logoPath, doc.page.margins.left, y, { width: 40 });
     }
 
-    doc.font('AppFont').fontSize(14).fillColor('#0F172A').text('791 Soluções', doc.page.margins.left + 64, y + 4);
-    doc.font('AppFont').fontSize(9).fillColor('#475569').text(`Usuário: ${userLabel}`, doc.page.margins.left + 64, y + 22);
-    doc.text(`Gerado em: ${generatedAt}`, doc.page.margins.left + 64, y + 35);
-
-    y += 64;
-
-    doc.roundedRect(doc.page.margins.left, y, pageWidth, 52, 8).fillAndStroke('#F8FAFC', '#CBD5E1');
-    doc.fillColor('#0F172A').font('AppFont').fontSize(13).text(title, doc.page.margins.left + 14, y + 12, { width: pageWidth - 28 });
-    doc.fillColor('#475569').font('AppFont').fontSize(9).text(`${sectionLabel} | ${periodLabel}`, doc.page.margins.left + 14, y + 31, { width: pageWidth - 28 });
-
-    y += 68;
-
-    const colCount = columns.length;
-    const baseWidth = pageWidth / colCount;
-    const colWidths = columns.map((_, index) => {
-      if (colCount <= 3) return baseWidth;
-      if (index === 0) return Math.floor(baseWidth * 0.85);
-      if (index === colCount - 1) return Math.floor(baseWidth * 1.1);
-      return Math.floor(baseWidth);
+    doc.font('AppFont').fontSize(14).fillColor('#0F172A').text('791 Soluções', doc.page.margins.left + 50, y + 2);
+    doc.font('AppFont').fontSize(8).fillColor('#334155').text(`Usuário: ${userLabel}`, doc.page.margins.left, y + 3, {
+      width: pageWidth,
+      align: 'right',
     });
+    doc.font('AppFont').fontSize(8).fillColor('#64748B').text(`Gerado em: ${generatedAt}`, doc.page.margins.left, y + 16, {
+      width: pageWidth,
+      align: 'right',
+    });
+
+    y += 46;
+
+    doc.roundedRect(doc.page.margins.left, y, pageWidth, 44, 8).fillAndStroke('#F8FAFC', '#CBD5E1');
+    doc.fillColor('#0F172A').font('AppFont').fontSize(13).text(title, doc.page.margins.left + 12, y + 10, { width: pageWidth - 24 });
+    doc.fillColor('#475569').font('AppFont').fontSize(8).text(`${sectionLabel} | ${periodLabel}`, doc.page.margins.left + 12, y + 27, { width: pageWidth - 24 });
+
+    y += 54;
+
+    const explicitWidths = columns.map((column) => {
+      const key = String(column || '').toLowerCase();
+      if (key.includes('data')) return 56;
+      if (key.includes('status')) return 58;
+      if (key.includes('valor')) return 68;
+      if (key.includes('saldo')) return 68;
+      if (key.includes('lançamento') || key.includes('lancamento') || key.includes('descrição') || key.includes('descricao')) return 180;
+      if (key.includes('conta')) return 92;
+      if (key.includes('método') || key.includes('metodo')) return 72;
+      if (key.includes('categoria')) return 86;
+      return null;
+    });
+
+    const knownWidth = explicitWidths.reduce((sum, width) => sum + (width || 0), 0);
+    const unknownCount = explicitWidths.filter((width) => width === null).length;
+    const fallbackWidth = unknownCount > 0 ? Math.max((pageWidth - knownWidth) / unknownCount, 60) : 0;
+
+    let colWidths = explicitWidths.map((width) => Math.floor(width ?? fallbackWidth));
+    const colSum = colWidths.reduce((sum, width) => sum + width, 0);
+
+    if (colSum > pageWidth) {
+      const factor = pageWidth / colSum;
+      colWidths = colWidths.map((width) => Math.floor(width * factor));
+    }
 
     const usedWidth = colWidths.reduce((sum, value) => sum + value, 0);
     colWidths[colWidths.length - 1] += pageWidth - usedWidth;
 
+    const rightAlignedIndexes = new Set(
+      columns
+        .map((column, index) => ({ column: String(column || '').toLowerCase(), index }))
+        .filter(({ column }) => column.includes('valor') || column.includes('saldo'))
+        .map(({ index }) => index)
+    );
+
     const drawHeader = () => {
       let x = doc.page.margins.left;
-      const headerHeight = 24;
+      const headerHeight = 22;
 
       columns.forEach((column, index) => {
         const width = colWidths[index];
@@ -97,6 +138,7 @@ export async function POST(req: Request) {
         doc.fillColor('#0F172A').font('AppFont').fontSize(8).text(sanitizeCell(column), x + 6, y + 8, {
           width: width - 12,
           height: headerHeight - 8,
+          align: rightAlignedIndexes.has(index) ? 'right' : 'left',
           ellipsis: true,
         });
         x += width;
@@ -107,15 +149,25 @@ export async function POST(req: Request) {
 
     const drawRow = (row: string[], isEven: boolean) => {
       let x = doc.page.margins.left;
-      const rowHeight = 22;
+      const rowHeight = 20;
       const backgroundColor = isEven ? '#FFFFFF' : '#F8FAFC';
 
       row.forEach((cell, index) => {
         const width = colWidths[index];
+        const value = sanitizeCell(cell);
+        const isNumericColumn = rightAlignedIndexes.has(index);
+        const parsed = parseCurrencyNumber(value);
+        const isNegative = value.includes('-') || parsed < 0;
+        const isPositive = value.includes('+') || parsed > 0;
+
         doc.rect(x, y, width, rowHeight).fillAndStroke(backgroundColor, '#CBD5E1');
-        doc.fillColor('#0F172A').font('AppFont').fontSize(8).text(sanitizeCell(cell), x + 6, y + 7, {
+        doc.fillColor(isNumericColumn ? (isNegative ? '#DC2626' : isPositive ? '#15803D' : '#0F172A') : '#0F172A')
+          .font('AppFont')
+          .fontSize(8)
+          .text(value, x + 6, y + 6, {
           width: width - 12,
           height: rowHeight - 8,
+          align: isNumericColumn ? 'right' : 'left',
           ellipsis: true,
         });
         x += width;
@@ -127,7 +179,7 @@ export async function POST(req: Request) {
     drawHeader();
 
     rows.forEach((row, index) => {
-      if (y + 24 > pageBottom) {
+      if (y + 24 > pageBottom - 16) {
         doc.addPage();
         y = doc.page.margins.top;
         drawHeader();
@@ -140,6 +192,16 @@ export async function POST(req: Request) {
     if (rows.length === 0) {
       doc.rect(doc.page.margins.left, y, pageWidth, 26).fillAndStroke('#FFFFFF', '#CBD5E1');
       doc.fillColor('#64748B').font('AppFont').fontSize(9).text('Nenhum registro para o filtro selecionado.', doc.page.margins.left + 8, y + 9);
+    }
+
+    const range = doc.bufferedPageRange();
+    for (let index = 0; index < range.count; index += 1) {
+      doc.switchToPage(range.start + index);
+      const footerY = doc.page.height - doc.page.margins.bottom + 8;
+      doc.fillColor('#64748B').font('AppFont').fontSize(8).text(`${index + 1}/${range.count}`, doc.page.margins.left, footerY, {
+        width: pageWidth,
+        align: 'right',
+      });
     }
 
     doc.end();

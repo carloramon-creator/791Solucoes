@@ -47,6 +47,13 @@ function parseCurrencyNumber(value: string) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function formatCurrencyBRL(value: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
 export async function POST(req: Request) {
   try {
     const payload = (await req.json()) as StatementPayload;
@@ -102,6 +109,54 @@ export async function POST(req: Request) {
     doc.fillColor('#475569').font('AppFont').fontSize(8).text(`${sectionLabel} | ${periodLabel}`, doc.page.margins.left + 12, y + 27, { width: pageWidth - 24 });
 
     y += 54;
+
+    const columnKeys = columns.map((column) => String(column || '').toLowerCase());
+    const saldoIndex = columnKeys.findIndex((column) => column.includes('saldo'));
+    const valorIndex = columnKeys.findIndex((column) => column.includes('valor'));
+
+    const firstSaldo = saldoIndex >= 0 && rows.length > 0 ? parseCurrencyNumber(sanitizeCell(rows[0]?.[saldoIndex] || '0')) : 0;
+    const lastSaldo = saldoIndex >= 0 && rows.length > 0 ? parseCurrencyNumber(sanitizeCell(rows[rows.length - 1]?.[saldoIndex] || '0')) : firstSaldo;
+
+    let entradas = 0;
+    let saidas = 0;
+    if (valorIndex >= 0) {
+      rows.forEach((row, index) => {
+        // Ignore the opening balance helper row when value is zero.
+        if (index === 0 && saldoIndex >= 0) return;
+        const amount = parseCurrencyNumber(sanitizeCell(row?.[valorIndex] || '0'));
+        if (amount > 0) entradas += amount;
+        if (amount < 0) saidas += Math.abs(amount);
+      });
+    }
+
+    const saldoFinal = saldoIndex >= 0 ? lastSaldo : firstSaldo + entradas - saidas;
+
+    const summaryHeight = 42;
+    doc.roundedRect(doc.page.margins.left, y, pageWidth, summaryHeight, 8).fillAndStroke('#F8FAFC', '#CBD5E1');
+
+    const summaryItems = [
+      { label: 'Saldo inicial', value: formatCurrencyBRL(firstSaldo), color: '#0F172A' },
+      { label: 'Entrada', value: formatCurrencyBRL(entradas), color: '#15803D' },
+      { label: 'Saida', value: formatCurrencyBRL(saidas), color: '#DC2626' },
+      { label: 'Saldo final', value: formatCurrencyBRL(saldoFinal), color: saldoFinal < 0 ? '#DC2626' : '#15803D' },
+    ];
+
+    const itemWidth = pageWidth / summaryItems.length;
+    summaryItems.forEach((item, index) => {
+      const x = doc.page.margins.left + itemWidth * index;
+      doc.fillColor('#64748B').font('AppFont').fontSize(7).text(item.label, x + 10, y + 7, {
+        width: itemWidth - 20,
+        align: 'left',
+      });
+      doc.fillColor(item.color).font('AppFont').fontSize(10).text(item.value, x + 10, y + 19, {
+        width: itemWidth - 20,
+        align: 'left',
+        lineBreak: false,
+        ellipsis: true,
+      });
+    });
+
+    y += summaryHeight + 10;
 
     const explicitWidths = columns.map((column) => {
       const key = String(column || '').toLowerCase();

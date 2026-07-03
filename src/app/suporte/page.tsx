@@ -1106,7 +1106,7 @@ export default function SuportePage() {
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{ticket.protocol}</span>
                     <span className="text-[13px] text-black">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
                   </div>
-                  <div className="text-sm font-semibold text-black mt-1 line-clamp-1">{ticket.title}</div>
+                  <div className="text-[15px] font-semibold text-black mt-1 line-clamp-1">{ticket.title}</div>
                   <div className="text-xs text-black mt-1 line-clamp-1">
                     {(ticket.tenant_name || ticket.tenant_slug)} • {ticket.subject?.name || 'Sem assunto'}
                   </div>
@@ -1132,7 +1132,7 @@ export default function SuportePage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{selectedTicket.protocol}</div>
-                    <div className="text-sm font-bold text-slate-800">{selectedTicket.title}</div>
+                    <div className="text-[15px] font-bold text-slate-800">{selectedTicket.title}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     {!['resolved', 'closed'].includes(selectedTicket.status) && (

@@ -351,18 +351,18 @@ export default function SuportePage() {
       setPermissionCodes(new Set(Array.isArray(meRes.permissionCodes) ? meRes.permissionCodes : []));
       setUnrestrictedFallback(Boolean(meRes.unrestrictedFallback));
 
-      if (!preserveSelection) {
-        setSelectedTicketId(null);
-      } else if (!loadedTickets.some((ticket) => ticket.id === selectedTicketId)) {
-        setSelectedTicketId(null);
-      }
+      setSelectedTicketId((prev) => {
+        if (!preserveSelection) return null;
+        if (!prev) return null;
+        return loadedTickets.some((ticket) => ticket.id === prev) ? prev : null;
+      });
     } catch (err: any) {
       setError(err?.message || 'Falha ao carregar suporte.');
     } finally {
       setQueueLoading(false);
       setLoading(false);
     }
-  }, [api, selectedTicketId]);
+  }, [api]);
 
   const loadMessages = useCallback(async (ticketId: string) => {
     setMessagesLoading(true);

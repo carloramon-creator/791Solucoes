@@ -134,6 +134,15 @@ export default function ContasBancariasPage() {
     }, 0);
   };
 
+  const getCardAvailableLimit = (card?: BankCard | null, records: FinanceRecord[] = financeRecords) => {
+    if (!card) return 0;
+
+    const limit = Number(card.credit_limit || 0);
+    const spent = getCardSpentAmount(card, records);
+
+    return Number((limit - spent).toFixed(2));
+  };
+
   const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit') || Number(card?.credit_limit || 0) > 0;
   const isCurrentAccount = (account?: BankAccount | null) => String(account?.type || '').toLowerCase().includes('corrente');
 

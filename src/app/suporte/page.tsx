@@ -326,9 +326,9 @@ export default function SuportePage() {
       setUnrestrictedFallback(Boolean(meRes.unrestrictedFallback));
 
       if (!preserveSelection) {
-        setSelectedTicketId(loadedTickets[0]?.id || null);
+        setSelectedTicketId(null);
       } else if (!loadedTickets.some((ticket) => ticket.id === selectedTicketId)) {
-        setSelectedTicketId(loadedTickets[0]?.id || null);
+        setSelectedTicketId(null);
       }
     } catch (err: any) {
       setError(err?.message || 'Falha ao carregar suporte.');
@@ -977,7 +977,7 @@ export default function SuportePage() {
 
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
           {!selectedTicket ? (
-            <div className="h-full min-h-[320px] flex items-center justify-center text-slate-400 text-sm">Selecione um ticket para ver detalhes.</div>
+            <div className="h-full min-h-[320px]" />
           ) : (
             <div className="flex flex-col h-full max-h-[70vh]">
               <div className="px-4 py-3 border-b border-slate-100 space-y-2">
@@ -1000,54 +1000,23 @@ export default function SuportePage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <select
-                    value={editState.status}
-                    onChange={(e) => setEditState((prev) => ({ ...prev, status: e.target.value }))}
-                    disabled
-                    className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
-                  >
-                    <option value="new">new</option>
-                    <option value="in_progress">in_progress</option>
-                    <option value="waiting_customer">waiting_customer</option>
-                    <option value="resolved">resolved</option>
-                    <option value="closed">closed</option>
-                  </select>
+                  <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                    {editState.status}
+                  </div>
 
-                  <select
-                    value={editState.priority}
-                    onChange={(e) => setEditState((prev) => ({ ...prev, priority: e.target.value }))}
-                    disabled
-                    className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
-                  >
-                    <option value="low">low</option>
-                    <option value="normal">normal</option>
-                    <option value="high">high</option>
-                    <option value="urgent">urgent</option>
-                  </select>
+                  <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                    {editState.priority}
+                  </div>
 
                   {can('action.support.assign') && (
-                    <select
-                      value={editState.assignedToEmail}
-                      onChange={(e) => setEditState((prev) => ({ ...prev, assignedToEmail: e.target.value }))}
-                      disabled
-                      className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
-                    >
-                      <option value="">Sem responsavel</option>
-                      {team.map((member) => (
-                        <option key={member.email} value={member.email}>
-                          {member.name ? `${member.name} (${member.email})` : member.email}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                      {editState.assignedToEmail || 'Sem responsavel'}
+                    </div>
                   )}
 
-                  <input
-                    type="datetime-local"
-                    value={editState.dueAt}
-                    onChange={(e) => setEditState((prev) => ({ ...prev, dueAt: e.target.value }))}
-                    disabled
-                    className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold"
-                  />
+                  <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                    {selectedTicket.due_at ? formatDate(selectedTicket.due_at) : 'Sem prazo'}
+                  </div>
                 </div>
 
                 <div className="text-xs text-slate-500">
@@ -1066,28 +1035,10 @@ export default function SuportePage() {
                   <div className="text-xs text-slate-400 text-center py-8">Sem mensagens ainda.</div>
                 ) : (
                   messages.map((msg) => (
-                    <div key={msg.id} className={`max-w-[92%] rounded-xl px-3 py-2 text-sm ${
-                      msg.origin === 'holding'
-                        ? 'ml-auto bg-[#3b597b] text-white'
-                        : msg.origin === 'tenant'
-                          ? 'mr-auto bg-white border border-slate-200 text-slate-700'
-                          : 'mx-auto bg-amber-50 border border-amber-200 text-amber-800'
-                    }`}>
-                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider opacity-80 mb-1">
-                        {msg.author_avatar_url ? (
-                          <img src={msg.author_avatar_url} alt="avatar" className="w-5 h-5 rounded-full object-cover" />
-                        ) : (
-                          <span className="w-5 h-5 rounded-full bg-slate-300/60 inline-flex items-center justify-center text-[9px] font-bold text-slate-700">
-                            {String(msg.author_name || msg.author_email || 'S').slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span>
-                          {msg.origin} • {msg.author_name || msg.author_email || 'sistema'}
-                        </span>
-                      </div>
-                      <div className="whitespace-pre-wrap">{msg.message}</div>
+                    <div key={msg.id} className="max-w-full rounded-xl px-3 py-2 text-sm border border-slate-200 bg-white text-slate-700">
+                      {!msg.attachment_url && <div className="whitespace-pre-wrap">{msg.message}</div>}
                       {msg.attachment_url && (
-                        <div className="mt-2 space-y-2">
+                        <div className="space-y-2">
                           {String(msg.attachment_content_type || '').startsWith('image/') && (
                             <img
                               src={msg.attachment_url}
@@ -1113,7 +1064,7 @@ export default function SuportePage() {
                           </a>
                         </div>
                       )}
-                      <div className="text-[10px] opacity-70 mt-1">{formatDate(msg.created_at)}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">{formatDate(msg.created_at)}</div>
                     </div>
                   ))
                 )}

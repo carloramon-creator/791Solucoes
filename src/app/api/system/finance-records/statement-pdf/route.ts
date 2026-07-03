@@ -212,16 +212,6 @@ export async function POST(req: Request) {
       doc.fillColor('#64748B').font('AppFont').fontSize(9).text('Nenhum registro para o filtro selecionado.', doc.page.margins.left + 8, y + 9);
     }
 
-    const range = doc.bufferedPageRange();
-    for (let index = 0; index < range.count; index += 1) {
-      doc.switchToPage(range.start + index);
-      const footerY = doc.page.height - doc.page.margins.bottom - 8;
-      doc.fillColor('#64748B').font('AppFont').fontSize(8).text(`${index + 1}/${range.count}`, doc.page.margins.left, footerY, {
-        width: pageWidth,
-        align: 'right',
-      });
-    }
-
     doc.end();
 
     const buffer = await new Promise<Buffer>((resolve, reject) => {

@@ -219,6 +219,7 @@ export default function SuportePage() {
   const [newTicketAttachment, setNewTicketAttachment] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newTicketAttachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const autoMovedTicketIdsRef = useRef<Set<string>>(new Set());
 
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -427,6 +428,40 @@ export default function SuportePage() {
       setMessages([]);
     }
   }, [selectedTicket, loadMessages]);
+
+  useEffect(() => {
+    if (!selectedTicket) return;
+    if (selectedTicket.status !== 'new') return;
+    if (autoMovedTicketIdsRef.current.has(selectedTicket.id)) return;
+
+    autoMovedTicketIdsRef.current.add(selectedTicket.id);
+    let active = true;
+
+    (async () => {
+      try {
+        await api(`/api/support/tickets/${selectedTicket.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'in_progress', assignToMe: true }),
+        });
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+        }
+
+        if (active) {
+          await loadSupportData(queue, true);
+        }
+      } catch (err: any) {
+        if (active) {
+          setError(err?.message || 'Falha ao mover ticket para Meus.');
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [api, loadSupportData, queue, selectedTicket]);
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();

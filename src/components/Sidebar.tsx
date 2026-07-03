@@ -64,6 +64,7 @@ export function Sidebar() {
   const [unrestrictedFallback, setUnrestrictedFallback] = useState(false);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [newAssignedTicketCount, setNewAssignedTicketCount] = useState(0);
+  const [supportBadgeRefreshTick, setSupportBadgeRefreshTick] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -79,6 +80,12 @@ export function Sidebar() {
       active = false;
     };
   }, [supabase]);
+
+  useEffect(() => {
+    const handler = () => setSupportBadgeRefreshTick((prev) => prev + 1);
+    window.addEventListener('support:tickets-updated', handler);
+    return () => window.removeEventListener('support:tickets-updated', handler);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -127,7 +134,7 @@ export function Sidebar() {
       active = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [permissionCodes, permissionsLoaded, supabase, unrestrictedFallback]);
+  }, [permissionCodes, permissionsLoaded, supabase, unrestrictedFallback, supportBadgeRefreshTick]);
 
   useEffect(() => {
     let active = true;

@@ -81,10 +81,19 @@ export class PaymentProcessor {
         .eq('type', 'revenue');
 
       const normalized = (value: unknown) => String(value || '').toLowerCase();
+      const markedSubCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.use_webhook);
       const markedRootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && cat.use_webhook);
-      const rootCategory = markedRootCategory || (revenueCategories || []).find((cat: any) => !cat.parent_id && /software|saas|assinatura/.test(normalized(cat.name)));
-      const markedSubCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && cat.use_webhook);
-      const subCategory = markedSubCategory || (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && /assinatura|mensalidade|saas/.test(normalized(cat.name)));
+
+      const rootCategory =
+        (markedSubCategory && (revenueCategories || []).find((cat: any) => cat.id === markedSubCategory.parent_id)) ||
+        markedRootCategory ||
+        (revenueCategories || []).find((cat: any) => !cat.parent_id && /software|saas|assinatura/.test(normalized(cat.name)));
+
+      const subCategory =
+        markedSubCategory?.parent_id === rootCategory?.id
+          ? markedSubCategory
+          : (revenueCategories || []).find((cat: any) => cat.parent_id === rootCategory?.id && cat.use_webhook) ||
+            (revenueCategories || []).find((cat: any) => cat.parent_id === rootCategory?.id && /assinatura|mensalidade|saas/.test(normalized(cat.name)));
 
       const { data: asaasAccount } = await holdingSupabase
         .from('system_bank_accounts')
@@ -99,7 +108,9 @@ export class PaymentProcessor {
         ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),
         tenant_id: tenantId,
         tenant_name: tenantName,
+        category_parent_id: rootCategory?.id || null,
         category_parent: rootCategory?.name || null,
+        category_subcategory_id: subCategory?.id || null,
         category_subcategory: subCategory?.name || null,
         source: 'asaas_webhook',
         external_reference: payload.externalReference,

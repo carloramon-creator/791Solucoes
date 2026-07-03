@@ -247,6 +247,27 @@ export default function FinancePage() {
     return map;
   }, [accounts]);
 
+  const findAsaasAccount = (record: FinanceRecord) => {
+    const metadata = (record.metadata && typeof record.metadata === "object") ? record.metadata : {};
+    const candidateValues = [
+      record.bank_id,
+      record.payment_method,
+      metadata?.bank_id,
+      metadata?.bank_name,
+      metadata?.source,
+      metadata?.account_name,
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const normalizedCandidates = candidateValues.map((value) => value.toLowerCase());
+    return accounts.find((account) => {
+      const accountName = `${account.bank_name || ""} ${account.name || ""}`.toLowerCase();
+      if (/asaas/.test(accountName)) return true;
+      return normalizedCandidates.some((candidate) => candidate === "asaas" || candidate.includes("asaas")) && /asaas/.test(accountName);
+    }) || null;
+  };
+
   const resolveSourceForRecord = (record: FinanceRecord): { id: string; label: string; kind: SourceKind } => {
     const metadata = (record.metadata && typeof record.metadata === "object") ? record.metadata : {};
     const cardId = metadata?.card_id ? String(metadata.card_id) : "";
@@ -266,6 +287,15 @@ export default function FinancePage() {
       return {
         id: `account:${bankAccountId}`,
         label: `${account.bank_name || "Banco"} - ${account.name}`,
+        kind: "account",
+      };
+    }
+
+    const asaasAccount = findAsaasAccount(record);
+    if (asaasAccount) {
+      return {
+        id: `account:${asaasAccount.id}`,
+        label: `${asaasAccount.bank_name || "Banco"} - ${asaasAccount.name}`,
         kind: "account",
       };
     }

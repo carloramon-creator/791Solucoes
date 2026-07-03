@@ -25,6 +25,10 @@ export async function PUT(req: Request) {
 
     if (!id) throw new Error('ID é obrigatório');
 
+    if ('statement_subcategory_id' in updates) {
+      updates.statement_subcategory_id = updates.statement_subcategory_id || null;
+    }
+
     const { data, error } = await supabaseServer
       .from('system_bank_cards')
       .update(updates)

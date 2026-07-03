@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   Wallet, 
   Plus, 
@@ -245,10 +245,14 @@ export default function ContasBancariasPage() {
     if (!selectedAccountId) return;
     setSaving(true);
     try {
+      const payload = editingCard
+        ? { id: editingCard.id, ...cardFormData, statement_subcategory_id: cardFormData.statement_subcategory_id || null, account_id: selectedAccountId }
+        : { ...cardFormData, statement_subcategory_id: cardFormData.statement_subcategory_id || null, account_id: selectedAccountId };
+
       const res = await fetch('/api/system/bank-cards', {
         method: editingCard ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingCard ? { id: editingCard.id, ...cardFormData, account_id: selectedAccountId } : { ...cardFormData, account_id: selectedAccountId })
+        body: JSON.stringify(payload)
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao salvar cartão');
@@ -399,7 +403,17 @@ export default function ContasBancariasPage() {
   };
 
   const statementSubcategories = categories.filter((category) => category.parent_id && category.type === 'expense');
-  const totalCardLimit = accounts.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card)).reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
+  const cardSummary = useMemo(() => {
+    const creditCards = accounts.flatMap((account) => account.cards || []).filter((card) => isCreditCard(card));
+    const limit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
+    const spent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
+
+    return {
+      limit,
+      spent,
+      available: limit - spent,
+    };
+  }, [accounts, financeRecords]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -614,17 +628,17 @@ export default function ContasBancariasPage() {
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <CreditCard size={20} className="text-blue-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Gasto Atual</p>
-                <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totals.spent)}</p>
+                <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.spent)}</p>
              </div>
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                <ShieldCheck size={20} className="text-slate-200 mb-3" />
                <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Total</p>
-               <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totalCardLimit)}</p>
+               <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.limit)}</p>
              </div>
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <ShieldCheck size={20} className="text-emerald-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Disponível</p>
-                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totals.available)}</p>
+                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(cardSummary.available)}</p>
              </div>
           </div>
         </div>

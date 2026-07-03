@@ -211,7 +211,7 @@ export async function GET(req: Request) {
           id: 'total-geral',
           tipo: 'total',
           descricao: 'Total geral',
-          valor: totalAccounts + totalCards,
+          valor: totalAccounts,
         });
 
         data = entries;

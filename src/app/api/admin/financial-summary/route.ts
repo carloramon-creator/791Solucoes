@@ -152,7 +152,9 @@ export async function GET(req: Request) {
             const cardType = String(card.card_type || '').toLowerCase();
             const spentAmount = Math.abs(Math.min(cardCurrentBalance, 0));
             const availableLimit = toNumber(card.credit_limit, 0) - spentAmount;
-            const displayedValue = cardType.includes('credit') ? availableLimit : cardCurrentBalance;
+            const displayedValue = cardType.includes('credit')
+              ? (cardCurrentBalance < 0 ? availableLimit : cardCurrentBalance)
+              : cardCurrentBalance;
 
             entries.push({
               id: card.id,

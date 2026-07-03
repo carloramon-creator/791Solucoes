@@ -32,12 +32,12 @@ export async function POST(req: Request) {
 
     const { data: card, error: cardError } = await supabaseServer
       .from('system_bank_cards')
-      .select('id, account_id, name, card_type, due_day, current_balance, brand, last_digits, accounts:system_bank_accounts(id, name, bank_name)')
+      .select('id, account_id, name, card_type, due_day, brand, last_digits, accounts:system_bank_accounts(id, name, bank_name)')
       .eq('id', cardId)
       .single();
 
     if (cardError || !card) throw new Error(cardError?.message || 'Cartão não encontrado');
-    if (card.card_type !== 'credit') throw new Error('Somente cartões de crédito podem gerar fatura.');
+    if (!String(card.card_type || '').toLowerCase().includes('credit')) throw new Error('Somente cartões de crédito podem gerar fatura.');
 
     const { data: paidRecords, error: recordsError } = await supabaseServer
       .from('system_finance_records')

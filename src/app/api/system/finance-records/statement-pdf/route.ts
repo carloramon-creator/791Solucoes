@@ -144,13 +144,13 @@ export async function POST(req: Request) {
     const itemWidth = pageWidth / summaryItems.length;
     summaryItems.forEach((item, index) => {
       const x = doc.page.margins.left + itemWidth * index;
-      doc.fillColor('#64748B').font('AppFont').fontSize(7).text(item.label, x + 10, y + 7, {
-        width: itemWidth - 20,
-        align: 'left',
+      doc.fillColor('#64748B').font('AppFont').fontSize(7).text(item.label, x, y + 7, {
+        width: itemWidth,
+        align: 'center',
       });
-      doc.fillColor(item.color).font('AppFont').fontSize(10).text(item.value, x + 10, y + 19, {
-        width: itemWidth - 20,
-        align: 'left',
+      doc.fillColor(item.color).font('AppFont').fontSize(10).text(item.value, x, y + 19, {
+        width: itemWidth,
+        align: 'center',
         lineBreak: false,
         ellipsis: true,
       });

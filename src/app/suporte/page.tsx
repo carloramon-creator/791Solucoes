@@ -110,6 +110,29 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
+function formatTicketStatus(status: Ticket['status'] | string | null | undefined) {
+  const value = String(status || '').trim();
+  const labels: Record<string, string> = {
+    new: 'Novo',
+    in_progress: 'Em andamento',
+    waiting_customer: 'Aguardando cliente',
+    resolved: 'Resolvido',
+    closed: 'Fechado',
+  };
+  return labels[value] || value || '--';
+}
+
+function formatTicketPriority(priority: Ticket['priority'] | string | null | undefined) {
+  const value = String(priority || '').trim();
+  const labels: Record<string, string> = {
+    low: 'Baixa',
+    normal: 'Normal',
+    high: 'Alta',
+    urgent: 'Urgente',
+  };
+  return labels[value] || value || '--';
+}
+
 function formatRelativeDeadline(targetIso: string | null) {
   if (!targetIso) return 'Sem prazo definido';
   const target = new Date(targetIso);
@@ -989,8 +1012,8 @@ export default function SuportePage() {
                     {(ticket.tenant_name || ticket.tenant_slug)} • {ticket.subject?.name || 'Sem assunto'}
                   </div>
                   <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">{ticket.status}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase">{ticket.priority}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase">{formatTicketStatus(ticket.status)}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase">{formatTicketPriority(ticket.priority)}</span>
                     {ticket.assigned_to_email && (
                       <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">{ticket.assigned_to_email}</span>
                     )}
@@ -1027,11 +1050,11 @@ export default function SuportePage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
-                    {editState.status}
+                    {formatTicketStatus(editState.status)}
                   </div>
 
                   <div className="px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
-                    {editState.priority}
+                    {formatTicketPriority(editState.priority)}
                   </div>
 
                   {can('action.support.assign') && (

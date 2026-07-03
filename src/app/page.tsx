@@ -100,6 +100,40 @@ function formatDate(value?: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
+function formatTicketStatus(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    new: 'Novo',
+    in_progress: 'Em andamento',
+    waiting_customer: 'Aguardando cliente',
+    resolved: 'Resolvido',
+    closed: 'Fechado',
+  };
+  const normalized = String(value || '').trim();
+  return labels[normalized] || normalized || '--';
+}
+
+function formatTicketPriority(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    low: 'Baixa',
+    normal: 'Normal',
+    high: 'Alta',
+    urgent: 'Urgente',
+  };
+  const normalized = String(value || '').trim();
+  return labels[normalized] || normalized || '--';
+}
+
+function formatTicketQueueLabel(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    total: 'Total',
+    'em-dia': 'Em dia',
+    atrasados: 'Atrasados',
+    resolvidos: 'Resolvidos',
+  };
+  const normalized = String(value || '').trim();
+  return labels[normalized] || normalized || '--';
+}
+
 function formatDateMasked(value: string) {
   if (!value) return '--';
   const [year, month, day] = value.split('-');
@@ -766,7 +800,7 @@ export default function Dashboard() {
             <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-800">
                 {modal.type === 'tickets' 
-                  ? `Tickets - ${modal.subtype === 'total' ? 'Total' : modal.subtype === 'em-dia' ? 'Em dia' : modal.subtype === 'atrasados' ? 'Atrasados' : modal.subtype === 'resolvidos' ? 'Resolvidos' : modal.subtype}`
+                  ? `Tickets - ${formatTicketQueueLabel(modal.subtype)}`
                   : `Financeiro - ${modal.subtype === 'saldo-atual' ? 'Saldo atual' : modal.subtype === 'contas-receber' ? 'Contas a receber' : 'Contas a pagar'}`
                 }
               </h3>
@@ -828,14 +862,16 @@ export default function Dashboard() {
                             <p><span className="font-bold text-slate-500">Data:</span> <span className="text-slate-700">{formatDateMasked(String(item?.data_criacao || '').slice(0, 10))}</span></p>
                             <p><span className="font-bold text-slate-500">Hora:</span> <span className="text-slate-700">{item?.hora_criacao || '--:--'}</span></p>
                             <p><span className="font-bold text-slate-500">Assunto:</span> <span className="text-slate-700">{item?.assunto || item?.titulo || '--'}</span></p>
+                            <p><span className="font-bold text-slate-500">Fila:</span> <span className="text-slate-700">{item?.fila_label || formatTicketQueueLabel(modal.subtype)}</span></p>
                             <p><span className="font-bold text-slate-500">Origem:</span> <span className="text-slate-700">{item?.origem || 'Holding'} - {item?.vidracaria || '--'}</span></p>
                             <p><span className="font-bold text-slate-500">Usuario:</span> <span className="text-slate-700">{item?.usuario || '--'}</span></p>
                             <p>
                               <span className="font-bold text-slate-500">Status:</span>{' '}
                               <span className={isOverdue ? 'font-semibold text-red-600' : 'text-slate-700'}>
-                                {item?.status_ticket || '--'}{isOverdue ? ' (atrasado)' : ''}
+                                {item?.status_label || formatTicketStatus(item?.status_ticket)}{isOverdue ? ' (atrasado)' : ''}
                               </span>
                             </p>
+                            <p><span className="font-bold text-slate-500">Prioridade:</span> <span className="text-slate-700">{item?.prioridade_label || formatTicketPriority(item?.prioridade)}</span></p>
                           </div>
                         </div>
                       );

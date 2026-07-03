@@ -173,8 +173,21 @@ function parseCurrencyInput(value: string) {
 
 function getDisplayDescription(record: FinanceRecord) {
   const tenantName = record.tenant_name || (record.metadata && typeof record.metadata === "object" ? record.metadata?.tenant_name : null);
-  if (!tenantName) return record.description;
-  return String(record.description || "").replace(/Tenant:\s*[0-9a-f-]+/i, `Tenant: ${tenantName}`);
+  const description = String(record.description || "");
+
+  if (!tenantName) {
+    return description
+      .replace(/\s*-\s*Tenant:\s*/gi, " - ")
+      .replace(/\bTenant:\s*/gi, "")
+      .trim();
+  }
+
+  return description
+    .replace(/Tenant:\s*[0-9a-f-]+/gi, String(tenantName))
+    .replace(/\s*-\s*Tenant:\s*/gi, " - ")
+    .replace(/\bTenant:\s*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function isCreditCard(card?: BankCard | null) {

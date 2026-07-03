@@ -16,7 +16,8 @@ import {
   TrendingUp,
   ShieldCheck,
   Zap,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -55,6 +56,7 @@ export default function SponsorPortal() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [revokingTokenId, setRevokingTokenId] = useState<string | null>(null);
 
   // States para Solicitar Cotas
   const [isQuotasModalOpen, setIsQuotasModalOpen] = useState(false);
@@ -114,6 +116,38 @@ export default function SponsorPortal() {
     navigator.clipboard.writeText(text);
     setCopiedToken(tokenCode);
     setTimeout(() => setCopiedToken(null), 2000);
+  };
+
+  const handleRevokeToken = async (token: SponsorToken) => {
+    if (!sponsor || !token.vidracaria_id) return;
+
+    const confirmed = window.confirm(
+      `Deseja remover o patrocínio da vidraçaria ${token.vidracaria_nome || 'selecionada'}?\n\n` +
+      'Ao confirmar, o token atual será removido e um novo token ficará disponível para redistribuição.'
+    );
+    if (!confirmed) return;
+
+    setRevokingTokenId(token.id);
+    try {
+      const response = await fetch('/api/sponsors/tokens/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sponsorId: sponsor.id,
+          tokenId: token.id,
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Falha ao revogar token.');
+
+      await fetchPortalData();
+      alert('Patrocínio removido com sucesso. Um novo token foi criado e está disponível.');
+    } catch (err: any) {
+      alert(`Erro ao remover patrocínio: ${err?.message || 'desconhecido'}`);
+    } finally {
+      setRevokingTokenId(null);
+    }
   };
 
   const getWhatsAppLink = (tokenCode: string) => {
@@ -342,9 +376,15 @@ Para ativar o patrocínio:
                           <td className="px-4 py-1.5">
                             <div className="flex items-center justify-center gap-1.5">
                               {t.usado ? (
-                                <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                  <CheckCircle2 size={8} /> ATIVO
-                                </span>
+                                <button
+                                  onClick={() => handleRevokeToken(t)}
+                                  disabled={revokingTokenId === t.id}
+                                  className="inline-flex items-center gap-1 text-[8px] font-black uppercase bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full hover:bg-red-100 disabled:opacity-60"
+                                  title="Remover vínculo da vidraçaria patrocinada"
+                                >
+                                  {revokingTokenId === t.id ? <Loader2 size={8} className="animate-spin" /> : <Trash2 size={8} />}
+                                  EXCLUIR
+                                </button>
                               ) : (
                                 <>
                                   <button

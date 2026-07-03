@@ -180,12 +180,11 @@ export async function GET(req: Request) {
             detalhes: [
               account.agency ? `Ag. ${account.agency}` : null,
               account.account_number ? `Conta ${account.account_number}` : null,
-              overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftLimit)}` : null,
+              overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftRemaining)}` : null,
             ]
               .filter(Boolean)
               .join(' | '),
             valor: accountCurrentBalance,
-            overdraft_label: overdraftLimit > 0 ? `Cheque especial ${formatCurrencyLabel(overdraftRemaining)}` : null,
             data_vencimento: account.updated_at,
             atualizado_em: account.updated_at,
           });

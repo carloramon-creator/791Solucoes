@@ -802,11 +802,6 @@ export default function Dashboard() {
                             {item.valor !== undefined && (
                               <div className="text-right ml-4">
                                 <p className={`text-2xl font-bold ${Number(item.valor) < 0 ? 'text-red-600' : item.tipo === 'total' ? 'text-slate-900' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
-                                {item.tipo === 'conta' && item.overdraft_label && (
-                                  <p className="mt-1 text-sm text-sky-600">
-                                    {item.overdraft_label}
-                                  </p>
-                                )}
                               </div>
                             )}
                           </div>

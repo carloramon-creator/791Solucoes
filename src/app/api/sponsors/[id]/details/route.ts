@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+function normalizeTemplateName(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function generateVoucherCode(sponsorName: string) {
+  const base = String(sponsorName || 'SPON').trim().toUpperCase().replace(/\s+/g, '');
+  const prefix = (base || 'SPON').slice(0, 4);
+  const random = Math.floor(1000 + Math.random() * 9000);
+  const suffix = Math.random().toString(36).substring(2, 4).toUpperCase();
+  return `791-${prefix}-${random}-${suffix}`;
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -19,15 +31,62 @@ export async function GET(
     const holdingSupabase = createClient(holdingUrl, holdingServiceKey);
 
     // Buscar TODOS os vouchers do patrocinador (usados e não usados)
+    const { data: initialVouchers } = await holdingSupabase
+      .from('vouchers')
+      .select('id, codigo, usado_por_vidracaria_id, usado_em, created_at')
+      .eq('patrocinador_id', sponsorId)
+      .order('created_at', { ascending: true });
+
+    const usedVoucherIdsInitial = Array.from(new Set((initialVouchers || [])
+      .filter(v => v.usado_por_vidracaria_id)
+      .map(v => String(v.usado_por_vidracaria_id))));
+
+    let existingTenantIdSet = new Set<string>();
+    if (usedVoucherIdsInitial.length > 0) {
+      const { data: existingGlassTenants, error: existingTenantsError } = await glassSupabase
+        .from('vidracarias')
+        .select('id')
+        .in('id', usedVoucherIdsInitial);
+
+      if (existingTenantsError) console.error('[GLASS TENANTS EXISTS ERROR]', existingTenantsError);
+      existingTenantIdSet = new Set((existingGlassTenants || []).map((tenant: any) => String(tenant.id)));
+    }
+
+    // Se houver token "ativo" sem vidraçaria existente, recicla automaticamente.
+    const orphanVouchers = (initialVouchers || []).filter((voucher) => {
+      const tenantId = voucher.usado_por_vidracaria_id ? String(voucher.usado_por_vidracaria_id) : '';
+      return Boolean(tenantId) && !existingTenantIdSet.has(tenantId);
+    });
+
+    if (orphanVouchers.length > 0) {
+      const { data: sponsor } = await holdingSupabase
+        .from('patrocinadores')
+        .select('nome')
+        .eq('id', sponsorId)
+        .single();
+
+      const orphanIds = orphanVouchers.map((voucher) => voucher.id);
+      await holdingSupabase.from('vouchers').delete().in('id', orphanIds);
+
+      const replacementVouchers = Array.from({ length: orphanVouchers.length }, () => ({
+        codigo: generateVoucherCode(sponsor?.nome || 'SPON'),
+        patrocinador_id: sponsorId,
+      }));
+
+      if (replacementVouchers.length > 0) {
+        await holdingSupabase.from('vouchers').insert(replacementVouchers);
+      }
+    }
+
     const { data: allVouchers } = await holdingSupabase
       .from('vouchers')
       .select('id, codigo, usado_por_vidracaria_id, usado_em, created_at')
       .eq('patrocinador_id', sponsorId)
       .order('created_at', { ascending: true });
 
-    const usedVoucherIds = (allVouchers || [])
+    const usedVoucherIds = Array.from(new Set((allVouchers || [])
       .filter(v => v.usado_por_vidracaria_id)
-      .map(v => v.usado_por_vidracaria_id);
+      .map(v => String(v.usado_por_vidracaria_id))));
 
     // 2. Buscar nomes das vidraçarias no Glass (para enriquecer os tokens)
     let vidracariaMap: Record<string, { nome: string; email: string }> = {};
@@ -48,8 +107,8 @@ export async function GET(
     const tokens = (allVouchers || []).map(v => ({
       id: v.id,
       codigo: v.codigo,
-      usado: !!v.usado_por_vidracaria_id,
-      data_ativacao: v.usado_em || null,
+      usado: !!v.usado_por_vidracaria_id && !!vidracariaMap[String(v.usado_por_vidracaria_id)]?.nome,
+      data_ativacao: !!v.usado_por_vidracaria_id && !!vidracariaMap[String(v.usado_por_vidracaria_id)]?.nome ? (v.usado_em || null) : null,
       created_at: v.created_at,
       vidracaria_id: v.usado_por_vidracaria_id || null,
       vidracaria_nome: v.usado_por_vidracaria_id ? (vidracariaMap[v.usado_por_vidracaria_id]?.nome || null) : null,
@@ -75,11 +134,22 @@ export async function GET(
 
     if (tError) console.error('Erro templates:', tError);
 
+    const uniqueTemplatesMap = new Map<string, any>();
+    (templates || []).forEach((template) => {
+      const key = normalizeTemplateName(template?.nome);
+      if (!key) return;
+      if (!uniqueTemplatesMap.has(key)) {
+        uniqueTemplatesMap.set(key, template);
+      }
+    });
+
+    const uniqueTemplates = Array.from(uniqueTemplatesMap.values());
+
     return NextResponse.json({
       success: true,
       tokens: tokens,
       vidracarias: vidracarias,
-      templates: templates || []
+      templates: uniqueTemplates
     });
 
   } catch (err: any) {

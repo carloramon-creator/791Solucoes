@@ -120,7 +120,7 @@ export class PaymentProcessor {
         business_unit: saasType,
         type: 'revenue',
         value: payload.value,
-        description: `Assinatura SaaS ${saasType} - Tenant: ${tenantName}`,
+        description: `Assinatura SaaS ${saasType} - ${tenantName}`,
         payment_method: payload.paymentMethod,
         bank_id: payload.bankId,
         bank_account_id: asaasAccount?.id || null,

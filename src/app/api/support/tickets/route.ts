@@ -14,6 +14,23 @@ import { randomUUID } from 'crypto';
 const AVATAR_BUCKET = 'equipe-avatars';
 const ATTACHMENT_BUCKET = 'support-ticket-attachments';
 
+async function resolveDueAtByPriority(priority: string): Promise<string | null> {
+  const normalizedPriority = String(priority || 'normal').trim().toLowerCase();
+
+  const { data } = await supabaseServer
+    .from('support_ticket_priority_sla')
+    .select('response_minutes, active')
+    .eq('priority', normalizedPriority)
+    .maybeSingle();
+
+  const minutes = Number((data as any)?.response_minutes || 0);
+  const active = Boolean((data as any)?.active);
+  if (!active || !Number.isFinite(minutes) || minutes <= 0) return null;
+
+  const due = new Date(Date.now() + minutes * 60 * 1000);
+  return due.toISOString();
+}
+
 function isAllowedAttachment(file: File) {
   const type = String(file.type || '').toLowerCase();
   if (type.startsWith('image/')) return true;
@@ -343,7 +360,9 @@ export async function POST(req: NextRequest) {
     }
 
     const dueAtValue = readValue('dueAt');
-    const dueAt = dueAtValue ? new Date(String(dueAtValue)).toISOString() : null;
+    const dueAt = dueAtValue
+      ? new Date(String(dueAtValue)).toISOString()
+      : await resolveDueAtByPriority(priority);
 
     const insertPayload = {
       tenant_slug: tenantSlug,

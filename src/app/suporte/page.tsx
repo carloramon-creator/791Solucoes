@@ -110,6 +110,32 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
+function formatRelativeDeadline(targetIso: string | null) {
+  if (!targetIso) return 'Sem prazo definido';
+  const target = new Date(targetIso);
+  if (!Number.isFinite(target.getTime())) return 'Sem prazo definido';
+
+  const now = Date.now();
+  const diff = target.getTime() - now;
+  const abs = Math.abs(diff);
+  const hours = Math.round(abs / (1000 * 60 * 60));
+
+  if (hours < 24) {
+    return diff < 0 ? `Atrasado ha ${hours}h` : `Vence em ${hours}h`;
+  }
+
+  const days = Math.round(hours / 24);
+  return diff < 0 ? `Atrasado ha ${days}d` : `Vence em ${days}d`;
+}
+
+function getDeadlineTone(ticket: Ticket) {
+  if (!ticket.due_at) return 'text-slate-500';
+  if (ticket.status === 'resolved' || ticket.status === 'closed') return 'text-emerald-600';
+  const due = new Date(ticket.due_at);
+  if (!Number.isFinite(due.getTime())) return 'text-slate-500';
+  return due.getTime() < Date.now() ? 'text-red-600' : 'text-amber-600';
+}
+
 function toInputDateTime(value: string | null): string {
   if (!value) return '';
   const date = new Date(value);
@@ -956,7 +982,7 @@ export default function SuportePage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#3b597b]">{ticket.protocol}</span>
-                    <span className="text-[10px] text-slate-400">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
+                    <span className="text-[13px] text-slate-500">{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</span>
                   </div>
                   <div className="text-sm font-semibold text-slate-800 mt-1 line-clamp-1">{ticket.title}</div>
                   <div className="text-xs text-slate-500 mt-1 line-clamp-1">
@@ -1021,6 +1047,9 @@ export default function SuportePage() {
 
                 <div className="text-xs text-slate-500">
                   Tenant: <span className="font-semibold text-slate-700">{selectedTicket.tenant_name || selectedTicket.tenant_slug}</span> • Criado em {formatDate(selectedTicket.created_at)}
+                </div>
+                <div className={`text-xs font-semibold ${getDeadlineTone(selectedTicket)}`}>
+                  Prazo: {selectedTicket.due_at ? formatDate(selectedTicket.due_at) : 'Sem prazo'} • {formatRelativeDeadline(selectedTicket.due_at)}
                 </div>
               </div>
 

@@ -811,6 +811,35 @@ export default function Dashboard() {
                         </div>
                       )
                     ))
+                  ) : modal.type === 'tickets' ? (
+                    modal.data.map((item, idx) => {
+                      const dueAt = item?.due_at ? new Date(item.due_at) : null;
+                      const isOverdue = Boolean(
+                        dueAt
+                        && Number.isFinite(dueAt.getTime())
+                        && dueAt.getTime() < Date.now()
+                        && item?.status_ticket !== 'closed'
+                        && item?.status_ticket !== 'resolved'
+                      );
+
+                      return (
+                        <div key={idx} className="border border-slate-200 rounded-lg px-3 py-2">
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] leading-tight min-[980px]:grid-cols-3">
+                            <p><span className="font-bold text-slate-500">Data:</span> <span className="text-slate-700">{formatDateMasked(String(item?.data_criacao || '').slice(0, 10))}</span></p>
+                            <p><span className="font-bold text-slate-500">Hora:</span> <span className="text-slate-700">{item?.hora_criacao || '--:--'}</span></p>
+                            <p><span className="font-bold text-slate-500">Assunto:</span> <span className="text-slate-700">{item?.assunto || item?.titulo || '--'}</span></p>
+                            <p><span className="font-bold text-slate-500">Origem:</span> <span className="text-slate-700">{item?.origem || 'Holding'} - {item?.vidracaria || '--'}</span></p>
+                            <p><span className="font-bold text-slate-500">Usuario:</span> <span className="text-slate-700">{item?.usuario || '--'}</span></p>
+                            <p>
+                              <span className="font-bold text-slate-500">Status:</span>{' '}
+                              <span className={isOverdue ? 'font-semibold text-red-600' : 'text-slate-700'}>
+                                {item?.status_ticket || '--'}{isOverdue ? ' (atrasado)' : ''}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
                   ) : (
                     // Renderização padrão para outros tipos (Contas a Receber/Pagar, Tickets)
                     modal.data.map((item, idx) => (

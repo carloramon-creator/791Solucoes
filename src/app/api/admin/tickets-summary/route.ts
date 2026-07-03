@@ -2,6 +2,30 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
+function mapTicketSummary(ticket: any) {
+  const createdAt = String(ticket?.created_at || '');
+  const createdDate = createdAt ? new Date(createdAt) : null;
+  const sourceName = String(ticket?.tenant_name || ticket?.tenant_slug || '').trim();
+  const sourceType = sourceName ? 'Vidracaria' : 'Holding';
+
+  return {
+    id: ticket.id,
+    protocolo: ticket.protocol,
+    assunto: ticket.title,
+    vidracaria: sourceName || 'Holding',
+    origem: sourceType,
+    usuario: String(ticket?.requester_name || ticket?.requester_email || 'Nao informado'),
+    status_ticket: ticket.status,
+    prioridade: ticket.priority,
+    data_criacao: ticket.created_at,
+    hora_criacao: createdDate && Number.isFinite(createdDate.getTime())
+      ? createdDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : '--:--',
+    due_at: ticket.due_at,
+    data_resolucao: ticket.resolved_at || null,
+  };
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores não podem consultar tickets.');
   if (!auth.ok) {
@@ -58,7 +82,7 @@ export async function GET(req: Request) {
     // Buscar todos os tickets do período
     const { data: allTickets, error: ticketsError } = await supabaseServer
       .from('support_tickets')
-      .select('id, protocol, title, description, tenant_slug, priority, status, created_at, due_at, resolved_at')
+      .select('id, protocol, title, description, tenant_slug, tenant_name, requester_name, requester_email, priority, status, created_at, due_at, resolved_at')
       .gte('created_at', fromDate.toISOString())
       .lte('created_at', toDate.toISOString())
       .order('created_at', { ascending: false });
@@ -71,27 +95,13 @@ export async function GET(req: Request) {
 
     if (status === 'total') {
       // Todos os tickets do período
-      data = (allTickets || []).map((ticket: any) => ({
-        id: ticket.id,
-        titulo: ticket.title,
-        vidracaria: ticket.tenant_slug || 'Sistema',
-        data_criacao: ticket.created_at,
-        prioridade: ticket.priority,
-        status_ticket: ticket.status,
-      }));
+      data = (allTickets || []).map((ticket: any) => mapTicketSummary(ticket));
 
     } else if (status === 'em-dia') {
       // Tickets onde a data de vencimento não foi ultrapassada
       data = (allTickets || [])
         .filter((ticket: any) => ticket.due_at && new Date(ticket.due_at) >= now && ticket.status !== 'closed' && ticket.status !== 'resolved')
-        .map((ticket: any) => ({
-          id: ticket.id,
-          titulo: ticket.title,
-          vidracaria: ticket.tenant_slug || 'Sistema',
-          data_criacao: ticket.created_at,
-          prioridade: ticket.priority,
-          status_ticket: ticket.status,
-        }));
+        .map((ticket: any) => mapTicketSummary(ticket));
 
     } else if (status === 'atrasados') {
       // Tickets onde a data de vencimento foi ultrapassada e não foram resolvidos
@@ -100,13 +110,8 @@ export async function GET(req: Request) {
         .map((ticket: any) => {
           const diasAtraso = Math.floor((now.getTime() - new Date(ticket.due_at).getTime()) / (1000 * 60 * 60 * 24));
           return {
-            id: ticket.id,
-            titulo: ticket.title,
-            vidracaria: ticket.tenant_slug || 'Sistema',
-            data_criacao: ticket.created_at,
+            ...mapTicketSummary(ticket),
             dias_atraso: diasAtraso,
-            prioridade: ticket.priority,
-            status_ticket: ticket.status,
           };
         });
 
@@ -114,14 +119,7 @@ export async function GET(req: Request) {
       // Tickets resolvidos
       data = (allTickets || [])
         .filter((ticket: any) => ticket.status === 'closed' || ticket.status === 'resolved')
-        .map((ticket: any) => ({
-          id: ticket.id,
-          titulo: ticket.title,
-          vidracaria: ticket.tenant_slug || 'Sistema',
-          data_criacao: ticket.created_at,
-          data_resolucao: ticket.resolved_at,
-          prioridade: ticket.priority,
-        }));
+        .map((ticket: any) => mapTicketSummary(ticket));
     }
 
     return NextResponse.json(data);

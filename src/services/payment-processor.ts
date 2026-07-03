@@ -75,35 +75,14 @@ export class PaymentProcessor {
         tenantName = String(tenantRow?.nome_fantasia || tenantRow?.nome || tenantId);
       }
 
-      const DRE_ROOT_NAME = 'Receita de Software';
-      const DRE_SUB_NAME = 'Assinatura SaaS';
-
       const { data: revenueCategories } = await holdingSupabase
         .from('system_finance_categories')
         .select('id, name, parent_id, type')
         .eq('type', 'revenue');
 
-      let rootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && String(cat.name || '').toLowerCase() === DRE_ROOT_NAME.toLowerCase());
-
-      if (!rootCategory) {
-        const { data: createdRoot } = await holdingSupabase
-          .from('system_finance_categories')
-          .insert([{ name: DRE_ROOT_NAME, type: 'revenue', parent_id: null }])
-          .select('id, name, parent_id, type')
-          .single();
-        rootCategory = createdRoot || undefined;
-      }
-
-      let subCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && String(cat.name || '').toLowerCase() === DRE_SUB_NAME.toLowerCase());
-
-      if (!subCategory && rootCategory?.id) {
-        const { data: createdSub } = await holdingSupabase
-          .from('system_finance_categories')
-          .insert([{ name: DRE_SUB_NAME, type: 'revenue', parent_id: rootCategory.id }])
-          .select('id, name, parent_id, type')
-          .single();
-        subCategory = createdSub || undefined;
-      }
+      const normalized = (value: unknown) => String(value || '').toLowerCase();
+      const rootCategory = (revenueCategories || []).find((cat: any) => !cat.parent_id && /software|saas|assinatura/.test(normalized(cat.name)));
+      const subCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && /assinatura|mensalidade|saas/.test(normalized(cat.name)));
 
       const { data: asaasAccount } = await holdingSupabase
         .from('system_bank_accounts')
@@ -112,7 +91,7 @@ export class PaymentProcessor {
         .limit(1)
         .maybeSingle();
 
-      const categoryLabel = subCategory?.name || rootCategory?.name || DRE_SUB_NAME;
+      const categoryLabel = subCategory?.name || rootCategory?.name || 'SaaS Revenue';
 
       const metadata = {
         ...(payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}),

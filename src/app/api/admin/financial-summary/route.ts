@@ -88,11 +88,40 @@ export async function GET(req: Request) {
         console.log('Aviso ao buscar contas bancárias:', accountsError.message);
       }
 
+      // Apura lançamentos pagos para transformar saldo base em saldo atual.
+      const { data: paidRecords, error: paidRecordsError } = await supabaseServer
+        .from('system_finance_records')
+        .select('type, value, bank_account_id, metadata')
+        .eq('status', 'paid');
+
+      if (paidRecordsError && paidRecordsError.code !== 'PGRST116') {
+        console.log('Aviso ao buscar lançamentos pagos:', paidRecordsError.message);
+      }
+
+      const accountAdjustments = new Map<string, number>();
+      const cardAdjustments = new Map<string, number>();
+
+      (paidRecords || []).forEach((record: any) => {
+        const signed = record?.type === 'revenue' ? toNumber(record?.value, 0) : -toNumber(record?.value, 0);
+        const metadata = (record?.metadata && typeof record.metadata === 'object') ? record.metadata : {};
+        const cardId = metadata?.card_id ? String(metadata.card_id) : '';
+        const accountId = record?.bank_account_id ? String(record.bank_account_id) : '';
+
+        if (cardId) {
+          cardAdjustments.set(cardId, toNumber(cardAdjustments.get(cardId), 0) + signed);
+          return;
+        }
+
+        if (accountId) {
+          accountAdjustments.set(accountId, toNumber(accountAdjustments.get(accountId), 0) + signed);
+        }
+      });
+
       if (bankAccounts && bankAccounts.length > 0) {
         const entries: any[] = [];
 
         bankAccounts.forEach((account: any) => {
-          const accountCurrentBalance = toNumber(account.balance, 0);
+          const accountCurrentBalance = toNumber(account.balance, 0) + toNumber(accountAdjustments.get(account.id), 0);
 
           entries.push({
             id: account.id,
@@ -107,7 +136,8 @@ export async function GET(req: Request) {
           });
 
           (account.cards || []).forEach((card: any) => {
-            const cardCurrentBalance = toNumber(card.current_balance, 0);
+            const cardBase = toNumber(card.current_balance, 0);
+            const cardCurrentBalance = cardBase + toNumber(cardAdjustments.get(card.id), 0);
 
             entries.push({
               id: card.id,

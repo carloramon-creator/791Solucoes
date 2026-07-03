@@ -273,12 +273,37 @@ export default function FinancePage() {
   }, [records, accountById, cardById]);
 
   const sourceOptions = useMemo<SourceOption[]>(() => {
+    const accountAdjustments = new Map<string, number>();
+    const cardAdjustments = new Map<string, number>();
+    const externalAdjustments = new Map<string, number>();
+
+    normalizedRecords
+      .filter((record) => record.status === "paid")
+      .forEach((record) => {
+        const signed = signedValue(record);
+        if (record.source_kind === "card" && record.source_id?.startsWith("card:")) {
+          const cardId = record.source_id.replace("card:", "");
+          cardAdjustments.set(cardId, Number(cardAdjustments.get(cardId) || 0) + signed);
+          return;
+        }
+
+        if (record.source_kind === "account" && record.source_id?.startsWith("account:")) {
+          const accountId = record.source_id.replace("account:", "");
+          accountAdjustments.set(accountId, Number(accountAdjustments.get(accountId) || 0) + signed);
+          return;
+        }
+
+        if (record.source_kind === "external" && record.source_id) {
+          externalAdjustments.set(record.source_id, Number(externalAdjustments.get(record.source_id) || 0) + signed);
+        }
+      });
+
     const accountSources: SourceOption[] = accounts.map((acc) => ({
       id: `account:${acc.id}`,
       kind: "account",
       label: `${acc.bank_name || "Banco"} - ${acc.name}`,
       details: [acc.agency ? `Ag. ${acc.agency}` : null, acc.account_number ? `Conta ${acc.account_number}` : null].filter(Boolean).join(" | "),
-      amount: Number(acc.balance || 0),
+      amount: Number(acc.balance || 0) + Number(accountAdjustments.get(acc.id) || 0),
       accountId: acc.id,
     }));
 
@@ -287,16 +312,24 @@ export default function FinancePage() {
       kind: "card" as const,
       label: `${acc.bank_name || "Banco"} - ${card.name}`,
       details: [card.card_type ? String(card.card_type).toUpperCase() : null, card.last_digits ? `•••• ${card.last_digits}` : null].filter(Boolean).join(" | "),
-      amount: Number(card.current_balance ?? 0),
+      amount: Number(card.current_balance || 0) + Number(cardAdjustments.get(card.id) || 0),
       accountId: acc.id,
       cardId: card.id,
     })));
 
-    const allWithoutVirtual = [...accountSources, ...cardSources];
+    const externalSources: SourceOption[] = Array.from(externalAdjustments.entries()).map(([id, amount]) => ({
+      id,
+      kind: "external",
+      label: id.replace("external:", ""),
+      details: "Origem externa",
+      amount,
+    }));
+
+    const allWithoutVirtual = [...accountSources, ...cardSources, ...externalSources];
     const allAmount = allWithoutVirtual.reduce((sum, item) => sum + item.amount, 0);
 
     return [{ id: "all", kind: "all", label: "Todas as contas e cartoes", amount: allAmount }, ...allWithoutVirtual];
-  }, [accounts]);
+  }, [accounts, normalizedRecords]);
 
   const sourceById = useMemo(() => {
     const map = new Map<string, SourceOption>();
@@ -645,24 +678,7 @@ export default function FinancePage() {
     });
   };
 
-  const sourceOptionsForForm = useMemo(() => {
-    const externals = new Map<string, SourceOption>();
-
-    normalizedRecords.forEach((record) => {
-      if (record.source_kind !== "external" || !record.source_id) return;
-      if (externals.has(record.source_id)) return;
-
-      externals.set(record.source_id, {
-        id: record.source_id,
-        kind: "external",
-        label: record.source_label || record.source_id.replace("external:", ""),
-        details: "Origem externa",
-        amount: 0,
-      });
-    });
-
-    return [...sourceOptions.filter((source) => source.id !== "all"), ...Array.from(externals.values())];
-  }, [sourceOptions, normalizedRecords]);
+  const sourceOptionsForForm = sourceOptions.filter((source) => source.id !== "all");
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -700,83 +716,32 @@ export default function FinancePage() {
       </div>
 
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 md:p-4 border-b border-slate-100 bg-slate-50/40 space-y-3">
-          <div className="flex flex-wrap md:flex-nowrap md:overflow-x-auto items-center gap-2 md:gap-1.5 md:whitespace-nowrap">
+        <div className="p-5 border-b border-slate-100 bg-slate-50/40 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveSection("lancamentos")}
-              className={`text-[10px] md:text-[9px] px-4 md:px-3 py-1.5 md:py-1 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "lancamentos" ? "bg-[#3b597b] text-white" : "text-slate-500 hover:text-slate-700"}`}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "lancamentos" ? "bg-[#3b597b] text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
               Lancamentos
             </button>
             <button
               onClick={() => { setActiveSection("abertos"); setOpenViewKind("payable"); }}
-              className={`text-[10px] md:text-[9px] px-4 md:px-3 py-1.5 md:py-1 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "payable" ? "bg-red-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "payable" ? "bg-red-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
               Contas a pagar em aberto
             </button>
             <button
               onClick={() => { setActiveSection("abertos"); setOpenViewKind("receivable"); }}
-              className={`text-[10px] md:text-[9px] px-4 md:px-3 py-1.5 md:py-1 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "receivable" ? "bg-emerald-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "abertos" && openViewKind === "receivable" ? "bg-emerald-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
               Contas a receber em aberto
             </button>
             <button
               onClick={() => setActiveSection("fluxo")}
-              className={`text-[10px] md:text-[9px] px-4 md:px-3 py-1.5 md:py-1 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "fluxo" ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
+              className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${activeSection === "fluxo" ? "bg-blue-500 text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
               Fluxo de caixa
             </button>
-
-            {activeSection !== "lancamentos" && (
-              <>
-                {periodOptions.map((period) => (
-                  <button
-                    key={period}
-                    onClick={() => activeSection === "fluxo" ? setFlowPeriod(period) : setOpenPeriod(period)}
-                    className={`text-[10px] md:text-[9px] px-3 md:px-2.5 py-1.5 md:py-1 rounded-full uppercase tracking-widest font-bold ${(activeSection === "fluxo" ? flowPeriod : openPeriod) === period ? "bg-[#3b597b] text-white" : "bg-white border border-slate-200 text-slate-500"}`}
-                  >
-                    {getPeriodLabel(period)}
-                  </button>
-                ))}
-
-                <div className="flex items-center gap-2 md:gap-1.5 text-[10px] md:text-[9px] uppercase tracking-widest font-bold text-slate-500 rounded-lg border border-slate-200 bg-white px-2 md:px-1.5 py-1 md:py-0.5">
-                  <Calendar size={12} /> Inicio
-                  <input type="date" value={activeSection === "fluxo" ? flowDateStart : openDateStart} onChange={(e) => activeSection === "fluxo" ? setFlowDateStart(e.target.value) : setOpenDateStart(e.target.value)} className="h-[26px] md:h-[24px] rounded border border-slate-200 px-2 md:px-1.5 text-[11px] md:text-[10px] normal-case" />
-                  Fim
-                  <input type="date" value={activeSection === "fluxo" ? flowDateEnd : openDateEnd} onChange={(e) => activeSection === "fluxo" ? setFlowDateEnd(e.target.value) : setOpenDateEnd(e.target.value)} className="h-[26px] md:h-[24px] rounded border border-slate-200 px-2 md:px-1.5 text-[11px] md:text-[10px] normal-case" />
-                </div>
-
-                {activeSection === "fluxo" && (
-                  <div className="relative inline-block">
-                    <button
-                      onClick={() => setSourceDropdownOpen((prev) => !prev)}
-                      className="h-[30px] md:h-[26px] rounded-lg border border-slate-200 bg-white px-3 md:px-2.5 text-[10px] md:text-[9px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2 md:gap-1"
-                    >
-                      <Filter size={12} />
-                      Contas e cartoes
-                    </button>
-
-                    {sourceDropdownOpen && (
-                      <div className="absolute right-0 z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
-                        {sourceOptions.map((source) => {
-                          const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
-                          return (
-                            <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
-                              <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
-                                <p className="text-[10px] text-slate-500">{source.details || ""}</p>
-                              </div>
-                              <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
           {activeSection === "lancamentos" ? (
@@ -800,19 +765,68 @@ export default function FinancePage() {
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {periodOptions.map((period) => (
+                  <button
+                    key={period}
+                    onClick={() => activeSection === "fluxo" ? setFlowPeriod(period) : setOpenPeriod(period)}
+                    className={`text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest font-bold ${(activeSection === "fluxo" ? flowPeriod : openPeriod) === period ? "bg-[#3b597b] text-white" : "bg-white border border-slate-200 text-slate-500"}`}
+                  >
+                    {getPeriodLabel(period)}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-500">
+                <Calendar size={13} /> Inicio
+                <input type="date" value={activeSection === "fluxo" ? flowDateStart : openDateStart} onChange={(e) => activeSection === "fluxo" ? setFlowDateStart(e.target.value) : setOpenDateStart(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+                Fim
+                <input type="date" value={activeSection === "fluxo" ? flowDateEnd : openDateEnd} onChange={(e) => activeSection === "fluxo" ? setFlowDateEnd(e.target.value) : setOpenDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
+              </div>
+
               {activeSection === "fluxo" && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p>
-                    <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowOpeningBalance)}</p>
+                <div className="space-y-3">
+                  <div className="relative inline-block">
+                    <button
+                      onClick={() => setSourceDropdownOpen((prev) => !prev)}
+                      className="h-[36px] rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
+                    >
+                      <Filter size={13} />
+                      Contas e cartoes
+                    </button>
+
+                    {sourceDropdownOpen && (
+                      <div className="absolute z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+                        {sourceOptions.map((source) => {
+                          const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
+                          return (
+                            <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
+                              <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
+                                <p className="text-[10px] text-slate-500">{source.details || ""}</p>
+                              </div>
+                              <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lancamentos</p>
-                    <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowNet)}</p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p>
-                    <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(flowClosingBalance)}</p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p>
+                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowOpeningBalance)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lancamentos</p>
+                      <p className="mt-1 text-xl font-bold text-slate-800">{formatCurrency(flowNet)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
+                      <p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p>
+                      <p className="mt-1 text-xl font-bold text-blue-700">{formatCurrency(flowClosingBalance)}</p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -922,7 +936,7 @@ export default function FinancePage() {
                   <td className="px-6 py-3 text-xs font-bold text-slate-700">Saldo final do dia anterior</td>
                   <td className="px-6 py-3 text-xs text-slate-500">{sourceLabelSummary}</td>
                   <td className="px-6 py-3 text-right text-xs font-bold text-slate-600">{formatCurrency(0)}</td>
-                  <td className={`px-6 py-3 text-right text-sm font-black ${flowOpeningBalance >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</td>
+                  <td className="px-6 py-3 text-right text-sm font-black text-slate-700">{formatCurrency(flowOpeningBalance)}</td>
                 </tr>
 
                 {flowRows.length ? flowRows.map(({ record, running }) => (
@@ -931,7 +945,7 @@ export default function FinancePage() {
                     <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
                     <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
-                    <td className={`px-6 py-3 text-right text-sm font-black ${running >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatCurrency(running)}</td>
+                    <td className="px-6 py-3 text-right text-sm font-black text-slate-700">{formatCurrency(running)}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -944,7 +958,7 @@ export default function FinancePage() {
                   <td className="px-6 py-3 text-xs font-bold text-slate-700">Saldo inicial + lancamentos do periodo</td>
                   <td className="px-6 py-3 text-xs text-slate-500">{sourceLabelSummary}</td>
                   <td className="px-6 py-3 text-right text-xs font-bold text-slate-600">{formatCurrency(flowNet)}</td>
-                  <td className={`px-6 py-3 text-right text-sm font-black ${flowClosingBalance >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</td>
+                  <td className="px-6 py-3 text-right text-sm font-black text-blue-700">{formatCurrency(flowClosingBalance)}</td>
                 </tr>
               </tbody>
             </table>

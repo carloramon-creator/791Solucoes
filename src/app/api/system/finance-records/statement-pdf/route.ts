@@ -3,6 +3,7 @@ import PDFDocument from 'pdfkit';
 import { PassThrough } from 'stream';
 import fs from 'fs';
 import path from 'path';
+import { notoSansBase64 } from '@/services/nfse/noto-sans-base64';
 
 interface StatementPayload {
   title?: string;
@@ -38,6 +39,11 @@ export async function POST(req: Request) {
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
 
+    // Use embedded font to avoid runtime dependency on pdfkit AFM font files.
+    const appFontBuffer = Buffer.from(notoSansBase64, 'base64');
+    doc.registerFont('AppFont', appFontBuffer);
+    doc.font('AppFont');
+
     stream.on('data', (chunk) => chunks.push(chunk));
     doc.pipe(stream);
 
@@ -57,15 +63,15 @@ export async function POST(req: Request) {
       doc.image(logoPath, doc.page.margins.left, y, { width: 52 });
     }
 
-    doc.font('Helvetica-Bold').fontSize(14).fillColor('#0F172A').text('791 Soluções', doc.page.margins.left + 64, y + 4);
-    doc.font('Helvetica').fontSize(9).fillColor('#475569').text(`Usuário: ${userLabel}`, doc.page.margins.left + 64, y + 22);
+    doc.font('AppFont').fontSize(14).fillColor('#0F172A').text('791 Soluções', doc.page.margins.left + 64, y + 4);
+    doc.font('AppFont').fontSize(9).fillColor('#475569').text(`Usuário: ${userLabel}`, doc.page.margins.left + 64, y + 22);
     doc.text(`Gerado em: ${generatedAt}`, doc.page.margins.left + 64, y + 35);
 
     y += 64;
 
     doc.roundedRect(doc.page.margins.left, y, pageWidth, 52, 8).fillAndStroke('#F8FAFC', '#CBD5E1');
-    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(13).text(title, doc.page.margins.left + 14, y + 12, { width: pageWidth - 28 });
-    doc.fillColor('#475569').font('Helvetica').fontSize(9).text(`${sectionLabel} | ${periodLabel}`, doc.page.margins.left + 14, y + 31, { width: pageWidth - 28 });
+    doc.fillColor('#0F172A').font('AppFont').fontSize(13).text(title, doc.page.margins.left + 14, y + 12, { width: pageWidth - 28 });
+    doc.fillColor('#475569').font('AppFont').fontSize(9).text(`${sectionLabel} | ${periodLabel}`, doc.page.margins.left + 14, y + 31, { width: pageWidth - 28 });
 
     y += 68;
 
@@ -88,7 +94,7 @@ export async function POST(req: Request) {
       columns.forEach((column, index) => {
         const width = colWidths[index];
         doc.rect(x, y, width, headerHeight).fillAndStroke('#E2E8F0', '#94A3B8');
-        doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(8).text(sanitizeCell(column), x + 6, y + 8, {
+        doc.fillColor('#0F172A').font('AppFont').fontSize(8).text(sanitizeCell(column), x + 6, y + 8, {
           width: width - 12,
           height: headerHeight - 8,
           ellipsis: true,
@@ -107,7 +113,7 @@ export async function POST(req: Request) {
       row.forEach((cell, index) => {
         const width = colWidths[index];
         doc.rect(x, y, width, rowHeight).fillAndStroke(backgroundColor, '#CBD5E1');
-        doc.fillColor('#0F172A').font('Helvetica').fontSize(8).text(sanitizeCell(cell), x + 6, y + 7, {
+        doc.fillColor('#0F172A').font('AppFont').fontSize(8).text(sanitizeCell(cell), x + 6, y + 7, {
           width: width - 12,
           height: rowHeight - 8,
           ellipsis: true,
@@ -133,7 +139,7 @@ export async function POST(req: Request) {
 
     if (rows.length === 0) {
       doc.rect(doc.page.margins.left, y, pageWidth, 26).fillAndStroke('#FFFFFF', '#CBD5E1');
-      doc.fillColor('#64748B').font('Helvetica').fontSize(9).text('Nenhum registro para o filtro selecionado.', doc.page.margins.left + 8, y + 9);
+      doc.fillColor('#64748B').font('AppFont').fontSize(9).text('Nenhum registro para o filtro selecionado.', doc.page.margins.left + 8, y + 9);
     }
 
     doc.end();

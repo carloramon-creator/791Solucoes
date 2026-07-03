@@ -1211,7 +1211,7 @@ export default function SuportePage() {
                             <p className="md:flex-1 truncate"><span className="font-bold text-slate-500">Ato:</span> {getHistoryAction(msg)}</p>
                           </div>
 
-                          {showRawText && <div className="whitespace-pre-wrap mt-1 text-[13px]">{rawText}</div>}
+                          {showRawText && <div className="whitespace-pre-wrap mt-1 ml-[2px] text-[15px]">{rawText}</div>}
 
                           {msg.attachment_url && (
                             <div className="space-y-2 mt-1">

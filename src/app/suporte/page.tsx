@@ -157,7 +157,9 @@ export default function SuportePage() {
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [showInactiveSubjects, setShowInactiveSubjects] = useState(false);
   const [draftAttachment, setDraftAttachment] = useState<File | null>(null);
+  const [newTicketAttachment, setNewTicketAttachment] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const newTicketAttachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -374,21 +376,25 @@ export default function SuportePage() {
     setFeedback(null);
 
     try {
+      const payload = new FormData();
+      payload.append('tenantSlug', newTicket.tenantSlug);
+      payload.append('tenantId', newTicket.tenantId || '');
+      payload.append('tenantName', newTicket.tenantName || '');
+      payload.append('requesterUserId', newTicket.requesterUserId || '');
+      payload.append('requesterName', newTicket.requesterName || '');
+      payload.append('requesterEmail', newTicket.requesterEmail || '');
+      payload.append('title', newTicket.title);
+      payload.append('description', newTicket.description);
+      payload.append('subjectId', newTicket.subjectId || '');
+      payload.append('priority', newTicket.priority);
+      payload.append('dueAt', newTicket.dueAt || '');
+      if (newTicketAttachment) {
+        payload.append('attachment', newTicketAttachment);
+      }
+
       await api('/api/support/tickets', {
         method: 'POST',
-        body: JSON.stringify({
-          tenantSlug: newTicket.tenantSlug,
-          tenantId: newTicket.tenantId || null,
-          tenantName: newTicket.tenantName || null,
-          requesterUserId: newTicket.requesterUserId || null,
-          requesterName: newTicket.requesterName || null,
-          requesterEmail: newTicket.requesterEmail || null,
-          title: newTicket.title,
-          description: newTicket.description,
-          subjectId: newTicket.subjectId || null,
-          priority: newTicket.priority,
-          dueAt: newTicket.dueAt ? new Date(newTicket.dueAt).toISOString() : null,
-        }),
+        body: payload,
       });
 
       setFeedback('Ticket criado com sucesso.');
@@ -406,6 +412,10 @@ export default function SuportePage() {
         priority: 'normal',
         dueAt: '',
       });
+      setNewTicketAttachment(null);
+      if (newTicketAttachmentInputRef.current) {
+        newTicketAttachmentInputRef.current.value = '';
+      }
 
       await loadSupportData(queue, false);
     } catch (err: any) {
@@ -746,6 +756,22 @@ export default function SuportePage() {
             rows={4}
             className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm"
           />
+          <div className="space-y-2">
+            <input
+              ref={newTicketAttachmentInputRef}
+              type="file"
+              accept="image/*,application/pdf,video/*"
+              onChange={(e) => setNewTicketAttachment(e.target.files?.[0] || null)}
+              className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-slate-200"
+            />
+            <p className="text-[11px] text-slate-500">Anexo opcional: imagem, PDF ou video curto (maximo 25MB).</p>
+            {newTicketAttachment && (
+              <div className="text-xs text-slate-600 inline-flex items-center gap-2">
+                <Paperclip size={12} />
+                {newTicketAttachment.name}
+              </div>
+            )}
+          </div>
           <div className="flex justify-end">
             <button
               type="submit"
@@ -1061,11 +1087,20 @@ export default function SuportePage() {
                       <div className="whitespace-pre-wrap">{msg.message}</div>
                       {msg.attachment_url && (
                         <div className="mt-2 space-y-2">
-                          <img
-                            src={msg.attachment_url}
-                            alt={msg.attachment_file_name || 'Anexo'}
-                            className="max-w-full rounded-lg border border-white/20 bg-white/10"
-                          />
+                          {String(msg.attachment_content_type || '').startsWith('image/') && (
+                            <img
+                              src={msg.attachment_url}
+                              alt={msg.attachment_file_name || 'Anexo'}
+                              className="max-w-full rounded-lg border border-white/20 bg-white/10"
+                            />
+                          )}
+                          {String(msg.attachment_content_type || '').startsWith('video/') && (
+                            <video
+                              src={msg.attachment_url}
+                              controls
+                              className="max-w-full max-h-64 rounded-lg border border-white/20 bg-black/30"
+                            />
+                          )}
                           <a
                             href={msg.attachment_url}
                             target="_blank"
@@ -1097,7 +1132,7 @@ export default function SuportePage() {
                       <input
                         ref={attachmentInputRef}
                         type="file"
-                        accept="image/*"
+                        accept="image/*,application/pdf,video/*"
                         onChange={(e) => setDraftAttachment(e.target.files?.[0] || null)}
                         className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-slate-200"
                       />

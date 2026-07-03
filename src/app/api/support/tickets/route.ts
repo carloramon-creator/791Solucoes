@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
-import { getUserProfileIds, getUserSubjectIds } from '@/lib/holding-permissions';
+import { getUserSubjectIds } from '@/lib/holding-permissions';
 import {
   DONE_STATUSES,
   OPEN_STATUSES,
@@ -9,8 +9,18 @@ import {
   parseTicketStatus,
   type SupportQueue,
 } from '@/lib/support-queue';
+import { randomUUID } from 'crypto';
 
 const AVATAR_BUCKET = 'equipe-avatars';
+const ATTACHMENT_BUCKET = 'support-ticket-attachments';
+
+function isAllowedAttachment(file: File) {
+  const type = String(file.type || '').toLowerCase();
+  if (type.startsWith('image/')) return true;
+  if (type.startsWith('video/')) return true;
+  if (type === 'application/pdf') return true;
+  return false;
+}
 
 async function buildAvatarMap(emails: string[]): Promise<Map<string, string | null>> {
   const normalized = Array.from(new Set(emails.map((email) => String(email || '').trim().toLowerCase()).filter(Boolean)));
@@ -269,14 +279,24 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = await req.json();
+    const contentType = req.headers.get('content-type') || '';
+    const isMultipart = contentType.includes('multipart/form-data');
+    const body = isMultipart ? await req.formData() : await req.json();
 
-    const tenantSlug = String(body?.tenantSlug || '').trim();
-    const tenantName = body?.tenantName ? String(body.tenantName).trim() : null;
-    const tenantId = body?.tenantId ? String(body.tenantId).trim() : null;
-    const title = String(body?.title || '').trim();
-    const description = String(body?.description || '').trim();
-    const subjectId = body?.subjectId ? String(body.subjectId).trim() : null;
+    const readValue = (key: string) => {
+      if (isMultipart) return body.get(key);
+      return (body as any)?.[key];
+    };
+
+    const tenantSlug = String(readValue('tenantSlug') || '').trim();
+    const tenantNameValue = readValue('tenantName');
+    const tenantName = tenantNameValue ? String(tenantNameValue).trim() : null;
+    const tenantIdValue = readValue('tenantId');
+    const tenantId = tenantIdValue ? String(tenantIdValue).trim() : null;
+    const title = String(readValue('title') || '').trim();
+    const description = String(readValue('description') || '').trim();
+    const subjectIdValue = readValue('subjectId');
+    const subjectId = subjectIdValue ? String(subjectIdValue).trim() : null;
 
     if (!tenantSlug) {
       return NextResponse.json({ error: 'tenantSlug e obrigatorio.' }, { status: 400 });
@@ -286,22 +306,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Titulo e descricao sao obrigatorios.' }, { status: 400 });
     }
 
-    const requesterName = body?.requesterName ? String(body.requesterName).trim() : auth.user.email || null;
-    const requesterEmail = body?.requesterEmail ? String(body.requesterEmail).trim().toLowerCase() : auth.user.email ? String(auth.user.email).trim().toLowerCase() : null;
-    const requesterPhone = body?.requesterPhone ? String(body.requesterPhone).trim() : null;
+    const requesterNameValue = readValue('requesterName');
+    const requesterEmailValue = readValue('requesterEmail');
+    const requesterPhoneValue = readValue('requesterPhone');
+
+    const requesterName = requesterNameValue ? String(requesterNameValue).trim() : auth.user.email || null;
+    const requesterEmail = requesterEmailValue ? String(requesterEmailValue).trim().toLowerCase() : auth.user.email ? String(auth.user.email).trim().toLowerCase() : null;
+    const requesterPhone = requesterPhoneValue ? String(requesterPhoneValue).trim() : null;
 
     const allowedPriorities = new Set(['low', 'normal', 'high', 'urgent']);
-    const priority = allowedPriorities.has(String(body?.priority || 'normal'))
-      ? String(body.priority)
+    const priorityValue = String(readValue('priority') || 'normal');
+    const priority = allowedPriorities.has(priorityValue)
+      ? priorityValue
       : 'normal';
 
     const allowedStatuses = new Set(['new', 'in_progress', 'waiting_customer', 'resolved', 'closed']);
-    const status = allowedStatuses.has(String(body?.status || 'new'))
-      ? String(body.status)
+    const statusValue = String(readValue('status') || 'new');
+    const status = allowedStatuses.has(statusValue)
+      ? statusValue
       : 'new';
 
-    let assignedToEmail = body?.assignedToEmail
-      ? String(body.assignedToEmail).trim().toLowerCase()
+    const assignedToEmailValue = readValue('assignedToEmail');
+    let assignedToEmail = assignedToEmailValue
+      ? String(assignedToEmailValue).trim().toLowerCase()
       : null;
 
     if (!assignedToEmail && subjectId) {
@@ -309,22 +336,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (subjectId) {
-      const userProfiles = await getUserProfileIds(auth.user.email);
-      if (userProfiles.length > 0) {
-        const { data: allowedBySubject } = await supabaseServer
-          .from('support_subject_permission_profiles')
-          .select('profile_id')
-          .eq('subject_id', subjectId)
-          .in('profile_id', userProfiles);
-
-        const hasAnyMatch = (allowedBySubject || []).length > 0;
-        if (!hasAnyMatch) {
-          return NextResponse.json({ error: 'Seu perfil nao pode abrir ticket neste assunto.' }, { status: 403 });
-        }
+      const allowedSubjectIds = await getUserSubjectIds(auth.user.email);
+      if (allowedSubjectIds !== null && !allowedSubjectIds.includes(subjectId)) {
+        return NextResponse.json({ error: 'Seu perfil nao pode abrir ticket neste assunto.' }, { status: 403 });
       }
     }
 
-    const dueAt = body?.dueAt ? new Date(body.dueAt).toISOString() : null;
+    const dueAtValue = readValue('dueAt');
+    const dueAt = dueAtValue ? new Date(String(dueAtValue)).toISOString() : null;
 
     const insertPayload = {
       tenant_slug: tenantSlug,
@@ -353,8 +372,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: createError?.message || 'Falha ao criar ticket.' }, { status: 500 });
     }
 
-    const firstMessageOrigin = body?.messageOrigin === 'tenant' ? 'tenant' : 'holding';
-    const firstMessageAuthorName = body?.messageAuthorName ? String(body.messageAuthorName).trim() : null;
+    const firstMessageOrigin = String(readValue('messageOrigin') || '') === 'tenant' ? 'tenant' : 'holding';
+    const firstMessageAuthorNameValue = readValue('messageAuthorName');
+    const firstMessageAuthorName = firstMessageAuthorNameValue ? String(firstMessageAuthorNameValue).trim() : null;
+
+    const attachmentEntry = isMultipart ? body.get('attachment') : null;
+    const attachmentFile = attachmentEntry instanceof File && attachmentEntry.size > 0 ? attachmentEntry : null;
+
+    const attachmentData: Record<string, unknown> = {};
+    if (attachmentFile) {
+      if (!isAllowedAttachment(attachmentFile)) {
+        return NextResponse.json({ error: 'Anexo invalido. Envie imagem, PDF ou video.' }, { status: 400 });
+      }
+
+      if (attachmentFile.size > 25 * 1024 * 1024) {
+        return NextResponse.json({ error: 'O anexo deve ter no maximo 25MB.' }, { status: 400 });
+      }
+
+      const safeName = attachmentFile.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      const filePath = `support-ticket-attachments/${created.id}/${randomUUID()}-${safeName}`;
+      const uploadPayload = Buffer.from(await attachmentFile.arrayBuffer());
+
+      const { error: uploadError } = await supabaseServer.storage
+        .from(ATTACHMENT_BUCKET)
+        .upload(filePath, uploadPayload, {
+          contentType: attachmentFile.type || 'application/octet-stream',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        return NextResponse.json({ error: uploadError.message || 'Falha ao enviar anexo do ticket.' }, { status: 500 });
+      }
+
+      attachmentData.attachment_file_name = attachmentFile.name;
+      attachmentData.attachment_path = filePath;
+      attachmentData.attachment_content_type = attachmentFile.type || null;
+      attachmentData.attachment_size_bytes = attachmentFile.size;
+    }
 
     const { error: messageError } = await supabaseServer
       .from('support_ticket_messages')
@@ -365,6 +419,7 @@ export async function POST(req: NextRequest) {
         author_name: firstMessageAuthorName,
         message: description,
         is_internal: false,
+        ...attachmentData,
       });
 
     if (messageError) {

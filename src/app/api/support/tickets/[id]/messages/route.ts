@@ -6,6 +6,14 @@ import { randomUUID } from 'crypto';
 const AVATAR_BUCKET = 'equipe-avatars';
 const ATTACHMENT_BUCKET = 'support-ticket-attachments';
 
+function isAllowedAttachment(file: File) {
+  const type = String(file.type || '').toLowerCase();
+  if (type.startsWith('image/')) return true;
+  if (type.startsWith('video/')) return true;
+  if (type === 'application/pdf') return true;
+  return false;
+}
+
 async function withAuthorAvatar(messages: any[]) {
   if (!Array.isArray(messages) || messages.length === 0) return [];
 
@@ -140,12 +148,12 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       return NextResponse.json({ error: 'Mensagem ou anexo obrigatorio.' }, { status: 400 });
     }
 
-    if (attachmentFile && !String(attachmentFile.type || '').startsWith('image/')) {
-      return NextResponse.json({ error: 'Apenas imagens sao permitidas nos anexos.' }, { status: 400 });
+    if (attachmentFile && !isAllowedAttachment(attachmentFile)) {
+      return NextResponse.json({ error: 'Anexo invalido. Envie imagem, PDF ou video.' }, { status: 400 });
     }
 
-    if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ error: 'O anexo deve ter no maximo 10MB.' }, { status: 400 });
+    if (attachmentFile && attachmentFile.size > 25 * 1024 * 1024) {
+      return NextResponse.json({ error: 'O anexo deve ter no maximo 25MB.' }, { status: 400 });
     }
 
     const { data: currentTicket, error: ticketError } = await supabaseServer
@@ -173,7 +181,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       const { error: uploadError } = await supabaseServer.storage
         .from(ATTACHMENT_BUCKET)
         .upload(filePath, uploadPayload, {
-          contentType: attachmentFile.type || 'image/png',
+          contentType: attachmentFile.type || 'application/octet-stream',
           upsert: false,
         });
 

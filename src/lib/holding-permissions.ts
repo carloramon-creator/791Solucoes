@@ -15,6 +15,35 @@ function normalizeEmail(email: string | null | undefined): string | null {
   return value || null;
 }
 
+function isOwnerLikeLabel(value: string | null | undefined): boolean {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return false;
+  return /(dono|owner|super\s*admin|admin\s*master|administrador)/i.test(text);
+}
+
+async function hasUnrestrictedAccess(normalizedEmail: string, profileIds: string[]): Promise<boolean> {
+  if (profileIds.length === 0) {
+    return true;
+  }
+
+  const [{ data: profiles }, { data: member }] = await Promise.all([
+    supabaseServer
+      .from('holding_permission_profiles')
+      .select('name')
+      .in('id', profileIds),
+    supabaseServer
+      .from('equipe_791')
+      .select('cargo')
+      .eq('email', normalizedEmail)
+      .maybeSingle(),
+  ]);
+
+  const hasOwnerProfile = (profiles || []).some((row: any) => isOwnerLikeLabel(row?.name));
+  const hasOwnerCargo = isOwnerLikeLabel((member as any)?.cargo || null);
+
+  return hasOwnerProfile || hasOwnerCargo;
+}
+
 export async function getUserProfileIds(userEmail: string | null | undefined): Promise<string[]> {
   const normalizedEmail = normalizeEmail(userEmail);
   if (!normalizedEmail) return [];
@@ -29,12 +58,24 @@ export async function getUserProfileIds(userEmail: string | null | undefined): P
 }
 
 export async function getUserPermissionCodes(userEmail: string | null | undefined): Promise<Set<string>> {
-  const profileIds = await getUserProfileIds(userEmail);
+  const normalizedEmail = normalizeEmail(userEmail);
+  if (!normalizedEmail) return new Set();
+
+  const profileIds = await getUserProfileIds(normalizedEmail);
   
   // Se não tiver nenhum perfil atribuído: retorna vazio (triggering fallback no backend)
   // Se tiver perfil: retorna EXATAMENTE o que está habilitado nesse perfil (sem fallback)
   if (profileIds.length === 0) {
     return new Set();
+  }
+
+  if (await hasUnrestrictedAccess(normalizedEmail, profileIds)) {
+    const { data: resources } = await supabaseServer
+      .from('holding_permission_resources')
+      .select('code')
+      .eq('active', true);
+
+    return new Set((resources || []).map((row: any) => String(row.code || '')).filter(Boolean));
   }
 
   const [{ data: profilePermissions }, { data: resources }] = await Promise.all([
@@ -74,10 +115,17 @@ export async function userCanAccessResource(userEmail: string | null | undefined
 }
 
 export async function getUserSubjectIds(userEmail: string | null | undefined): Promise<string[] | null> {
-  const profileIds = await getUserProfileIds(userEmail);
+  const normalizedEmail = normalizeEmail(userEmail);
+  if (!normalizedEmail) return [];
+
+  const profileIds = await getUserProfileIds(normalizedEmail);
 
   // Sem perfil: não filtra assuntos por enquanto (modo compatível inicial).
   if (profileIds.length === 0) {
+    return null;
+  }
+
+  if (await hasUnrestrictedAccess(normalizedEmail, profileIds)) {
     return null;
   }
 

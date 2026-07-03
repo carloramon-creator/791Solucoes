@@ -25,8 +25,10 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const cardId = String(body?.cardId || '');
+    const recordIds = Array.isArray(body?.recordIds) ? body.recordIds.map((value: unknown) => String(value || '')).filter(Boolean) : [];
 
     if (!cardId) throw new Error('ID do cartão é obrigatório');
+    if (recordIds.length === 0) throw new Error('Selecione ao menos um lançamento para fechar a fatura.');
 
     const { data: card, error: cardError } = await supabaseServer
       .from('system_bank_cards')
@@ -39,22 +41,22 @@ export async function POST(req: Request) {
 
     const { data: paidRecords, error: recordsError } = await supabaseServer
       .from('system_finance_records')
-      .select('type, value, status, metadata')
+      .select('id, type, value, status, created_at, description, category, metadata')
       .eq('status', 'paid')
-      .contains('metadata', { card_id: cardId });
+      .eq('type', 'expense')
+      .contains('metadata', { card_id: cardId })
+      .in('id', recordIds);
 
     if (recordsError) throw new Error(recordsError.message);
 
-    const signedAdjustments = (paidRecords || []).reduce((sum: number, record: any) => {
-      const signed = record?.type === 'revenue' ? toNumber(record?.value, 0) : -toNumber(record?.value, 0);
-      return sum + signed;
-    }, 0);
-
-    const computedCardBalance = Number((toNumber(card.current_balance, 0) + signedAdjustments).toFixed(2));
-    if (computedCardBalance >= 0) {
-      throw new Error('Este cartão não possui saldo para fechamento.');
+    if ((paidRecords || []).length !== recordIds.length) {
+      throw new Error('Um ou mais lançamentos selecionados não pertencem a este cartão ou não estão pagos.');
     }
-    const outstandingAmount = Math.abs(computedCardBalance);
+
+    const alreadyBilled = (paidRecords || []).find((record: any) => record?.metadata?.card_statement_reference);
+    if (alreadyBilled) {
+      throw new Error('Há lançamentos selecionados que já foram usados em outra fatura.');
+    }
 
     const dueDate = getNextDueDate(toNumber(card.due_day, 1));
     const statementReference = getStatementReference(dueDate);
@@ -71,10 +73,15 @@ export async function POST(req: Request) {
       throw new Error('Já existe uma fatura pendente para este cartão nesse período.');
     }
 
+    const outstandingAmount = Number((paidRecords || []).reduce((sum: number, record: any) => sum + toNumber(record?.value, 0), 0).toFixed(2));
+    if (outstandingAmount <= 0) {
+      throw new Error('Os lançamentos selecionados não geraram um valor válido de fatura.');
+    }
+
     const account = Array.isArray(card.accounts) ? card.accounts[0] : card.accounts;
     const accountLabel = [account?.bank_name, account?.name].filter(Boolean).join(' - ') || 'Conta vinculada';
 
-    const { error: insertError } = await supabaseServer
+    const { data: statementRecord, error: insertError } = await supabaseServer
       .from('system_finance_records')
       .insert({
         type: 'expense',
@@ -92,21 +99,35 @@ export async function POST(req: Request) {
           card_last_digits: card.last_digits || null,
           card_statement_reference: statementReference,
           card_statement_generated: true,
+          card_statement_item_ids: recordIds,
           linked_account_name: accountLabel,
         },
-      });
+      })
+      .select('id')
+      .single();
 
     if (insertError) throw new Error(insertError.message);
 
-    const nextCardBalance = Number((toNumber(card.current_balance, 0) - computedCardBalance).toFixed(2));
-    const { error: updateError } = await supabaseServer
-      .from('system_bank_cards')
-      .update({ current_balance: nextCardBalance })
-      .eq('id', cardId);
+    for (const record of paidRecords || []) {
+      const metadata = (record?.metadata && typeof record.metadata === 'object') ? record.metadata : {};
+      const { error: recordUpdateError } = await supabaseServer
+        .from('system_finance_records')
+        .update({
+          metadata: {
+            ...metadata,
+            card_statement_reference: statementReference,
+            card_statement_id: statementRecord?.id || null,
+            card_statement_generated: true,
+          },
+        })
+        .eq('id', record.id);
 
-    if (updateError) throw new Error(updateError.message);
+      if (recordUpdateError) {
+        throw new Error(recordUpdateError.message);
+      }
+    }
 
-    return NextResponse.json({ success: true, statementReference, dueDate: dueDate.toISOString(), amount: outstandingAmount });
+    return NextResponse.json({ success: true, statementReference, dueDate: dueDate.toISOString(), amount: outstandingAmount, statementId: statementRecord?.id || null });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -7,6 +7,13 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function formatCurrencyLabel(value: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(toNumber(value, 0));
+}
+
 function getPeriodStart(period: string) {
   const now = new Date();
   const startDate = new Date(now);
@@ -127,7 +134,11 @@ export async function GET(req: Request) {
             id: account.id,
             tipo: 'conta',
             descricao: [account.bank_name, account.name].filter(Boolean).join(' - ') || 'Conta bancária',
-            detalhes: [account.agency ? `Ag. ${account.agency}` : null, account.account_number ? `Conta ${account.account_number}` : null]
+            detalhes: [
+              account.agency ? `Ag. ${account.agency}` : null,
+              account.account_number ? `Conta ${account.account_number}` : null,
+              toNumber(account.overdraft_limit, 0) ? `Cheque especial ${formatCurrencyLabel(toNumber(account.overdraft_limit, 0))}` : null,
+            ]
               .filter(Boolean)
               .join(' | '),
             valor: accountCurrentBalance,
@@ -138,6 +149,10 @@ export async function GET(req: Request) {
           (account.cards || []).forEach((card: any) => {
             const cardBase = toNumber(card.current_balance, 0);
             const cardCurrentBalance = cardBase + toNumber(cardAdjustments.get(card.id), 0);
+            const cardType = String(card.card_type || '').toLowerCase();
+            const spentAmount = Math.abs(Math.min(cardCurrentBalance, 0));
+            const availableLimit = toNumber(card.credit_limit, 0) - spentAmount;
+            const displayedValue = cardType.includes('credit') ? availableLimit : cardCurrentBalance;
 
             entries.push({
               id: card.id,
@@ -146,11 +161,11 @@ export async function GET(req: Request) {
               detalhes: [
                 card.card_type ? `Tipo ${String(card.card_type).toUpperCase()}` : null,
                 card.last_digits ? `•••• ${card.last_digits}` : null,
-                card.credit_limit ? `Limite ${toNumber(card.credit_limit, 0).toFixed(2)}` : null,
+                card.credit_limit ? `Limite ${formatCurrencyLabel(toNumber(card.credit_limit, 0))}` : null,
               ]
                 .filter(Boolean)
                 .join(' | '),
-              valor: cardCurrentBalance,
+              valor: displayedValue,
               data_vencimento: account.updated_at,
               atualizado_em: account.updated_at,
             });

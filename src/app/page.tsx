@@ -787,7 +787,7 @@ export default function Dashboard() {
                           </div>
                           {item.valor !== undefined && (
                             <div className="text-right ml-4">
-                              <p className="text-2xl font-bold text-blue-700">{formatCurrency(item.valor)}</p>
+                              <p className={`text-2xl font-bold ${Number(item.valor) < 0 ? 'text-red-600' : 'text-blue-700'}`}>{formatCurrency(item.valor)}</p>
                             </div>
                           )}
                         </div>

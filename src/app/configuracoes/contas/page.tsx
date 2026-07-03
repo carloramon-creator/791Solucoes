@@ -31,6 +31,17 @@ interface BankCard {
   current_balance?: number;
 }
 
+interface FinanceRecord {
+  id: string;
+  type: 'revenue' | 'expense';
+  value: number;
+  description: string;
+  status: string;
+  created_at: string;
+  category?: string | null;
+  metadata?: Record<string, any> | null;
+}
+
 interface BankAccount {
   id: string;
   name: string;
@@ -49,6 +60,7 @@ interface BankAccount {
 export default function ContasBancariasPage() {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [financeRecords, setFinanceRecords] = useState<FinanceRecord[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
@@ -69,6 +81,8 @@ export default function ContasBancariasPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<BankCard | null>(null);
   const [closingCardId, setClosingCardId] = useState<string | null>(null);
+  const [statementCard, setStatementCard] = useState<(BankCard & { accountName?: string }) | null>(null);
+  const [selectedStatementRecordIds, setSelectedStatementRecordIds] = useState<string[]>([]);
   const [totals, setTotals] = useState({ limit: 0, spent: 0, available: 0 });
   
   // Ações
@@ -91,6 +105,8 @@ export default function ContasBancariasPage() {
     return Math.abs(Math.min(balance, 0));
   };
 
+  const isCreditCard = (card?: BankCard | null) => String(card?.card_type || '').toLowerCase().includes('credit');
+
   const loadAccounts = async () => {
     const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
     const accJson = await accRes.json();
@@ -99,12 +115,13 @@ export default function ContasBancariasPage() {
     if (accData) {
       const financeRes = await fetch('/api/system/finance-records', { cache: 'no-store' });
       const financeJson = await financeRes.json();
-      const financeRecords = financeJson.success ? financeJson.records : [];
+      const nextFinanceRecords = financeJson.success ? financeJson.records : [];
+      setFinanceRecords(nextFinanceRecords);
 
       const accountAdjustments = new Map<string, number>();
       const cardAdjustments = new Map<string, number>();
 
-      financeRecords.forEach((record: any) => {
+      nextFinanceRecords.forEach((record: any) => {
         if (record.status !== 'paid') return;
 
         const signedValue = record.type === 'revenue' ? Number(record.value || 0) : -Number(record.value || 0);
@@ -137,7 +154,7 @@ export default function ContasBancariasPage() {
       }
 
       const allCards = normalizedAccounts.flatMap((account) => account.cards || []);
-      const creditCards = allCards.filter((card) => card.card_type === 'credit');
+      const creditCards = allCards.filter((card) => isCreditCard(card));
       const totalLimit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
       const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
 
@@ -251,17 +268,46 @@ export default function ContasBancariasPage() {
   };
 
   const handleCloseCard = async (cardId: string) => {
-    if (!confirm('Deseja fechar a fatura deste cartão e gerar um débito pendente para pagamento?')) return;
+    const selectedCard = accounts.flatMap((account) => (account.cards || []).map((card) => ({ ...card, accountName: account.name }))).find((card) => card.id === cardId) || null;
+    if (!selectedCard) return;
+    setStatementCard(selectedCard);
+    setSelectedStatementRecordIds([]);
+  };
 
-    setClosingCardId(cardId);
+  const eligibleStatementRecords = statementCard
+    ? financeRecords
+        .filter((record) => record.status === 'paid' && record.type === 'expense')
+        .filter((record) => String(record.metadata?.card_id || '') === statementCard.id)
+        .filter((record) => !record.metadata?.card_statement_reference)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    : [];
+
+  const selectedStatementTotal = eligibleStatementRecords
+    .filter((record) => selectedStatementRecordIds.includes(record.id))
+    .reduce((sum, record) => sum + Number(record.value || 0), 0);
+
+  const toggleStatementRecord = (recordId: string) => {
+    setSelectedStatementRecordIds((prev) => prev.includes(recordId) ? prev.filter((id) => id !== recordId) : [...prev, recordId]);
+  };
+
+  const handleConfirmStatement = async () => {
+    if (!statementCard) return;
+    if (selectedStatementRecordIds.length === 0) {
+      alert('Selecione ao menos um lançamento para compor a fatura.');
+      return;
+    }
+
+    setClosingCardId(statementCard.id);
     try {
       const res = await fetch('/api/system/bank-cards/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId }),
+        body: JSON.stringify({ cardId: statementCard.id, recordIds: selectedStatementRecordIds }),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao fechar fatura');
+      setStatementCard(null);
+      setSelectedStatementRecordIds([]);
       await loadAccounts();
       alert('Fatura gerada com sucesso. O débito já está em contas a pagar.');
     } catch (err: any) {
@@ -269,6 +315,13 @@ export default function ContasBancariasPage() {
     } finally {
       setClosingCardId(null);
     }
+  };
+
+  const formatDate = (value?: string) => {
+    if (!value) return '--';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '--';
+    return date.toLocaleDateString('pt-BR');
   };
 
   const handleDeleteAccount = async (id: string) => {
@@ -476,6 +529,14 @@ export default function ContasBancariasPage() {
                           <div className="text-right">
                              <span className="block text-[10px] text-slate-600">Limite {formatCurrency(card.credit_limit)}</span>
                              <span className="block text-[10px] text-red-600">Gasto {formatCurrency(getCardSpentAmount(card))}</span>
+                             {isCreditCard(card) && (
+                               <button
+                                 onClick={() => handleCloseCard(card.id)}
+                                 className="mt-1 inline-flex rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100"
+                               >
+                                 Fechar fatura
+                               </button>
+                             )}
                              <div className="mt-1 flex justify-end gap-1 opacity-0 group-hover/card:opacity-100 transition-all">
                                <button onClick={() => handleEditCard(account.id, card)} className="p-1 text-slate-400 hover:text-blue-600" title="Editar cartão"><Pencil size={12} /></button>
                                <button onClick={() => handleDeleteCard(card.id)} className="p-1 text-slate-400 hover:text-red-600" title="Excluir cartão"><Trash2 size={12} /></button>
@@ -841,7 +902,7 @@ export default function ContasBancariasPage() {
                               </div>
                            </div>
                            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
-                              {card.card_type === 'credit' && (
+                              {isCreditCard(card) && (
                                 <button
                                   onClick={() => handleCloseCard(card.id)}
                                   disabled={closingCardId === card.id}
@@ -850,12 +911,6 @@ export default function ContasBancariasPage() {
                                   {closingCardId === card.id ? 'Fechando...' : 'Fechar fatura'}
                                 </button>
                               )}
-                              <button
-                                onClick={() => handleEditCard(detailModalAccount.id, card)}
-                                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-700 hover:bg-blue-100"
-                              >
-                                Editar
-                              </button>
                               <button
                                 onClick={() => handleDeleteCard(card.id)}
                                 className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-red-700 hover:bg-red-100"
@@ -878,6 +933,83 @@ export default function ContasBancariasPage() {
                 className="bg-[#3b597b] text-white px-8 py-2 rounded-lg text-xs uppercase tracking-widest shadow-md hover:bg-[#2e4763] transition-all"
               >
                 Fechar Detalhes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statementCard && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight">Fechar Fatura</h2>
+                <p className="text-[10px] uppercase tracking-widest text-slate-400 mt-1">{statementCard.name} | {statementCard.accountName || 'Conta vinculada'}</p>
+              </div>
+              <button onClick={() => { setStatementCard(null); setSelectedStatementRecordIds([]); }} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lançamentos elegíveis</p>
+                  <p className="text-sm text-slate-600">Somente lançamentos pagos deste cartão que ainda não foram usados em outra fatura.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Total selecionado</p>
+                  <p className="text-xl font-bold text-red-600">{formatCurrency(selectedStatementTotal)}</p>
+                </div>
+              </div>
+
+              <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200">
+                {eligibleStatementRecords.length === 0 ? (
+                  <div className="px-6 py-10 text-center text-slate-400 text-xs uppercase tracking-widest">Nenhum lançamento elegível para este cartão.</div>
+                ) : (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-100 bg-slate-50/70">
+                        <th className="px-4 py-3"></th>
+                        <th className="px-4 py-3">Data</th>
+                        <th className="px-4 py-3">Lançamento</th>
+                        <th className="px-4 py-3">Categoria</th>
+                        <th className="px-4 py-3 text-right">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {eligibleStatementRecords.map((record) => {
+                        const checked = selectedStatementRecordIds.includes(record.id);
+                        return (
+                          <tr key={record.id} className={checked ? 'bg-amber-50/60' : 'hover:bg-slate-50'}>
+                            <td className="px-4 py-3">
+                              <input type="checkbox" checked={checked} onChange={() => toggleStatementRecord(record.id)} />
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600">{formatDate(record.created_at)}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-slate-800">{record.description}</td>
+                            <td className="px-4 py-3 text-xs text-slate-500 uppercase tracking-widest">{record.category || 'Geral'}</td>
+                            <td className="px-4 py-3 text-right text-sm font-black text-red-600">{formatCurrency(Number(record.value || 0))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-3">
+              <button
+                onClick={() => { setStatementCard(null); setSelectedStatementRecordIds([]); }}
+                className="px-6 py-2 text-xs text-slate-500 uppercase tracking-widest"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmStatement}
+                disabled={closingCardId === statementCard.id || selectedStatementRecordIds.length === 0}
+                className="bg-[#3b597b] text-white px-8 py-2 rounded-lg text-xs uppercase tracking-widest shadow-md hover:bg-[#2e4763] transition-all disabled:opacity-60"
+              >
+                {closingCardId === statementCard.id ? 'Gerando fatura...' : 'Gerar fatura'}
               </button>
             </div>
           </div>

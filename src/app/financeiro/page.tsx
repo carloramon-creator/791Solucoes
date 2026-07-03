@@ -442,6 +442,14 @@ export default function FinancePage() {
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [normalizedRecords, flowDateStart, flowDateEnd, activeFlowSourceIds]);
 
+  const flowIncoming = useMemo(
+    () => flowRecords.filter((record) => record.type === "revenue").reduce((sum, record) => sum + Number(record.value || 0), 0),
+    [flowRecords]
+  );
+  const flowOutgoing = useMemo(
+    () => flowRecords.filter((record) => record.type === "expense").reduce((sum, record) => sum + Number(record.value || 0), 0),
+    [flowRecords]
+  );
   const flowNet = useMemo(() => flowRecords.reduce((sum, record) => sum + signedValue(record), 0), [flowRecords]);
   const flowOpeningBalance = useMemo(() => Number((flowCurrentBalance - flowNet).toFixed(2)), [flowCurrentBalance, flowNet]);
   const flowClosingBalance = useMemo(() => Number((flowOpeningBalance + flowNet).toFixed(2)), [flowOpeningBalance, flowNet]);
@@ -842,13 +850,33 @@ export default function FinancePage() {
                       Fim
                       <input type="date" value={flowDateEnd} onChange={(e) => setFlowDateEnd(e.target.value)} className="h-[34px] rounded-lg border border-slate-200 px-2 text-xs normal-case" />
                     </div>
-                    <button
-                      onClick={() => setSourceDropdownOpen((prev) => !prev)}
-                      className="h-[34px] rounded-full border border-slate-200 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
-                    >
-                      <Filter size={13} />
-                      Contas e cartoes
-                    </button>
+                    <div className="relative inline-block">
+                      <button
+                        onClick={() => setSourceDropdownOpen((prev) => !prev)}
+                        className="h-[34px] rounded-full border border-slate-200 bg-white px-3 text-[10px] font-bold uppercase tracking-widest text-slate-700 inline-flex items-center gap-2"
+                      >
+                        <Filter size={13} />
+                        Contas e cartoes
+                      </button>
+
+                      {sourceDropdownOpen && (
+                        <div className="absolute left-0 top-full z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
+                          {sourceOptions.map((source) => {
+                            const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
+                            return (
+                              <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
+                                <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
+                                  <p className="text-[10px] text-slate-500">{source.details || ""}</p>
+                                </div>
+                                <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -864,34 +892,18 @@ export default function FinancePage() {
 
               {activeSection === "fluxo" && (
                 <div className="space-y-3">
-                  <div className="relative inline-block">
-                    {sourceDropdownOpen && (
-                      <div className="absolute z-20 mt-2 w-[420px] max-w-[90vw] rounded-xl border border-slate-200 bg-white shadow-xl p-2 space-y-1">
-                        {sourceOptions.map((source) => {
-                          const checked = source.id === "all" ? selectedSourceIds.includes("all") : selectedSourceIds.includes(source.id);
-                          return (
-                            <label key={source.id} className="flex items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 cursor-pointer">
-                              <input type="checkbox" checked={checked} onChange={() => toggleFlowSource(source.id)} className="mt-0.5" />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold text-slate-800 uppercase truncate">{source.label}</p>
-                                <p className="text-[10px] text-slate-500">{source.details || ""}</p>
-                              </div>
-                              <p className="text-[10px] font-black text-slate-600">{formatCurrency(source.amount)}</p>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saldo inicial</p>
                       <p className={`mt-1 text-xl font-bold ${flowOpeningBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowOpeningBalance)}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Lancamentos</p>
-                      <p className={`mt-1 text-xl font-bold ${flowNet >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowNet)}</p>
+                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Entrada</p>
+                      <p className="mt-1 text-xl font-bold text-emerald-600">{formatCurrency(flowIncoming)}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saida</p>
+                      <p className="mt-1 text-xl font-bold text-red-600">{formatCurrency(flowOutgoing)}</p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-blue-50 p-4">
                       <p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p>
@@ -1022,14 +1034,6 @@ export default function FinancePage() {
                     <td colSpan={5} className="px-6 py-10 text-center text-slate-400 text-xs uppercase tracking-widest">Nenhum lancamento efetivado no periodo.</td>
                   </tr>
                 )}
-
-                <tr className="bg-slate-50/50">
-                  <td className="px-6 py-3 text-xs text-slate-500">Saldo final</td>
-                  <td className="px-6 py-3 text-xs font-bold text-slate-700">Saldo inicial + lancamentos do periodo</td>
-                  <td className="px-6 py-3 text-xs text-slate-500">{sourceLabelSummary}</td>
-                  <td className="px-6 py-3 text-right text-xs font-bold text-slate-600">{formatCurrency(flowNet)}</td>
-                  <td className={`px-6 py-3 text-right text-sm font-black ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</td>
-                </tr>
               </tbody>
             </table>
           </div>

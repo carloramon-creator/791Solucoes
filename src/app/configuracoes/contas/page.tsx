@@ -6,17 +6,15 @@ import {
   Plus, 
   CreditCard, 
   Building2, 
-  ArrowUpRight, 
-  ArrowDownRight,
   MoreVertical,
   ChevronRight,
   ShieldCheck,
-  AlertCircle,
   Loader2,
   Trash2,
   Check,
   Calendar,
-  Layers
+  Layers,
+  Pencil
 } from 'lucide-react';
 import { ConfigTabs } from '@/components/ConfigTabs';
 
@@ -30,6 +28,7 @@ interface BankCard {
   credit_limit: number;
   closing_day: number;
   due_day: number;
+  current_balance?: number;
 }
 
 interface BankAccount {
@@ -68,7 +67,9 @@ export default function ContasBancariasPage() {
 
   const [isCardModalOpen, setIsCardModalOpen] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [totals, setTotals] = useState({ limit: 0, spent: 0 });
+  const [editingCard, setEditingCard] = useState<BankCard | null>(null);
+  const [closingCardId, setClosingCardId] = useState<string | null>(null);
+  const [totals, setTotals] = useState({ limit: 0, spent: 0, available: 0 });
   
   // Ações
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -84,6 +85,11 @@ export default function ContasBancariasPage() {
     closing_day: 1,
     due_day: 10
   });
+
+  const getCardSpentAmount = (card?: BankCard | null) => {
+    const balance = Number(card?.current_balance || 0);
+    return Math.abs(Math.min(balance, 0));
+  };
 
   const loadAccounts = async () => {
     const accRes = await fetch('/api/system/bank-accounts', { cache: 'no-store' });
@@ -115,32 +121,27 @@ export default function ContasBancariasPage() {
         }
       });
 
-      setAccounts(
-        accData.map((account) => ({
+      const normalizedAccounts = accData.map((account) => ({
           ...account,
           current_balance: Number(account.balance || 0) + (accountAdjustments.get(account.id) || 0),
           cards: (account.cards || []).map((card: any) => ({
             ...card,
             current_balance: Number(card.current_balance || 0) + (cardAdjustments.get(card.id) || 0),
           })),
-        }))
-      );
+        }));
 
-      // Calcula Limite Total
-      const totalLimit = accData.reduce((acc: number, curr: BankAccount) => {
-        const cardLimit = curr.cards?.reduce((cAcc: number, cCurr: any) => cAcc + Number(cCurr.credit_limit), 0) || 0;
-        return acc + cardLimit;
-      }, 0);
+      setAccounts(normalizedAccounts);
 
-      // Busca Gasto Atual (Soma de despesas do mês)
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
+      if (detailModalAccount?.id) {
+        setDetailModalAccount(normalizedAccounts.find((account) => account.id === detailModalAccount.id) || null);
+      }
 
-      const financeData = financeRecords.filter((item: any) => item.type === 'expense' && item.created_at >= startOfMonth.toISOString());
-      const totalSpent = financeData?.reduce((acc: number, curr: any) => acc + Number(curr.value), 0) || 0;
+      const allCards = normalizedAccounts.flatMap((account) => account.cards || []);
+      const creditCards = allCards.filter((card) => card.card_type === 'credit');
+      const totalLimit = creditCards.reduce((sum, card) => sum + Number(card.credit_limit || 0), 0);
+      const totalSpent = creditCards.reduce((sum, card) => sum + getCardSpentAmount(card), 0);
 
-      setTotals({ limit: totalLimit, spent: totalSpent });
+      setTotals({ limit: totalLimit, spent: totalSpent, available: Math.max(totalLimit - totalSpent, 0) });
     }
     setLoading(false);
   };
@@ -198,16 +199,15 @@ export default function ContasBancariasPage() {
     setSaving(true);
     try {
       const res = await fetch('/api/system/bank-cards', {
-        method: 'POST',
+        method: editingCard ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...cardFormData, account_id: selectedAccountId })
+        body: JSON.stringify(editingCard ? { id: editingCard.id, ...cardFormData, account_id: selectedAccountId } : { ...cardFormData, account_id: selectedAccountId })
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao salvar cartão');
-      const data = json.card ? [json.card] : [];
-      
-      if (data) loadAccounts();
+      if (json.card) loadAccounts();
       setIsCardModalOpen(false);
+      setEditingCard(null);
       setCardFormData({
         name: '',
         last_digits: '',
@@ -219,6 +219,55 @@ export default function ContasBancariasPage() {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteCard = async (cardId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este cartão?')) return;
+
+    try {
+      const res = await fetch(`/api/system/bank-cards?id=${cardId}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Erro ao excluir cartão');
+      await loadAccounts();
+    } catch (err: any) {
+      alert('Erro ao excluir cartão: ' + err.message);
+    }
+  };
+
+  const handleEditCard = (accountId: string, card: BankCard) => {
+    setSelectedAccountId(accountId);
+    setEditingCard(card);
+    setCardFormData({
+      name: card.name,
+      last_digits: card.last_digits,
+      brand: card.brand,
+      card_type: card.card_type,
+      credit_limit: Number(card.credit_limit || 0),
+      closing_day: Number(card.closing_day || 1),
+      due_day: Number(card.due_day || 10),
+    });
+    setIsCardModalOpen(true);
+  };
+
+  const handleCloseCard = async (cardId: string) => {
+    if (!confirm('Deseja fechar a fatura deste cartão e gerar um débito pendente para pagamento?')) return;
+
+    setClosingCardId(cardId);
+    try {
+      const res = await fetch('/api/system/bank-cards/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Erro ao fechar fatura');
+      await loadAccounts();
+      alert('Fatura gerada com sucesso. O débito já está em contas a pagar.');
+    } catch (err: any) {
+      alert('Erro ao fechar fatura: ' + err.message);
+    } finally {
+      setClosingCardId(null);
     }
   };
 
@@ -393,7 +442,20 @@ export default function ContasBancariasPage() {
                       <Layers size={12} /> Cartões
                     </p>
                     <button 
-                      onClick={() => { setSelectedAccountId(account.id); setIsCardModalOpen(true); }}
+                      onClick={() => {
+                        setSelectedAccountId(account.id);
+                        setEditingCard(null);
+                        setCardFormData({
+                          name: '',
+                          last_digits: '',
+                          brand: 'Visa',
+                          card_type: 'credit',
+                          credit_limit: 0,
+                          closing_day: 1,
+                          due_day: 10
+                        });
+                        setIsCardModalOpen(true);
+                      }}
                       className="text-[9px] text-[#3b597b] hover:underline uppercase tracking-widest"
                     >
                       + Add
@@ -412,7 +474,12 @@ export default function ContasBancariasPage() {
                             </div>
                           </div>
                           <div className="text-right">
-                             <span className="text-[10px] text-slate-600">{formatCurrency(card.credit_limit)}</span>
+                             <span className="block text-[10px] text-slate-600">Limite {formatCurrency(card.credit_limit)}</span>
+                             <span className="block text-[10px] text-red-600">Gasto {formatCurrency(getCardSpentAmount(card))}</span>
+                             <div className="mt-1 flex justify-end gap-1 opacity-0 group-hover/card:opacity-100 transition-all">
+                               <button onClick={() => handleEditCard(account.id, card)} className="p-1 text-slate-400 hover:text-blue-600" title="Editar cartão"><Pencil size={12} /></button>
+                               <button onClick={() => handleDeleteCard(card.id)} className="p-1 text-slate-400 hover:text-red-600" title="Excluir cartão"><Trash2 size={12} /></button>
+                             </div>
                           </div>
                         </div>
                       ))}
@@ -455,7 +522,7 @@ export default function ContasBancariasPage() {
              <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/10 w-48">
                 <ShieldCheck size={20} className="text-emerald-400 mb-3" />
                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Limite Disponível</p>
-                <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totals.limit)}</p>
+                 <p className="text-lg font-medium text-white tracking-tight">{formatCurrency(totals.available)}</p>
              </div>
           </div>
         </div>
@@ -588,8 +655,8 @@ export default function ContasBancariasPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-[500px] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 text-slate-800">
-              <h2 className="text-lg font-bold uppercase tracking-tight">Vincular Novo Cartão</h2>
-              <button onClick={() => setIsCardModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <h2 className="text-lg font-bold uppercase tracking-tight">{editingCard ? 'Editar Cartão' : 'Vincular Novo Cartão'}</h2>
+              <button onClick={() => { setIsCardModalOpen(false); setEditingCard(null); }} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             
             <form onSubmit={handleSaveCard} className="p-6 space-y-4">
@@ -645,7 +712,8 @@ export default function ContasBancariasPage() {
                    <div>
                       <label className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Fechamento</label>
                       <input 
-                        type="number" 
+                        type="text" 
+                        inputMode="numeric"
                         placeholder="Dia"
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"
                         value={cardFormData.closing_day}
@@ -655,7 +723,8 @@ export default function ContasBancariasPage() {
                    <div>
                       <label className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Vencimento</label>
                       <input 
-                        type="number" 
+                        type="text" 
+                        inputMode="numeric"
                         placeholder="Dia"
                         className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"
                         value={cardFormData.due_day}
@@ -679,7 +748,7 @@ export default function ContasBancariasPage() {
                   className="bg-[#3b597b] text-white px-8 py-2 rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg flex items-center gap-2"
                 >
                   {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                  Vincular Cartão
+                  {editingCard ? 'Salvar Cartão' : 'Vincular Cartão'}
                 </button>
               </div>
             </form>
@@ -761,12 +830,38 @@ export default function ContasBancariasPage() {
                            <div className="flex justify-between items-end">
                               <div>
                                  <p className="text-[9px] text-slate-400 uppercase tracking-widest">Final {card.last_digits}</p>
+                                 <p className="text-[9px] text-slate-400 uppercase tracking-widest">Fecha dia {card.closing_day}</p>
                                  <p className="text-[9px] text-slate-400 uppercase tracking-widest">Vence dia {card.due_day}</p>
                               </div>
                               <div className="text-right">
+                                 <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Gasto atual</p>
+                                 <p className="text-sm text-red-600 mb-2">{formatCurrency(getCardSpentAmount(card))}</p>
                                  <p className="text-[9px] text-slate-400 uppercase tracking-widest mb-1">Limite</p>
                                  <p className="text-sm text-slate-800">{formatCurrency(card.credit_limit)}</p>
                               </div>
+                           </div>
+                           <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
+                              {card.card_type === 'credit' && (
+                                <button
+                                  onClick={() => handleCloseCard(card.id)}
+                                  disabled={closingCardId === card.id}
+                                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                                >
+                                  {closingCardId === card.id ? 'Fechando...' : 'Fechar fatura'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleEditCard(detailModalAccount.id, card)}
+                                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-700 hover:bg-blue-100"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCard(card.id)}
+                                className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-red-700 hover:bg-red-100"
+                              >
+                                Excluir
+                              </button>
                            </div>
                         </div>
                       ))}

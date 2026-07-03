@@ -91,7 +91,7 @@ export class PaymentProcessor {
           .insert([{ name: DRE_ROOT_NAME, type: 'revenue', parent_id: null }])
           .select('id, name, parent_id, type')
           .single();
-        rootCategory = createdRoot || null;
+        rootCategory = createdRoot || undefined;
       }
 
       let subCategory = (revenueCategories || []).find((cat: any) => cat.parent_id && cat.parent_id === rootCategory?.id && String(cat.name || '').toLowerCase() === DRE_SUB_NAME.toLowerCase());
@@ -102,7 +102,7 @@ export class PaymentProcessor {
           .insert([{ name: DRE_SUB_NAME, type: 'revenue', parent_id: rootCategory.id }])
           .select('id, name, parent_id, type')
           .single();
-        subCategory = createdSub || null;
+        subCategory = createdSub || undefined;
       }
 
       const { data: asaasAccount } = await holdingSupabase

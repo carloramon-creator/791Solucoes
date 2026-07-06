@@ -12,12 +12,12 @@ export async function GET(req: Request) {
     }
 
     const now = new Date();
-    if (!force && now.getDate() !== 10) {
+    if (!force && now.getDate() !== 1) {
       return NextResponse.json({
         success: true,
         skipped: true,
         reason: 'outside_generation_day',
-        message: 'Geração mensal configurada para ocorrer apenas no dia 10.',
+        message: 'Geração mensal configurada para ocorrer apenas no dia 01.',
       });
     }
 

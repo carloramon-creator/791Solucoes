@@ -63,6 +63,11 @@ interface UsageTenantRow {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    consultflexBasicSuccess: number;
+    consultflexCompleteSuccess: number;
+    consultflexSuccessTotal: number;
+    consultflexFailed: number;
+    consultflexUnknown: number;
   };
   limits: {
     users: number;
@@ -78,10 +83,15 @@ interface UsageTenantRow {
     extraUsers: number;
     extraWhatsappUsers: number;
     extraMessages: number;
+    consultflexBasicSuccess: number;
+    consultflexCompleteSuccess: number;
     values: {
       users: number;
       whatsappUsers: number;
       messages: number;
+      consultflexBasic: number;
+      consultflexComplete: number;
+      consultflexTotal: number;
       total: number;
     };
   };
@@ -96,6 +106,7 @@ interface UsageResponse {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    consultflexSuccess: number;
     overageMonthly: number;
     usersExceeded: number;
     whatsappUsersExceeded: number;
@@ -103,6 +114,8 @@ interface UsageResponse {
   };
   tenants: UsageTenantRow[];
 }
+
+type UsagePeriodMode = 'current_month' | 'previous_month' | 'custom';
 
 interface GlassUserRow {
   userId: string;
@@ -145,6 +158,10 @@ export default function AssinaturasPage() {
   const [usageByTenant, setUsageByTenant] = useState<Record<string, UsageTenantRow>>({});
   const [usageTotals, setUsageTotals] = useState<UsageResponse['totals'] | null>(null);
   const [messagesPeriodStart, setMessagesPeriodStart] = useState('');
+  const [usageRangeEnd, setUsageRangeEnd] = useState('');
+  const [usagePeriodMode, setUsagePeriodMode] = useState<UsagePeriodMode>('current_month');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [selectedUsage, setSelectedUsage] = useState<UsageTenantRow | null>(null);
   const [selectedUsageTenant, setSelectedUsageTenant] = useState<Vidracaria | null>(null);
   const [tenantToDelete, setTenantToDelete] = useState<Vidracaria | null>(null);
@@ -172,17 +189,65 @@ export default function AssinaturasPage() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   };
 
+  const buildUsageRange = (mode: UsagePeriodMode, customStart: string, customEnd: string) => {
+    const now = new Date();
+
+    if (mode === 'current_month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      return {
+        startIso: start.toISOString(),
+        endIso: now.toISOString(),
+      };
+    }
+
+    if (mode === 'previous_month') {
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+      const previousMonthEnd = new Date(currentMonthStart.getTime() - 1);
+      return {
+        startIso: previousMonthStart.toISOString(),
+        endIso: previousMonthEnd.toISOString(),
+      };
+    }
+
+    if (!customStart || !customEnd) {
+      throw new Error('Informe início e fim para o intervalo customizado.');
+    }
+
+    const start = new Date(`${customStart}T00:00:00`);
+    const end = new Date(`${customEnd}T23:59:59.999`);
+
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
+      throw new Error('Datas inválidas no intervalo customizado.');
+    }
+
+    if (start > end) {
+      throw new Error('A data inicial não pode ser maior que a data final.');
+    }
+
+    return {
+      startIso: start.toISOString(),
+      endIso: end.toISOString(),
+    };
+  };
+
   const getToneClasses = (status: 'ok' | 'warning' | 'exceeded') => {
     if (status === 'exceeded') return 'border-red-200 bg-red-50 text-red-700';
     if (status === 'warning') return 'border-amber-200 bg-amber-50 text-amber-700';
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   };
 
-  async function fetchUsageSummary() {
+  async function fetchUsageSummary(mode = usagePeriodMode, customStart = customStartDate, customEnd = customEndDate) {
     setUsageLoading(true);
     setUsageError('');
     try {
-      const response = await fetch('/api/admin/subscription-usage', { cache: 'no-store' });
+      const range = buildUsageRange(mode, customStart, customEnd);
+      const query = new URLSearchParams({
+        startDate: range.startIso,
+        endDate: range.endIso,
+      });
+
+      const response = await fetch(`/api/admin/subscription-usage?${query.toString()}`, { cache: 'no-store' });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -197,6 +262,7 @@ export default function AssinaturasPage() {
       setUsageByTenant(mapped);
       setUsageTotals(payload.totals || null);
       setMessagesPeriodStart(payload.messagesPeriodStart || '');
+      setUsageRangeEnd(payload.rangeEnd || range.endIso);
       // Use the tenants returned by the API which includes all vidracaria fields
       setTenants(payload.tenants || []);
     } catch (err: any) {
@@ -240,7 +306,7 @@ export default function AssinaturasPage() {
       });
       setSponsorMap(map);
 
-      await fetchUsageSummary();
+      await fetchUsageSummary(usagePeriodMode, customStartDate, customEndDate);
     } catch (err: any) {
       console.error('Erro ao buscar dados:', err.message);
     } finally {
@@ -290,6 +356,23 @@ export default function AssinaturasPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (usagePeriodMode !== 'custom') return;
+    if (customStartDate && customEndDate) return;
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const toInputDate = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    setCustomStartDate((prev) => prev || toInputDate(startOfMonth));
+    setCustomEndDate((prev) => prev || toInputDate(now));
+  }, [usagePeriodMode, customStartDate, customEndDate]);
 
   const getStatusBadge = (tenant: Vidracaria, diasRestantes: number | null) => {
     // Se no banco já está bloqueada, ou se passou de 5 dias de atraso (regra de bloqueio automático do Glass)
@@ -630,7 +713,7 @@ export default function AssinaturasPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Clientes Monitorados</p>
           <p className="mt-2 text-2xl font-black text-slate-800">{usageTotals?.tenants ?? tenants.length}</p>
@@ -650,6 +733,11 @@ export default function AssinaturasPage() {
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Mensagens no Ciclo</p>
           <p className="mt-2 text-2xl font-black text-blue-700">{usageTotals?.messagesSent ?? 0}</p>
           <p className="text-[11px] text-blue-600 font-medium">Contagem desde o início do mês</p>
+        </div>
+        <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">ConsultFlex no Mês</p>
+          <p className="mt-2 text-2xl font-black text-indigo-700">{usageTotals?.consultflexSuccess ?? 0}</p>
+          <p className="text-[11px] text-indigo-600 font-medium">Somente consultas com sucesso</p>
         </div>
         <div className="bg-white border border-[#3b597b]/25 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#3b597b]">Excesso Estimado</p>
@@ -676,7 +764,48 @@ export default function AssinaturasPage() {
             className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-10 pr-4 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
           />
         </div>
+        <div className="w-full md:w-auto flex flex-wrap items-center gap-2">
+          <select
+            value={usagePeriodMode}
+            onChange={(e) => setUsagePeriodMode(e.target.value as UsagePeriodMode)}
+            className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
+          >
+            <option value="current_month">Mês atual</option>
+            <option value="previous_month">Mês anterior</option>
+            <option value="custom">Intervalo customizado</option>
+          </select>
+
+          {usagePeriodMode === 'custom' && (
+            <>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
+              />
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
+              />
+            </>
+          )}
+
+          <button
+            onClick={() => fetchUsageSummary()}
+            className="h-[40px] rounded-lg bg-[#3b597b] px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-[#2e4763]"
+          >
+            Aplicar Recorte
+          </button>
+        </div>
       </div>
+
+      {(messagesPeriodStart || usageRangeEnd) && (
+        <div className="text-[11px] text-slate-500 font-medium">
+          Recorte ativo: {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'} até {usageRangeEnd ? new Date(usageRangeEnd).toLocaleDateString('pt-BR') : '-'}
+        </div>
+      )}
 
       {/* Tabela de Assinaturas */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -953,6 +1082,16 @@ export default function AssinaturasPage() {
                                >
                                  MSG {usage.usage.messagesSent}/{usage.limits.messages}
                                </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
+                               >
+                                 CFX {usage.usage.consultflexSuccessTotal}
+                               </button>
                              </div>
                            ) : (
                              <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
@@ -1041,7 +1180,7 @@ export default function AssinaturasPage() {
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Monitoramento de Consumo</p>
                 <h3 className="text-xl font-black text-slate-800 mt-1">{selectedUsageTenant.nome}</h3>
-                <p className="text-[11px] text-slate-500 font-medium">Período de mensagens: {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-[11px] text-slate-500 font-medium">Período de consumo: {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'} até {usageRangeEnd ? new Date(usageRangeEnd).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
               <button
                 onClick={() => {
@@ -1089,10 +1228,36 @@ export default function AssinaturasPage() {
                     <span>Mensagens extras ({selectedUsage.overage.extraMessages})</span>
                     <strong>{formatCurrency(selectedUsage.overage.values.messages)}</strong>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span>ConsultFlex Básica ({selectedUsage.overage.consultflexBasicSuccess})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.consultflexBasic)}</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>ConsultFlex Completa ({selectedUsage.overage.consultflexCompleteSuccess})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.consultflexComplete)}</strong>
+                  </div>
                   <div className="h-px bg-slate-200 my-2" />
                   <div className="flex items-center justify-between text-base">
                     <span className="font-black text-slate-800">Total adicional mensal</span>
                     <span className="font-black text-[#3b597b]">{formatCurrency(selectedUsage.overage.values.total)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">ConsultFlex (Mês)</p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
+                  <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-indigo-500">Sucesso Básica</p>
+                    <p className="mt-1 text-lg font-black text-indigo-700">{selectedUsage.usage.consultflexBasicSuccess}</p>
+                  </div>
+                  <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-indigo-500">Sucesso Completa</p>
+                    <p className="mt-1 text-lg font-black text-indigo-700">{selectedUsage.usage.consultflexCompleteSuccess}</p>
+                  </div>
+                  <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-indigo-500">Falha / Indefinida</p>
+                    <p className="mt-1 text-lg font-black text-indigo-700">{selectedUsage.usage.consultflexFailed + selectedUsage.usage.consultflexUnknown}</p>
                   </div>
                 </div>
               </div>

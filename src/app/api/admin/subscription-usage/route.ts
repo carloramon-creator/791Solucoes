@@ -7,6 +7,8 @@ export const revalidate = 0;
 
 type StatusTone = 'ok' | 'warning' | 'exceeded';
 
+type ConsultflexExecutionStatus = 'success' | 'failed' | 'unknown';
+
 function getStatusTone(current: number, limit: number): StatusTone {
   if (!limit || limit <= 0) return 'ok';
   const ratio = current / limit;
@@ -18,6 +20,92 @@ function getStatusTone(current: number, limit: number): StatusTone {
 function toNumber(value: unknown, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function isMissingSchemaObjectError(error: unknown) {
+  const candidate = error as { message?: string; details?: string };
+  const msg = normalizeText(candidate?.message || candidate?.details || '');
+  return (
+    msg.includes('does not exist')
+    || msg.includes('could not find the table')
+    || msg.includes('schema cache')
+  );
+}
+
+function normalizeText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function toFiniteNumber(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
+  const successBooleanKeys = ['success', 'sucesso', 'ok'];
+  for (const key of successBooleanKeys) {
+    if (!(key in row)) continue;
+    const value = row[key];
+    if (typeof value === 'boolean') return value ? 'success' : 'failed';
+    const text = normalizeText(value);
+    if (['true', '1', 'sim', 'success', 'sucesso', 'ok'].includes(text)) return 'success';
+    if (['false', '0', 'nao', 'não', 'erro', 'error', 'fail', 'falha'].includes(text)) return 'failed';
+  }
+
+  const statusKeys = ['status', 'resultado', 'result', 'retorno'];
+  for (const key of statusKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (!text) continue;
+    if (/(erro|error|falha|failed|invalid|timeout|denied|negado|rejeitad)/.test(text)) return 'failed';
+    if (/(sucesso|success|aprovad|ok|complet)/.test(text)) return 'success';
+  }
+
+  const httpStatusKeys = ['http_status', 'status_code', 'statuscode', 'response_status'];
+  for (const key of httpStatusKeys) {
+    if (!(key in row)) continue;
+    const code = toFiniteNumber(row[key]);
+    if (code == null) continue;
+    if (code >= 200 && code < 300) return 'success';
+    return 'failed';
+  }
+
+  const errorKeys = ['error', 'erro', 'error_message', 'erro_mensagem', 'mensagem_erro'];
+  for (const key of errorKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (text) return 'failed';
+  }
+
+  return 'unknown';
+}
+
+function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete' | 'unknown' {
+  const preferredKeys = [
+    'tipo_consulta',
+    'consulta_tipo',
+    'tipo',
+    'categoria',
+    'modalidade',
+    'plano',
+    'credit_type',
+  ];
+
+  for (const key of preferredKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (!text) continue;
+    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
+    if (text.includes('basica') || text.includes('basic')) return 'basic';
+  }
+
+  const fallback = normalizeText(JSON.stringify(row));
+  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
+  if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
+  return 'unknown';
 }
 
 function getPeriodStart(period: string) {
@@ -87,6 +175,7 @@ export async function GET(req: Request) {
       { data: sectors, error: sectorsError },
       { data: sectorUsers, error: sectorUsersError },
       { data: messages, error: messagesError },
+      { data: consultflexRows, error: consultflexError },
       { data: planConfig, error: planConfigError },
       { data: invoices, error: invoicesError },
     ] = await Promise.all([
@@ -109,6 +198,11 @@ export async function GET(req: Request) {
         .gte('created_at', messagesPeriodStart)
         .lte('created_at', rangeEnd.toISOString())
         .in('sender_type', ['user', 'system']),
+      glass
+        .from('orcamento_credito_consultas')
+        .select('*')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
       supabaseServer
         .from('system_plans')
         .select('system_limits')
@@ -131,8 +225,14 @@ export async function GET(req: Request) {
       planConfigError ||
       invoicesError;
 
-    if (firstError) {
-      return NextResponse.json({ error: firstError.message }, { status: 500 });
+    const consultflexHardError = consultflexError && !isMissingSchemaObjectError(consultflexError)
+      ? consultflexError
+      : null;
+
+    const firstBlockingError = firstError || consultflexHardError;
+
+    if (firstBlockingError) {
+      return NextResponse.json({ error: firstBlockingError.message }, { status: 500 });
     }
 
     const rangeStartTime = rangeStart.getTime();
@@ -235,6 +335,50 @@ export async function GET(req: Request) {
       messagesByTenant.set(tenantId, (messagesByTenant.get(tenantId) || 0) + 1);
     });
 
+    const consultflexByTenant = new Map<string, {
+      basicSuccess: number;
+      completeSuccess: number;
+      failed: number;
+      unknown: number;
+    }>();
+
+    const safeConsultflexRows = consultflexError && isMissingSchemaObjectError(consultflexError)
+      ? []
+      : (consultflexRows || []);
+
+    safeConsultflexRows.forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || row?.tenant_id || '');
+      if (!tenantId) return;
+
+      const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
+
+      if (!consultflexByTenant.has(tenantId)) {
+        consultflexByTenant.set(tenantId, {
+          basicSuccess: 0,
+          completeSuccess: 0,
+          failed: 0,
+          unknown: 0,
+        });
+      }
+
+      const bucket = consultflexByTenant.get(tenantId)!;
+
+      if (execution === 'failed') {
+        bucket.failed += 1;
+        return;
+      }
+
+      if (execution === 'unknown') {
+        bucket.unknown += 1;
+        return;
+      }
+
+      const consultType = classifyConsultflexType(row as Record<string, any>);
+      if (consultType === 'basic') bucket.basicSuccess += 1;
+      else if (consultType === 'complete') bucket.completeSuccess += 1;
+      else bucket.unknown += 1;
+    });
+
     const systemLimits = (planConfig as any)?.system_limits || {};
     const defaultUsersLimit = toNumber(systemLimits.usersIncluded, 10);
     const defaultWhatsappUsersLimit = toNumber(systemLimits.wppDevices, 1);
@@ -242,6 +386,8 @@ export async function GET(req: Request) {
     const extraUserPrice = toNumber(systemLimits.extraUserPrice, 0);
     const extraDevicePrice = toNumber(systemLimits.extraDevicePrice, 0);
     const extraMessagePrice = toNumber(systemLimits.extraMessagePrice, toNumber(systemLimits.wppMessagesPrice, 0));
+    const consultflexBasicPrice = toNumber(systemLimits.consultflexBasicPrice, toNumber(systemLimits.consultBasicPrice, 0));
+    const consultflexCompletePrice = toNumber(systemLimits.consultflexCompletePrice, toNumber(systemLimits.consultCompletePrice, 0));
 
     const tenantRows = (tenants || []).map((tenant: any) => {
       const tenantId = String(tenant.id);
@@ -251,6 +397,12 @@ export async function GET(req: Request) {
       const whatsappUsers = whatsappUsersByTenant.get(tenantId)?.size || 0;
       const sectorsCount = sectorsByTenant.get(tenantId) || 0;
       const messagesSent = messagesByTenant.get(tenantId) || 0;
+      const consultflexUsage = consultflexByTenant.get(tenantId) || {
+        basicSuccess: 0,
+        completeSuccess: 0,
+        failed: 0,
+        unknown: 0,
+      };
 
       const usersLimit = tenant.limite_usuarios == null
         ? defaultUsersLimit
@@ -269,7 +421,10 @@ export async function GET(req: Request) {
       const usersOverage = extraUsers * extraUserPrice;
       const whatsappUsersOverage = extraWhatsappUsers * extraDevicePrice;
       const messagesOverage = extraMessages * extraMessagePrice;
-      const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage;
+      const consultflexBasicOverage = consultflexUsage.basicSuccess * consultflexBasicPrice;
+      const consultflexCompleteOverage = consultflexUsage.completeSuccess * consultflexCompletePrice;
+      const consultflexOverage = consultflexBasicOverage + consultflexCompleteOverage;
+      const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage + consultflexOverage;
 
       return {
         ...tenant,
@@ -280,6 +435,11 @@ export async function GET(req: Request) {
           whatsappUsers,
           sectors: sectorsCount,
           messagesSent,
+          consultflexBasicSuccess: consultflexUsage.basicSuccess,
+          consultflexCompleteSuccess: consultflexUsage.completeSuccess,
+          consultflexSuccessTotal: consultflexUsage.basicSuccess + consultflexUsage.completeSuccess,
+          consultflexFailed: consultflexUsage.failed,
+          consultflexUnknown: consultflexUsage.unknown,
         },
         limits: {
           users: usersLimit,
@@ -295,15 +455,22 @@ export async function GET(req: Request) {
           extraUsers,
           extraWhatsappUsers,
           extraMessages,
+          consultflexBasicSuccess: consultflexUsage.basicSuccess,
+          consultflexCompleteSuccess: consultflexUsage.completeSuccess,
           prices: {
             extraUserPrice,
             extraDevicePrice,
             extraMessagePrice,
+            consultflexBasicPrice,
+            consultflexCompletePrice,
           },
           values: {
             users: usersOverage,
             whatsappUsers: whatsappUsersOverage,
             messages: messagesOverage,
+            consultflexBasic: consultflexBasicOverage,
+            consultflexComplete: consultflexCompleteOverage,
+            consultflexTotal: consultflexOverage,
             total: overageTotal,
           },
         },
@@ -318,6 +485,7 @@ export async function GET(req: Request) {
         acc.whatsappUsers += tenant.usage.whatsappUsers;
         acc.sectors += tenant.usage.sectors;
         acc.messagesSent += tenant.usage.messagesSent;
+        acc.consultflexSuccess += tenant.usage.consultflexSuccessTotal;
         // Não adiciona mais o overage, pois usaremos o faturamento real
 
         if (tenant.status.users === 'exceeded') acc.usersExceeded += 1;
@@ -332,6 +500,7 @@ export async function GET(req: Request) {
         whatsappUsers: 0,
         sectors: 0,
         messagesSent: 0,
+        consultflexSuccess: 0,
         overageMonthly: faturamentoMesAtual, // Usar faturamento real em vez de overage
         usersExceeded: 0,
         whatsappUsersExceeded: 0,
@@ -342,6 +511,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
       messagesPeriodStart,
+      rangeEnd: rangeEnd.toISOString(),
       totals,
       periodSummary: {
         lojasAtivas: lojasAtivasPeriodo,

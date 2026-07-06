@@ -361,13 +361,13 @@ function getOverageDueDateFromRefMonth(refMonth: string) {
 
   if (!Number.isFinite(year) || !Number.isFinite(month)) {
     const fallback = new Date();
-    fallback.setDate(5);
+    fallback.setDate(10);
     fallback.setHours(0, 0, 0, 0);
     return fallback;
   }
 
-  // refMonth referencia o mes de consumo; vencimento fixo no dia 5 do mes seguinte.
-  const dueDate = new Date(year, month, 5, 0, 0, 0, 0);
+  // refMonth referencia o mes de consumo; vencimento fixo no dia 10 do mes seguinte.
+  const dueDate = new Date(year, month, 10, 0, 0, 0, 0);
   return dueDate;
 }
 
@@ -720,7 +720,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   force?: boolean;
   now?: Date;
 }) {
-  if (!force && now.getDate() !== 10) {
+  if (!force && now.getDate() !== 1) {
     return { created: false, reason: 'outside_generation_day' as const };
   }
 
@@ -970,7 +970,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   try {
     const payment = await asaas.createPayment({
       customer: customer.id,
-      billingType: 'UNDEFINED',
+      billingType: 'BOLETO',
       value: Number(totalOverage.toFixed(2)),
       dueDate: dueDate.toISOString().split('T')[0],
       description,

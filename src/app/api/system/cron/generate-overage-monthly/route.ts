@@ -40,6 +40,8 @@ export async function GET(req: Request) {
       created: 0,
       skipped: 0,
       errors: 0,
+      skippedByReason: {} as Record<string, number>,
+      samples: [] as Array<{ tenantId: string; tenantName: string; status: 'created' | 'skipped' | 'error'; reason?: string; details?: any }>,
     };
 
     for (const tenant of tenants || []) {
@@ -52,10 +54,39 @@ export async function GET(req: Request) {
           now,
         });
 
-        if (result?.created) report.created += 1;
-        else report.skipped += 1;
+        if (result?.created) {
+          report.created += 1;
+          if (report.samples.length < 20) {
+            report.samples.push({
+              tenantId: tenant.id,
+              tenantName: tenant.nome || '',
+              status: 'created',
+            });
+          }
+        } else {
+          report.skipped += 1;
+          const reason = String((result as any)?.reason || 'skipped');
+          report.skippedByReason[reason] = (report.skippedByReason[reason] || 0) + 1;
+          if (report.samples.length < 20) {
+            report.samples.push({
+              tenantId: tenant.id,
+              tenantName: tenant.nome || '',
+              status: 'skipped',
+              reason,
+              details: (result as any)?.details || null,
+            });
+          }
+        }
       } catch (err) {
         report.errors += 1;
+        if (report.samples.length < 20) {
+          report.samples.push({
+            tenantId: tenant.id,
+            tenantName: tenant.nome || '',
+            status: 'error',
+            reason: err instanceof Error ? err.message : 'unknown_error',
+          });
+        }
       }
     }
 

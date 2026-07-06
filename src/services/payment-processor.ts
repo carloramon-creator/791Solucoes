@@ -384,6 +384,56 @@ function isMissingColumnError(error: unknown) {
   return msg.includes('column') && msg.includes('does not exist');
 }
 
+function toFiniteNumber(value: unknown) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function hasAnyField(row: Record<string, any>, keys: string[]) {
+  return keys.some((key) => key in row && row[key] != null && String(row[key]).trim() !== '');
+}
+
+type ConsultflexExecutionStatus = 'success' | 'failed' | 'unknown';
+
+function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
+  const successBooleanKeys = ['success', 'sucesso', 'ok'];
+  for (const key of successBooleanKeys) {
+    if (!(key in row)) continue;
+    const value = row[key];
+    if (typeof value === 'boolean') return value ? 'success' : 'failed';
+    const text = normalizeText(value);
+    if (['true', '1', 'sim', 'success', 'sucesso', 'ok'].includes(text)) return 'success';
+    if (['false', '0', 'nao', 'não', 'erro', 'error', 'fail', 'falha'].includes(text)) return 'failed';
+  }
+
+  const statusKeys = ['status', 'resultado', 'result', 'retorno'];
+  for (const key of statusKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (!text) continue;
+    if (/(erro|error|falha|failed|invalid|timeout|denied|negado|rejeitad)/.test(text)) return 'failed';
+    if (/(sucesso|success|aprovad|ok|complet)/.test(text)) return 'success';
+  }
+
+  const httpStatusKeys = ['http_status', 'status_code', 'statuscode', 'response_status'];
+  for (const key of httpStatusKeys) {
+    if (!(key in row)) continue;
+    const code = toFiniteNumber(row[key]);
+    if (code == null) continue;
+    if (code >= 200 && code < 300) return 'success';
+    return 'failed';
+  }
+
+  const errorKeys = ['error', 'erro', 'error_message', 'erro_mensagem', 'mensagem_erro'];
+  for (const key of errorKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (text) return 'failed';
+  }
+
+  return 'unknown';
+}
+
 function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete' | 'unknown' {
   const preferredKeys = [
     'tipo_consulta',
@@ -426,6 +476,64 @@ async function getConsultflexUsageForTenant(params: {
 }) {
   const { glassSupabase, tenantId, startIso, endIso } = params;
 
+  const statusEvidenceKeys = [
+    'success',
+    'sucesso',
+    'ok',
+    'status',
+    'resultado',
+    'result',
+    'retorno',
+    'http_status',
+    'status_code',
+    'statuscode',
+    'response_status',
+    'error',
+    'erro',
+    'error_message',
+    'erro_mensagem',
+    'mensagem_erro',
+  ];
+
+  const summarizeRows = (rows: any[]) => {
+    let basic = 0;
+    let complete = 0;
+    let failed = 0;
+    let unknown = 0;
+    let statusSignalDetected = false;
+
+    for (const row of rows || []) {
+      const normalizedRow = row as Record<string, any>;
+      if (hasAnyField(normalizedRow, statusEvidenceKeys)) {
+        statusSignalDetected = true;
+      }
+
+      const execStatus = classifyConsultflexExecutionStatus(normalizedRow);
+      if (execStatus === 'failed') {
+        failed += 1;
+        continue;
+      }
+
+      if (execStatus === 'unknown') {
+        unknown += 1;
+        continue;
+      }
+
+      const tier = classifyConsultflexType(normalizedRow);
+      if (tier === 'basic') basic += 1;
+      else if (tier === 'complete') complete += 1;
+      else unknown += 1;
+    }
+
+    return {
+      basic,
+      complete,
+      failed,
+      unknown,
+      statusSignalDetected,
+    };
+  };
+
   // Preferencia: consumo diretamente por tenant no banco 791glass.
   const directTenantColumns = ['vidracaria_id', 'tenant_id'] as const;
   for (const tenantColumn of directTenantColumns) {
@@ -437,21 +545,28 @@ async function getConsultflexUsageForTenant(params: {
       .lt('created_at', endIso);
 
     if (!directErr) {
-      let basic = 0;
-      let complete = 0;
-      let unknown = 0;
+      const summary = summarizeRows((directRows || []) as any[]);
 
-      for (const row of directRows || []) {
-        const tier = classifyConsultflexType(row as Record<string, any>);
-        if (tier === 'basic') basic += 1;
-        else if (tier === 'complete') complete += 1;
-        else unknown += 1;
+      if ((directRows || []).length > 0 && !summary.statusSignalDetected) {
+        return {
+          source: `direct:${tenantColumn}`,
+          basic: 0,
+          complete: 0,
+          failed: 0,
+          unknown: (directRows || []).length,
+          blocked: true,
+          blockReason: 'consultflex_schema_missing_success_signal' as const,
+        };
       }
 
       return {
-        basic,
-        complete,
-        unknown,
+        source: `direct:${tenantColumn}`,
+        basic: summary.basic,
+        complete: summary.complete,
+        failed: summary.failed,
+        unknown: summary.unknown,
+        blocked: false,
+        blockReason: null,
       };
     }
 
@@ -475,15 +590,21 @@ async function getConsultflexUsageForTenant(params: {
 
   if (orcamentoIds.length === 0) {
     return {
+      source: 'by_orcamento',
       basic: 0,
       complete: 0,
+      failed: 0,
       unknown: 0,
+      blocked: false,
+      blockReason: null,
     };
   }
 
   let basic = 0;
   let complete = 0;
+  let failed = 0;
   let unknown = 0;
+  let statusSignalDetected = false;
 
   const idChunks = splitInChunks(orcamentoIds, 500);
   for (const ids of idChunks) {
@@ -496,18 +617,93 @@ async function getConsultflexUsageForTenant(params: {
       throw new Error(creditsErr.message);
     }
 
-    for (const row of creditRows || []) {
-      const tier = classifyConsultflexType(row as Record<string, any>);
-      if (tier === 'basic') basic += 1;
-      else if (tier === 'complete') complete += 1;
-      else unknown += 1;
-    }
+    const summary = summarizeRows((creditRows || []) as any[]);
+    basic += summary.basic;
+    complete += summary.complete;
+    failed += summary.failed;
+    unknown += summary.unknown;
+    statusSignalDetected = statusSignalDetected || summary.statusSignalDetected;
+  }
+
+  if (basic + complete + failed + unknown > 0 && !statusSignalDetected) {
+    return {
+      source: 'by_orcamento',
+      basic: 0,
+      complete: 0,
+      failed: 0,
+      unknown: basic + complete + failed + unknown,
+      blocked: true,
+      blockReason: 'consultflex_schema_missing_success_signal' as const,
+    };
   }
 
   return {
+    source: 'by_orcamento',
     basic,
     complete,
+    failed,
     unknown,
+    blocked: false,
+    blockReason: null,
+  };
+}
+
+async function getConsultflexAmountFromProvider(params: {
+  providerConfig: any;
+  tenantId: string;
+  refMonth: string;
+}) {
+  const { providerConfig, tenantId, refMonth } = params;
+
+  const baseUrl = String(providerConfig?.consulflexBillingUrl || providerConfig?.consultflexBillingUrl || '').trim();
+  const apiKey = String(providerConfig?.consulflexApiKey || providerConfig?.consultflexApiKey || '').trim();
+  if (!baseUrl || !apiKey) {
+    return { enabled: false as const };
+  }
+
+  const endpoint = new URL(baseUrl);
+  endpoint.searchParams.set('tenantId', tenantId);
+  endpoint.searchParams.set('refMonth', refMonth);
+
+  const response = await fetch(endpoint.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'x-api-key': apiKey,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Consulflex billing API ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  const amountCandidates = [
+    payload?.amount,
+    payload?.value,
+    payload?.total,
+    payload?.consultflexAmount,
+    payload?.consultflex_total,
+    payload?.data?.amount,
+    payload?.data?.value,
+    payload?.data?.total,
+    payload?.data?.consultflexAmount,
+  ];
+
+  const amount = amountCandidates
+    .map(toFiniteNumber)
+    .find((num) => num != null && num >= 0);
+
+  if (amount == null) {
+    throw new Error('Consulflex billing API retornou sem valor numérico válido.');
+  }
+
+  return {
+    enabled: true as const,
+    amount,
+    payload,
   };
 }
 
@@ -611,6 +807,17 @@ export async function scheduleMonthlyOverageChargeForTenant({
     endIso,
   });
 
+  if (consultflexUsage.blocked) {
+    return {
+      created: false,
+      reason: consultflexUsage.blockReason,
+      details: {
+        source: consultflexUsage.source,
+        unknown: consultflexUsage.unknown,
+      },
+    } as const;
+  }
+
   const prices = {
     extraUserPrice: Number((planConfig as any)?.system_limits?.extraUserPrice || 0),
     extraDevicePrice: Number((planConfig as any)?.system_limits?.extraDevicePrice || 0),
@@ -632,7 +839,35 @@ export async function scheduleMonthlyOverageChargeForTenant({
     consultflexBasic: consultflexUsage.basic * prices.consultflexBasicPrice,
     consultflexComplete: consultflexUsage.complete * prices.consultflexCompletePrice,
   };
-  const totalOverage = values.users + values.whatsappUsers + values.messages + values.consultflexBasic + values.consultflexComplete;
+
+  const { data: financeApiData } = await holdingSupabase
+    .from('system_settings')
+    .select('value')
+    .eq('id', 'finance_api')
+    .single();
+
+  const financeApiConfig = (financeApiData?.value || {}) as any;
+
+  let consultflexApiAmount: number | null = null;
+  let consultflexApiMeta: any = null;
+  try {
+    const providerResult = await getConsultflexAmountFromProvider({
+      providerConfig: financeApiConfig,
+      tenantId,
+      refMonth,
+    });
+
+    if (providerResult.enabled) {
+      consultflexApiAmount = Number(providerResult.amount || 0);
+      consultflexApiMeta = providerResult.payload || null;
+    }
+  } catch (providerErr: any) {
+    console.warn(`[PAYMENT PROCESSOR] Falha ao consultar API Consulflex para ${tenantId}: ${providerErr?.message || providerErr}`);
+  }
+
+  const consultflexCalculatedTotal = values.consultflexBasic + values.consultflexComplete;
+  const consultflexTotal = consultflexApiAmount != null ? consultflexApiAmount : consultflexCalculatedTotal;
+  const totalOverage = values.users + values.whatsappUsers + values.messages + consultflexTotal;
 
   if (totalOverage <= 0) {
     return { created: false, reason: 'no_overage' as const };
@@ -644,6 +879,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   if (extras.messages > 0) itemLabels.push(`Mensagens extras (${extras.messages})`);
   if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
   if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa (${consultflexUsage.complete})`);
+  if (consultflexApiAmount != null) itemLabels.push('ConsultFlex (valor oficial API)');
 
   const description = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
 
@@ -656,13 +892,20 @@ export async function scheduleMonthlyOverageChargeForTenant({
     limits,
     extras,
     consultflex: {
+      source: consultflexUsage.source,
       basic: consultflexUsage.basic,
       complete: consultflexUsage.complete,
+      failed: consultflexUsage.failed,
       unknown: consultflexUsage.unknown,
+      amount_source: consultflexApiAmount != null ? 'consulflex_api' : 'internal_calculation',
+      amount_calculated: consultflexCalculatedTotal,
+      amount_api: consultflexApiAmount,
+      api_payload: consultflexApiMeta,
     },
     prices,
     values: {
       ...values,
+      consultflexTotal,
       total: totalOverage,
     },
     due_date: dueDate.toISOString().split('T')[0],
@@ -691,13 +934,6 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const tenantDocument = String(tenant?.cnpj || '').replace(/\D/g, '');
   const tenantEmail = String(tenant?.email || '').trim();
 
-  const { data: financeApiData } = await holdingSupabase
-    .from('system_settings')
-    .select('value')
-    .eq('id', 'finance_api')
-    .single();
-
-  const financeApiConfig = (financeApiData?.value || {}) as any;
   const asaasApiKey = financeApiConfig.asaasApiKey;
   const asaasEnv = financeApiConfig.asaasEnv || 'sandbox';
 

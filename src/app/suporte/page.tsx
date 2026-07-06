@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import type { SupportQueue } from '@/lib/support-queue';
+import { DONE_STATUSES, OPEN_STATUSES, type SupportQueue } from '@/lib/support-queue';
 import { BellDot, CircleDot, Clock3, Eye, EyeOff, LifeBuoy, Loader2, MessageSquare, Paperclip, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
 
 type Subject = {
@@ -61,6 +61,8 @@ type Ticket = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+  last_message_at?: string | null;
+  last_activity_at?: string | null;
   subject?: {
     id: string;
     name: string;
@@ -232,7 +234,6 @@ export default function SuportePage() {
 
   const [queue, setQueue] = useState<SupportQueue>('new');
   const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [counts, setCounts] = useState<QueueCounts>({ all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [glassUsers, setGlassUsers] = useState<GlassUser[]>([]);
@@ -249,7 +250,7 @@ export default function SuportePage() {
   const [newTicketAttachment, setNewTicketAttachment] = useState<File | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newTicketAttachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const autoMovedTicketIdsRef = useRef<Set<string>>(new Set());
+  const [seenRevision, setSeenRevision] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -318,6 +319,92 @@ export default function SuportePage() {
     [tickets, selectedTicketId]
   );
 
+  const getSeenStorageKey = () => 'holding.support.ticket.seen';
+
+  const getSeenMap = () => {
+    if (typeof window === 'undefined') return {} as Record<string, string>;
+    const raw = window.sessionStorage.getItem(getSeenStorageKey());
+    if (!raw) return {} as Record<string, string>;
+
+    try {
+      return JSON.parse(raw) as Record<string, string>;
+    } catch {
+      return {} as Record<string, string>;
+    }
+  };
+
+  const getTicketActivityAt = (ticket: Ticket | null) => {
+    if (!ticket) return null;
+    return ticket.last_activity_at || ticket.last_message_at || ticket.updated_at || ticket.created_at || null;
+  };
+
+  const markTicketSeen = (ticketId: string, seenAt: string | null) => {
+    if (!ticketId || typeof window === 'undefined') return;
+
+    const next = getSeenMap();
+    const nextSeenAt = seenAt || new Date().toISOString();
+    if (next[ticketId] === nextSeenAt) return;
+
+    next[ticketId] = nextSeenAt;
+    window.sessionStorage.setItem(getSeenStorageKey(), JSON.stringify(next));
+    setSeenRevision((value) => value + 1);
+    window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+  };
+
+  const isUnreadTicket = (ticket: Ticket) => {
+    if (!OPEN_STATUSES.includes(ticket.status as any)) return false;
+
+    const seenMap = getSeenMap();
+    const seenAt = seenMap[ticket.id];
+    const activityAt = getTicketActivityAt(ticket);
+
+    if (!activityAt) return !seenAt;
+    if (!seenAt) return true;
+    return new Date(activityAt).getTime() > new Date(seenAt).getTime();
+  };
+
+  const isMineTicket = (ticket: Ticket) => {
+    const current = String(currentUserEmail || '').trim().toLowerCase();
+    if (!current) return false;
+
+    return [ticket.assigned_to_email, ticket.created_by_email, ticket.requester_email]
+      .filter(Boolean)
+      .some((email) => String(email || '').trim().toLowerCase() === current);
+  };
+
+  const filteredTickets = useMemo(() => {
+    const now = Date.now();
+
+    if (queue === 'new') {
+      return tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && isUnreadTicket(ticket));
+    }
+
+    if (queue === 'mine') {
+      return tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && isMineTicket(ticket));
+    }
+
+    if (queue === 'overdue') {
+      return tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && !!ticket.due_at && new Date(ticket.due_at).getTime() < now);
+    }
+
+    if (queue === 'done') {
+      return tickets.filter((ticket) => DONE_STATUSES.includes(ticket.status as any));
+    }
+
+    return tickets;
+  }, [queue, tickets, currentUserEmail, seenRevision]);
+
+  const counts = useMemo<QueueCounts>(() => {
+    const now = Date.now();
+    return {
+      all: tickets.length,
+      new: tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && isUnreadTicket(ticket)).length,
+      mine: tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && isMineTicket(ticket)).length,
+      overdue: tickets.filter((ticket) => OPEN_STATUSES.includes(ticket.status as any) && !!ticket.due_at && new Date(ticket.due_at).getTime() < now).length,
+      done: tickets.filter((ticket) => DONE_STATUSES.includes(ticket.status as any)).length,
+    };
+  }, [tickets, currentUserEmail, seenRevision]);
+
   const teamMemberNameByEmail = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of team) {
@@ -381,7 +468,7 @@ export default function SuportePage() {
       setCurrentUserEmail(userData.user?.email?.toLowerCase() || null);
 
       const [ticketsRes, subjectsRes, glassUsersRes, teamRes, permissionsRes, meRes] = await Promise.all([
-        api(`/api/support/tickets?queue=${currentQueue}`),
+        api('/api/support/tickets?queue=all&limit=200'),
         api('/api/support/subjects'),
         api('/api/admin/glass-users'),
         api('/api/support/team'),
@@ -391,7 +478,6 @@ export default function SuportePage() {
 
       const loadedTickets: Ticket[] = ticketsRes.tickets || [];
       setTickets(loadedTickets);
-      setCounts(ticketsRes.counts || { all: 0, new: 0, mine: 0, overdue: 0, done: 0 });
       setSubjects(subjectsRes.subjects || []);
       const loadedGlassUsers: GlassUser[] = glassUsersRes?.users || [];
       setGlassUsers(loadedGlassUsers);
@@ -454,44 +540,11 @@ export default function SuportePage() {
         dueAt: toInputDateTime(selectedTicket.due_at),
       });
       loadMessages(selectedTicket.id);
+      markTicketSeen(selectedTicket.id, getTicketActivityAt(selectedTicket));
     } else {
       setMessages([]);
     }
   }, [selectedTicket, loadMessages]);
-
-  useEffect(() => {
-    if (!selectedTicket) return;
-    if (selectedTicket.status !== 'new') return;
-    if (autoMovedTicketIdsRef.current.has(selectedTicket.id)) return;
-
-    autoMovedTicketIdsRef.current.add(selectedTicket.id);
-    let active = true;
-
-    (async () => {
-      try {
-        await api(`/api/support/tickets/${selectedTicket.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ status: 'in_progress', assignToMe: true }),
-        });
-
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('support:tickets-updated'));
-        }
-
-        if (active) {
-          await loadSupportData(queue, true);
-        }
-      } catch (err: any) {
-        if (active) {
-          setError(err?.message || 'Falha ao mover ticket para Meus.');
-        }
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [api, loadSupportData, queue, selectedTicket]);
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1091,10 +1144,10 @@ export default function SuportePage() {
           <div className="max-h-[70vh] overflow-y-auto divide-y divide-slate-100">
             {queueLoading ? (
               <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-slate-400" /></div>
-            ) : tickets.length === 0 ? (
+            ) : filteredTickets.length === 0 ? (
               <div className="py-12 text-center text-slate-400 text-sm">Nenhum ticket encontrado.</div>
             ) : (
-              tickets.map((ticket) => (
+              filteredTickets.map((ticket) => (
                 <button
                   key={ticket.id}
                   onClick={() => setSelectedTicketId(ticket.id)}

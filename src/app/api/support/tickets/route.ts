@@ -69,6 +69,26 @@ async function buildAvatarMap(emails: string[]): Promise<Map<string, string | nu
   return avatarMap;
 }
 
+async function getLatestMessageMap(ticketIds: string[]): Promise<Map<string, string>> {
+  const latestMap = new Map<string, string>();
+  if (ticketIds.length === 0) return latestMap;
+
+  const { data } = await supabaseServer
+    .from('support_ticket_messages')
+    .select('ticket_id, created_at')
+    .in('ticket_id', ticketIds)
+    .order('created_at', { ascending: false });
+
+  for (const row of data || []) {
+    const ticketId = String((row as any).ticket_id || '').trim();
+    const createdAt = String((row as any).created_at || '').trim();
+    if (!ticketId || !createdAt || latestMap.has(ticketId)) continue;
+    latestMap.set(ticketId, createdAt);
+  }
+
+  return latestMap;
+}
+
 function toPositiveInt(value: string | null, fallback: number, max: number): number {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return fallback;
@@ -262,14 +282,26 @@ export async function GET(req: NextRequest) {
     const assigneeEmails = (data || [])
       .map((ticket: any) => String(ticket.assigned_to_email || '').trim().toLowerCase())
       .filter(Boolean);
+    const ticketIds = (data || []).map((ticket: any) => String(ticket.id || '').trim()).filter(Boolean);
 
     const assigneeAvatarMap = await buildAvatarMap(assigneeEmails);
+    const latestMessageMap = await getLatestMessageMap(ticketIds);
 
     const ticketsWithAvatar = (data || []).map((ticket: any) => {
       const email = String(ticket.assigned_to_email || '').trim().toLowerCase();
+      const updatedAt = String(ticket.updated_at || '').trim();
+      const createdAt = String(ticket.created_at || '').trim();
+      const latestMessageAt = latestMessageMap.get(String(ticket.id || '').trim()) || null;
+      const candidates = [updatedAt, createdAt, latestMessageAt].filter(Boolean) as string[];
+      const lastActivityAt = candidates.length > 0
+        ? candidates.reduce((best, curr) => (new Date(curr).getTime() > new Date(best).getTime() ? curr : best))
+        : updatedAt || createdAt || null;
+
       return {
         ...ticket,
         assigned_to_avatar_url: email ? (assigneeAvatarMap.get(email) ?? null) : null,
+        last_message_at: latestMessageAt,
+        last_activity_at: lastActivityAt,
       };
     });
 

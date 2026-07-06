@@ -91,6 +91,18 @@ export function Sidebar() {
     let active = true;
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
+    const getSeenMap = () => {
+      if (typeof window === 'undefined') return {} as Record<string, string>;
+      const raw = window.sessionStorage.getItem('holding.support.ticket.seen');
+      if (!raw) return {} as Record<string, string>;
+
+      try {
+        return JSON.parse(raw) as Record<string, string>;
+      } catch {
+        return {} as Record<string, string>;
+      }
+    };
+
     async function loadSupportBadge() {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
@@ -101,7 +113,7 @@ export function Sidebar() {
           return;
         }
 
-        const response = await fetch('/api/support/tickets?queue=mine&limit=200', {
+        const response = await fetch('/api/support/tickets?queue=all&limit=200', {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
         });
@@ -113,7 +125,19 @@ export function Sidebar() {
         }
 
         const tickets = Array.isArray(payload?.tickets) ? payload.tickets : [];
-        const count = tickets.filter((ticket: any) => String(ticket?.status || '') === 'new').length;
+        const seenMap = getSeenMap();
+        const count = tickets.filter((ticket: any) => {
+          const status = String(ticket?.status || '').trim();
+          if (!['new', 'in_progress', 'waiting_customer'].includes(status)) return false;
+
+          const ticketId = String(ticket?.id || '').trim();
+          const activityAt = String(ticket?.last_activity_at || ticket?.last_message_at || ticket?.updated_at || '').trim();
+          if (!ticketId || !activityAt) return false;
+
+          const seenAt = seenMap[ticketId];
+          if (!seenAt) return true;
+          return new Date(activityAt).getTime() > new Date(seenAt).getTime();
+        }).length;
 
         if (active) {
           setNewAssignedTicketCount(count);
@@ -125,7 +149,7 @@ export function Sidebar() {
 
     if (permissionsLoaded && (unrestrictedFallback || permissionCodes.has('menu.suporte'))) {
       loadSupportBadge();
-      intervalId = setInterval(loadSupportBadge, 60000);
+      intervalId = setInterval(loadSupportBadge, 7000);
     } else {
       setNewAssignedTicketCount(0);
     }

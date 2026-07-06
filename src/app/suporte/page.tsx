@@ -595,6 +595,9 @@ export default function SuportePage() {
       }
 
       await loadSupportData(queue, false);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao criar ticket.');
     } finally {
@@ -629,6 +632,9 @@ export default function SuportePage() {
       setNewSubject({ name: '', description: '', assigneeEmails: [], profileIds: [] });
       setEditingSubjectId(null);
       await loadSupportData(queue, true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || `Falha ao ${editingSubjectId ? 'atualizar' : 'criar'} assunto.`);
     } finally {
@@ -662,6 +668,9 @@ export default function SuportePage() {
       }
       setFeedback('Assunto excluido com sucesso.');
       await loadSupportData(queue, true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao excluir assunto.');
     }
@@ -679,6 +688,9 @@ export default function SuportePage() {
         body: JSON.stringify({ active: !subject.active }),
       });
       await loadSupportData(queue, true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao atualizar assunto.');
     }
@@ -699,6 +711,9 @@ export default function SuportePage() {
       setSelectedTicketId(null);
       setMessages([]);
       await loadSupportData(queue, false);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao excluir ticket.');
     } finally {
@@ -723,6 +738,9 @@ export default function SuportePage() {
 
       setFeedback('Ticket concluido com sucesso.');
       await loadSupportData(queue, true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao concluir ticket.');
     } finally {
@@ -758,6 +776,9 @@ export default function SuportePage() {
       }
       await loadMessages(selectedTicket.id);
       await loadSupportData(queue, true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('support:tickets-updated'));
+      }
     } catch (err: any) {
       setError(err?.message || 'Falha ao enviar mensagem.');
     } finally {

@@ -371,16 +371,164 @@ function getOverageDueDateFromRefMonth(refMonth: string) {
   return dueDate;
 }
 
+function normalizeText(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function isMissingColumnError(error: unknown) {
+  const candidate = error as { message?: string; details?: string };
+  const msg = normalizeText(candidate?.message || candidate?.details || '');
+  return msg.includes('column') && msg.includes('does not exist');
+}
+
+function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete' | 'unknown' {
+  const preferredKeys = [
+    'tipo_consulta',
+    'consulta_tipo',
+    'tipo',
+    'categoria',
+    'modalidade',
+    'plano',
+    'credit_type',
+  ];
+
+  for (const key of preferredKeys) {
+    if (!(key in row)) continue;
+    const text = normalizeText(row[key]);
+    if (!text) continue;
+    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
+    if (text.includes('basica') || text.includes('basic')) return 'basic';
+  }
+
+  const fallback = normalizeText(JSON.stringify(row));
+  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
+  if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
+  return 'unknown';
+}
+
+function splitInChunks<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+async function getConsultflexUsageForTenant(params: {
+  glassSupabase: SupabaseClient<any, 'public', any, any, any>;
+  tenantId: string;
+  startIso: string;
+  endIso: string;
+}) {
+  const { glassSupabase, tenantId, startIso, endIso } = params;
+
+  // Preferencia: consumo diretamente por tenant no banco 791glass.
+  const directTenantColumns = ['vidracaria_id', 'tenant_id'] as const;
+  for (const tenantColumn of directTenantColumns) {
+    const { data: directRows, error: directErr } = await glassSupabase
+      .from('orcamento_credito_consultas')
+      .select('*')
+      .eq(tenantColumn, tenantId)
+      .gte('created_at', startIso)
+      .lt('created_at', endIso);
+
+    if (!directErr) {
+      let basic = 0;
+      let complete = 0;
+      let unknown = 0;
+
+      for (const row of directRows || []) {
+        const tier = classifyConsultflexType(row as Record<string, any>);
+        if (tier === 'basic') basic += 1;
+        else if (tier === 'complete') complete += 1;
+        else unknown += 1;
+      }
+
+      return {
+        basic,
+        complete,
+        unknown,
+      };
+    }
+
+    if (!isMissingColumnError(directErr)) {
+      throw new Error(directErr.message);
+    }
+  }
+
+  const { data: orcamentosRows, error: orcamentosErr } = await glassSupabase
+    .from('orcamentos')
+    .select('id')
+    .eq('vidracaria_id', tenantId)
+    .gte('created_at', startIso)
+    .lt('created_at', endIso);
+
+  if (orcamentosErr) {
+    throw new Error(orcamentosErr.message);
+  }
+
+  const orcamentoIds = (orcamentosRows || []).map((row: any) => String(row?.id || '')).filter(Boolean);
+
+  if (orcamentoIds.length === 0) {
+    return {
+      basic: 0,
+      complete: 0,
+      unknown: 0,
+    };
+  }
+
+  let basic = 0;
+  let complete = 0;
+  let unknown = 0;
+
+  const idChunks = splitInChunks(orcamentoIds, 500);
+  for (const ids of idChunks) {
+    const { data: creditRows, error: creditsErr } = await glassSupabase
+      .from('orcamento_credito_consultas')
+      .select('*')
+      .in('orcamento_id', ids);
+
+    if (creditsErr) {
+      throw new Error(creditsErr.message);
+    }
+
+    for (const row of creditRows || []) {
+      const tier = classifyConsultflexType(row as Record<string, any>);
+      if (tier === 'basic') basic += 1;
+      else if (tier === 'complete') complete += 1;
+      else unknown += 1;
+    }
+  }
+
+  return {
+    basic,
+    complete,
+    unknown,
+  };
+}
+
 export async function scheduleMonthlyOverageChargeForTenant({
   holdingSupabase,
   glassSupabase,
   tenantId,
+  force = false,
+  now = new Date(),
 }: {
   holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   tenantId: string;
+  force?: boolean;
+  now?: Date;
 }) {
-  const { refMonth, startIso, endIso } = getPreviousMonthWindow();
+  if (!force && now.getDate() !== 10) {
+    return { created: false, reason: 'outside_generation_day' as const };
+  }
+
+  const { refMonth, startIso, endIso } = getPreviousMonthWindow(now);
   const dueDate = getOverageDueDateFromRefMonth(refMonth);
 
   const { data: existingOverage } = await holdingSupabase
@@ -456,10 +604,19 @@ export async function scheduleMonthlyOverageChargeForTenant({
     messages: Number(tenant?.limite_mensagens_whatsapp || 0),
   };
 
+  const consultflexUsage = await getConsultflexUsageForTenant({
+    glassSupabase,
+    tenantId,
+    startIso,
+    endIso,
+  });
+
   const prices = {
     extraUserPrice: Number((planConfig as any)?.system_limits?.extraUserPrice || 0),
     extraDevicePrice: Number((planConfig as any)?.system_limits?.extraDevicePrice || 0),
     extraMessagePrice: Number((planConfig as any)?.system_limits?.extraMessagePrice || (planConfig as any)?.system_limits?.wppMessagesPrice || 0),
+    consultflexBasicPrice: Number((planConfig as any)?.system_limits?.consultflexBasicPrice || (planConfig as any)?.system_limits?.consultBasicPrice || 0),
+    consultflexCompletePrice: Number((planConfig as any)?.system_limits?.consultflexCompletePrice || (planConfig as any)?.system_limits?.consultCompletePrice || 0),
   };
 
   const extras = {
@@ -472,8 +629,10 @@ export async function scheduleMonthlyOverageChargeForTenant({
     users: extras.users * prices.extraUserPrice,
     whatsappUsers: extras.whatsappUsers * prices.extraDevicePrice,
     messages: extras.messages * prices.extraMessagePrice,
+    consultflexBasic: consultflexUsage.basic * prices.consultflexBasicPrice,
+    consultflexComplete: consultflexUsage.complete * prices.consultflexCompletePrice,
   };
-  const totalOverage = values.users + values.whatsappUsers + values.messages;
+  const totalOverage = values.users + values.whatsappUsers + values.messages + values.consultflexBasic + values.consultflexComplete;
 
   if (totalOverage <= 0) {
     return { created: false, reason: 'no_overage' as const };
@@ -483,6 +642,8 @@ export async function scheduleMonthlyOverageChargeForTenant({
   if (extras.users > 0) itemLabels.push(`Usuários extras (${extras.users})`);
   if (extras.whatsappUsers > 0) itemLabels.push(`Usuários WhatsApp extras (${extras.whatsappUsers})`);
   if (extras.messages > 0) itemLabels.push(`Mensagens extras (${extras.messages})`);
+  if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
+  if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa (${consultflexUsage.complete})`);
 
   const description = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
 
@@ -494,6 +655,11 @@ export async function scheduleMonthlyOverageChargeForTenant({
     period_end: endIso,
     limits,
     extras,
+    consultflex: {
+      basic: consultflexUsage.basic,
+      complete: consultflexUsage.complete,
+      unknown: consultflexUsage.unknown,
+    },
     prices,
     values: {
       ...values,

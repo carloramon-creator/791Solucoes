@@ -54,7 +54,9 @@ export default function PlanosGlassPage() {
     wppDevices: '',
     extraDevicePrice: '',
     wppMessages: '',
-    extraMessagePrice: ''
+    extraMessagePrice: '',
+    consultflexBasicPrice: '',
+    consultflexCompletePrice: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
     usersIncluded: number;
@@ -98,7 +100,9 @@ export default function PlanosGlassPage() {
         wppMessages: nextWppMessages,
         extraUserPrice: parseCurrency(limits.extraUserPrice),
         extraDevicePrice: parseCurrency(limits.extraDevicePrice),
-        extraMessagePrice: parseCurrency(limits.extraMessagePrice)
+        extraMessagePrice: parseCurrency(limits.extraMessagePrice),
+        consultflexBasicPrice: parseCurrency(limits.consultflexBasicPrice),
+        consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice)
       },
       included_modules: selectedBasicModules
     };
@@ -244,7 +248,9 @@ export default function PlanosGlassPage() {
               wppDevices: String(wppDevices || ''),
               extraDevicePrice: formatCurrency(String(Number(planData.system_limits.extraDevicePrice || 0) * 100)),
               wppMessages: String(wppMessages || ''),
-              extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100))
+              extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100)),
+              consultflexBasicPrice: formatCurrency(String(Number(planData.system_limits.consultflexBasicPrice || 0) * 100)),
+              consultflexCompletePrice: formatCurrency(String(Number(planData.system_limits.consultflexCompletePrice || 0) * 100))
             });
           }
         }
@@ -416,33 +422,70 @@ export default function PlanosGlassPage() {
 
       {/* Limitadores e Extras Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Box 4: Limite de Usuários */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
-            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Limite de Usuários do Sistema</h2>
-          </div>
-          <div className="p-6 flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de usuários (Incluso)</label>
-              <input 
-                type="number" 
-                placeholder="Ex: 5"
-                value={limits.usersIncluded}
-                onChange={(e) => setLimits(prev => ({ ...prev, usersIncluded: e.target.value }))}
-                className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
-              />
+        <div className="space-y-6">
+          {/* Box 4: Limite de Usuários */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Limite de Usuários do Sistema</h2>
             </div>
-            <div className="flex-1">
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor por usuário adicional (R$)</label>
-              <div className="relative">
-                <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+            <div className="p-6 flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de usuários (Incluso)</label>
                 <input 
-                  type="text" 
-                  placeholder="0,00"
-                  value={limits.extraUserPrice}
-                  onChange={(e) => setLimits(prev => ({ ...prev, extraUserPrice: formatCurrency(e.target.value) }))}
-                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  type="number" 
+                  placeholder="Ex: 5"
+                  value={limits.usersIncluded}
+                  onChange={(e) => setLimits(prev => ({ ...prev, usersIncluded: e.target.value }))}
+                  className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
+              </div>
+              <div className="flex-1">
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor por usuário adicional (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                  <input 
+                    type="text" 
+                    placeholder="0,00"
+                    value={limits.extraUserPrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, extraUserPrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Box 4.1: Cobrança ConsultFlex */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Cobrança ConsultFlex</h2>
+            </div>
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Consulta Básica (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={limits.consultflexBasicPrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, consultflexBasicPrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Consulta Completa (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">R$</span>
+                  <input
+                    type="text"
+                    placeholder="0,00"
+                    value={limits.consultflexCompletePrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, consultflexCompletePrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  />
+                </div>
               </div>
             </div>
           </div>

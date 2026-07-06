@@ -6,8 +6,19 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const secret = searchParams.get('secret');
+    const force = searchParams.get('force') === 'true';
     if (secret !== process.env.CRON_SECRET) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const now = new Date();
+    if (!force && now.getDate() !== 10) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        reason: 'outside_generation_day',
+        message: 'Geração mensal configurada para ocorrer apenas no dia 10.',
+      });
     }
 
     const holdingUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -37,6 +48,8 @@ export async function GET(req: Request) {
           holdingSupabase,
           glassSupabase,
           tenantId: tenant.id,
+          force,
+          now,
         });
 
         if (result?.created) report.created += 1;

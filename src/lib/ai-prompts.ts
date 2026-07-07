@@ -60,6 +60,7 @@ export type AiPromptConfig = {
   chave: string;
   titulo: string;
   descricao: string | null;
+  uso_em: string[];
   system_prompt: string;
   user_prompt_template: string;
   ativo: boolean;
@@ -68,13 +69,14 @@ export type AiPromptConfig = {
   updated_at: string | null;
 };
 
-export type AiPromptInput = Pick<AiPromptConfig, 'titulo' | 'descricao' | 'system_prompt' | 'user_prompt_template' | 'ativo'>;
+export type AiPromptInput = Pick<AiPromptConfig, 'titulo' | 'descricao' | 'uso_em' | 'system_prompt' | 'user_prompt_template' | 'ativo'>;
 
 const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_by' | 'updated_at'>> = {
   [CREDIT_AI_PROMPT_KEY]: {
     chave: CREDIT_AI_PROMPT_KEY,
     titulo: 'Análise de crédito',
     descricao: 'Prompt usado na análise financeira de crédito',
+    uso_em: ['orcamentos.credito'],
     system_prompt: DEFAULT_CREDIT_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_CREDIT_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -83,6 +85,7 @@ const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_b
     chave: COST_AI_PROMPT_KEY,
     titulo: 'Análise de custos',
     descricao: 'Prompt usado para avaliação e otimização de custos',
+    uso_em: ['financeiro.custos'],
     system_prompt: DEFAULT_COST_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_COST_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -91,11 +94,23 @@ const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_b
     chave: STOCK_AI_PROMPT_KEY,
     titulo: 'Análise de estoque',
     descricao: 'Prompt usado para leitura de risco e reposição de estoque',
+    uso_em: ['estoque.analise'],
     system_prompt: DEFAULT_STOCK_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_STOCK_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
   },
 };
+
+function normalizeUsoEm(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter((item) => /^[a-z0-9._-]+$/.test(item))
+    )
+  );
+}
 
 function defaultForKey(chave: string): AiPromptConfig {
   const cleanKey = String(chave || '').trim() || CREDIT_AI_PROMPT_KEY;
@@ -104,6 +119,7 @@ function defaultForKey(chave: string): AiPromptConfig {
     chave: cleanKey,
     titulo: cleanKey.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()),
     descricao: 'Prompt personalizado da Holding',
+    uso_em: [],
     system_prompt: DEFAULT_CREDIT_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_CREDIT_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -124,6 +140,7 @@ const normalizeRow = (row: any): AiPromptConfig => {
   chave: String(row?.chave || base.chave).trim(),
   titulo: String(row?.titulo || base.titulo).trim(),
   descricao: row?.descricao === null || row?.descricao === undefined ? base.descricao : String(row.descricao),
+  uso_em: normalizeUsoEm(row?.uso_em).length > 0 ? normalizeUsoEm(row?.uso_em) : base.uso_em,
   system_prompt: String(row?.system_prompt || base.system_prompt).trim() || base.system_prompt,
   user_prompt_template: String(row?.user_prompt_template || base.user_prompt_template).trim() || base.user_prompt_template,
   ativo: row?.ativo === undefined ? true : Boolean(row.ativo),
@@ -153,7 +170,7 @@ export async function getAiPromptConfig(chave: string): Promise<AiPromptConfig> 
   const cleanKey = String(chave || '').trim() || CREDIT_AI_PROMPT_KEY;
   const { data, error } = await supabaseServer
     .from('ai_prompt_configs')
-    .select('chave, titulo, descricao, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
     .eq('chave', cleanKey)
     .maybeSingle();
 
@@ -167,7 +184,7 @@ export async function getAiPromptConfig(chave: string): Promise<AiPromptConfig> 
 export async function listAiPromptConfigs(): Promise<AiPromptConfig[]> {
   const { data, error } = await supabaseServer
     .from('ai_prompt_configs')
-    .select('chave, titulo, descricao, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
     .order('updated_at', { ascending: false });
 
   const defaults = getAllAiPromptDefaultConfigs();
@@ -193,6 +210,7 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
     chave: cleanKey,
     titulo: String(input.titulo || defaults.titulo).trim(),
     descricao: input.descricao === null ? null : String(input.descricao || '').trim() || null,
+    uso_em: normalizeUsoEm(input.uso_em).length > 0 ? normalizeUsoEm(input.uso_em) : defaults.uso_em,
     system_prompt: String(input.system_prompt || defaults.system_prompt).trim(),
     user_prompt_template: String(input.user_prompt_template || defaults.user_prompt_template).trim(),
     ativo: Boolean(input.ativo),
@@ -204,7 +222,7 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
   const { data, error } = await supabaseServer
     .from('ai_prompt_configs')
     .upsert(payload, { onConflict: 'chave' })
-    .select('chave, titulo, descricao, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
     .single();
 
   if (error || !data) {

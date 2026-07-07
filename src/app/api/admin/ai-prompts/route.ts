@@ -15,6 +15,17 @@ function normalizeKey(value: string | null) {
   return key;
 }
 
+function normalizeUsoEm(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter((item) => /^[a-z0-9._-]+$/.test(item))
+    )
+  );
+}
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Acesso negado para patrocinador.');
   if (!auth.ok) {
@@ -51,6 +62,7 @@ export async function PUT(req: Request) {
   const titulo = String(body?.titulo || '').trim();
   const descricaoRaw = body?.descricao;
   const descricao = descricaoRaw === null ? null : String(descricaoRaw || '').trim() || null;
+  const usoEm = normalizeUsoEm(body?.uso_em);
   const systemPrompt = String(body?.system_prompt || '').trim();
   const userPromptTemplate = String(body?.user_prompt_template || '').trim();
   const ativo = Boolean(body?.ativo);
@@ -64,6 +76,7 @@ export async function PUT(req: Request) {
   const saved = await saveAiPromptConfig(key, {
     titulo: titulo || defaults.titulo,
     descricao,
+    uso_em: usoEm.length > 0 ? usoEm : defaults.uso_em,
     system_prompt: systemPrompt,
     user_prompt_template: userPromptTemplate || defaults.user_prompt_template,
     ativo,

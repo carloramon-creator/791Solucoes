@@ -10,6 +10,7 @@ type PromptConfig = {
   chave: string;
   titulo: string;
   descricao: string | null;
+  uso_em: string[];
   system_prompt: string;
   user_prompt_template: string;
   ativo: boolean;
@@ -41,6 +42,7 @@ const DEFAULTS: PromptConfig = {
   chave: 'credito_analise',
   titulo: 'Análise de crédito',
   descricao: 'Prompt usado na análise financeira de crédito',
+  uso_em: ['orcamentos.credito'],
   system_prompt: '',
   user_prompt_template: '',
   ativo: true,
@@ -69,6 +71,7 @@ export default function PromptsIaPage() {
     chave: config?.chave || fallback.chave,
     titulo: config?.titulo || fallback.titulo,
     descricao: config?.descricao ?? fallback.descricao,
+    uso_em: Array.isArray(config?.uso_em) ? config.uso_em.map((item: any) => String(item || '').trim()).filter(Boolean) : fallback.uso_em,
     system_prompt: config?.system_prompt || fallback.system_prompt || '',
     user_prompt_template: config?.user_prompt_template || fallback.user_prompt_template || '',
     ativo: config?.ativo ?? true,
@@ -151,6 +154,7 @@ export default function PromptsIaPage() {
           chave: selectedKey,
           titulo: form.titulo,
           descricao: form.descricao,
+          uso_em: form.uso_em,
           system_prompt: form.system_prompt,
           user_prompt_template: form.user_prompt_template,
           ativo: form.ativo,
@@ -217,6 +221,7 @@ export default function PromptsIaPage() {
           chave: cleanKey,
           titulo: cleanTitle || cleanKey.replace(/_/g, ' '),
           descricao: form.descricao,
+          uso_em: form.uso_em,
           system_prompt: defaults.system_prompt || form.system_prompt,
           user_prompt_template: defaults.user_prompt_template || form.user_prompt_template,
           ativo: true,
@@ -366,6 +371,23 @@ export default function PromptsIaPage() {
                 <input
                   value={form.descricao || ''}
                   onChange={(e) => setForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Onde será utilizado</label>
+                <input
+                  value={form.uso_em.join(', ')}
+                  onChange={(e) => setForm((prev) => ({
+                    ...prev,
+                    uso_em: Array.from(new Set(
+                      e.target.value
+                        .split(',')
+                        .map((item) => item.trim().toLowerCase())
+                        .filter((item) => /^[a-z0-9._-]+$/.test(item))
+                    )),
+                  }))}
+                  placeholder="ex: orcamentos.credito, financeiro.custos, estoque.analise"
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
                 />
               </div>

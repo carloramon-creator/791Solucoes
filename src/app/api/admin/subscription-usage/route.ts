@@ -85,6 +85,33 @@ function getConsultflexAttemptKey(row: Record<string, any>) {
   return `${createdAtSec}|${product}|${document}|${budget}`;
 }
 
+function isConsultflexHistoryRow(row: Record<string, any>) {
+  const combined = normalizeText([
+    row.tipo,
+    row.tipo_consulta,
+    row.consulta_tipo,
+    row.categoria,
+    row.evento,
+    row.acao,
+    row.descricao,
+    row.description,
+    row.origem,
+    row.source,
+    row.status,
+    row.resultado,
+  ].filter(Boolean).join(' '));
+
+  return (
+    combined.includes('consultflex')
+    || combined.includes('consulta credito')
+    || combined.includes('consulta de credito')
+    || combined.includes('credito basico')
+    || combined.includes('credito total')
+    || combined.includes('bacen')
+    || combined.includes('serasa')
+  );
+}
+
 function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
   const successBooleanKeys = ['success', 'sucesso', 'ok'];
   for (const key of successBooleanKeys) {
@@ -381,7 +408,24 @@ export async function GET(req: Request) {
       unknown: number;
     }>();
 
-    // Fonte principal: consultas no periodo selecionado (data da consulta).
+    // Fonte preferencial: historico de consultas (normalmente 1 linha por tentativa).
+    const { data: consultHistoryRows, error: consultHistoryError } = await glass
+      .from('orcamento_historico')
+      .select('*')
+      .gte('created_at', messagesPeriodStart)
+      .lte('created_at', rangeEnd.toISOString());
+
+    if (consultHistoryError && !isMissingSchemaObjectError(consultHistoryError)) {
+      return NextResponse.json({ error: consultHistoryError.message }, { status: 500 });
+    }
+
+    const safeConsultHistoryRows = consultHistoryError && isMissingSchemaObjectError(consultHistoryError)
+      ? []
+      : (consultHistoryRows || []);
+
+    const filteredHistoryRows = safeConsultHistoryRows.filter((row: any) => isConsultflexHistoryRow(row as Record<string, any>));
+
+    // Fonte fallback: tabela de creditos detalhada.
     const { data: consultRowsByPeriod, error: consultRowsError } = await glass
       .from('orcamento_credito_consultas')
       .select('*')
@@ -396,9 +440,11 @@ export async function GET(req: Request) {
       ? []
       : (consultRowsByPeriod || []);
 
+    const sourceRows: any[] = filteredHistoryRows.length > 0 ? filteredHistoryRows : safeConsultRows;
+
     // Vinculo primario por orcamento_id para evitar atribuicao incorreta por colunas genericas.
     const linkedOrcamentoIds = Array.from(new Set(
-      safeConsultRows
+      sourceRows
         .map((row: any) => String(row?.orcamento_id || ''))
         .filter(Boolean)
     ));
@@ -428,7 +474,7 @@ export async function GET(req: Request) {
 
     const groupedByAttempt = new Map<string, any[]>();
 
-    safeConsultRows.forEach((row: any) => {
+    sourceRows.forEach((row: any) => {
       const key = getConsultflexAttemptKey(row as Record<string, any>);
       if (!groupedByAttempt.has(key)) groupedByAttempt.set(key, []);
       groupedByAttempt.get(key)?.push(row);

@@ -509,17 +509,15 @@ async function getConsultflexUsageForTenant(params: {
       }
 
       const execStatus = classifyConsultflexExecutionStatus(normalizedRow);
+      const tier = classifyConsultflexType(normalizedRow);
+
       if (execStatus === 'failed') {
         failed += 1;
         continue;
       }
 
-      if (execStatus === 'unknown') {
-        unknown += 1;
-        continue;
-      }
-
-      const tier = classifyConsultflexType(normalizedRow);
+      // Regra de negócio: sem marcador explícito de erro, mas com tipo
+      // reconhecido, a consulta conta como sucesso para cobrança.
       if (tier === 'basic') basic += 1;
       else if (tier === 'complete') complete += 1;
       else unknown += 1;
@@ -546,18 +544,6 @@ async function getConsultflexUsageForTenant(params: {
 
     if (!directErr) {
       const summary = summarizeRows((directRows || []) as any[]);
-
-      if ((directRows || []).length > 0 && !summary.statusSignalDetected) {
-        return {
-          source: `direct:${tenantColumn}`,
-          basic: 0,
-          complete: 0,
-          failed: 0,
-          unknown: (directRows || []).length,
-          blocked: true,
-          blockReason: 'consultflex_schema_missing_success_signal' as const,
-        };
-      }
 
       return {
         source: `direct:${tenantColumn}`,
@@ -604,7 +590,6 @@ async function getConsultflexUsageForTenant(params: {
   let complete = 0;
   let failed = 0;
   let unknown = 0;
-  let statusSignalDetected = false;
 
   const idChunks = splitInChunks(orcamentoIds, 500);
   for (const ids of idChunks) {
@@ -622,19 +607,6 @@ async function getConsultflexUsageForTenant(params: {
     complete += summary.complete;
     failed += summary.failed;
     unknown += summary.unknown;
-    statusSignalDetected = statusSignalDetected || summary.statusSignalDetected;
-  }
-
-  if (basic + complete + failed + unknown > 0 && !statusSignalDetected) {
-    return {
-      source: 'by_orcamento',
-      basic: 0,
-      complete: 0,
-      failed: 0,
-      unknown: basic + complete + failed + unknown,
-      blocked: true,
-      blockReason: 'consultflex_schema_missing_success_signal' as const,
-    };
   }
 
   return {

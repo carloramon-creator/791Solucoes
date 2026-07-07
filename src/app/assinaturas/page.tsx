@@ -106,6 +106,8 @@ interface UsageResponse {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    consultflexBasicSuccess: number;
+    consultflexCompleteSuccess: number;
     consultflexSuccess: number;
     overageMonthly: number;
     usersExceeded: number;
@@ -713,7 +715,7 @@ export default function AssinaturasPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Clientes Monitorados</p>
           <p className="mt-2 text-2xl font-black text-slate-800">{usageTotals?.tenants ?? tenants.length}</p>
@@ -734,10 +736,15 @@ export default function AssinaturasPage() {
           <p className="mt-2 text-2xl font-black text-blue-700">{usageTotals?.messagesSent ?? 0}</p>
           <p className="text-[11px] text-blue-600 font-medium">Contagem desde o início do mês</p>
         </div>
-        <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-sm">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">ConsultFlex no Mês</p>
-          <p className="mt-2 text-2xl font-black text-indigo-700">{usageTotals?.consultflexSuccess ?? 0}</p>
-          <p className="text-[11px] text-indigo-600 font-medium">Somente consultas com sucesso</p>
+        <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">ConsultFlex Básica</p>
+          <p className="mt-2 text-2xl font-black text-blue-700">{usageTotals?.consultflexBasicSuccess ?? 0}</p>
+          <p className="text-[11px] text-blue-600 font-medium">Consultas com sucesso no período</p>
+        </div>
+        <div className="bg-white border border-violet-200 rounded-xl p-4 shadow-sm">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-600">ConsultFlex Completa</p>
+          <p className="mt-2 text-2xl font-black text-violet-700">{usageTotals?.consultflexCompleteSuccess ?? 0}</p>
+          <p className="text-[11px] text-violet-600 font-medium">Consultas com sucesso no período</p>
         </div>
         <div className="bg-white border border-[#3b597b]/25 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#3b597b]">Excesso Estimado</p>
@@ -1090,7 +1097,17 @@ export default function AssinaturasPage() {
                                  }}
                                  className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
                                >
-                                 CFX {usage.usage.consultflexSuccessTotal}
+                                 CFX-B {usage.usage.consultflexBasicSuccess}
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
+                               >
+                                 CFX-C {usage.usage.consultflexCompleteSuccess}
                                </button>
                              </div>
                            ) : (

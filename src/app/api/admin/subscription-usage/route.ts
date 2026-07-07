@@ -351,6 +351,7 @@ export async function GET(req: Request) {
       if (!tenantId) return;
 
       const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
+      const consultType = classifyConsultflexType(row as Record<string, any>);
 
       if (!consultflexByTenant.has(tenantId)) {
         consultflexByTenant.set(tenantId, {
@@ -368,12 +369,8 @@ export async function GET(req: Request) {
         return;
       }
 
-      if (execution === 'unknown') {
-        bucket.unknown += 1;
-        return;
-      }
-
-      const consultType = classifyConsultflexType(row as Record<string, any>);
+      // Quando nao houver marcador explicito de erro, mas o tipo da consulta
+      // for reconhecido, tratamos como sucesso.
       if (consultType === 'basic') bucket.basicSuccess += 1;
       else if (consultType === 'complete') bucket.completeSuccess += 1;
       else bucket.unknown += 1;
@@ -485,6 +482,8 @@ export async function GET(req: Request) {
         acc.whatsappUsers += tenant.usage.whatsappUsers;
         acc.sectors += tenant.usage.sectors;
         acc.messagesSent += tenant.usage.messagesSent;
+        acc.consultflexBasicSuccess += tenant.usage.consultflexBasicSuccess;
+        acc.consultflexCompleteSuccess += tenant.usage.consultflexCompleteSuccess;
         acc.consultflexSuccess += tenant.usage.consultflexSuccessTotal;
         // Não adiciona mais o overage, pois usaremos o faturamento real
 
@@ -500,6 +499,8 @@ export async function GET(req: Request) {
         whatsappUsers: 0,
         sectors: 0,
         messagesSent: 0,
+        consultflexBasicSuccess: 0,
+        consultflexCompleteSuccess: 0,
         consultflexSuccess: 0,
         overageMonthly: faturamentoMesAtual, // Usar faturamento real em vez de overage
         usersExceeded: 0,

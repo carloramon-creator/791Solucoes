@@ -570,9 +570,7 @@ async function getConsultflexUsageForTenant(params: {
   const { data: orcamentosRows, error: orcamentosErr } = await glassSupabase
     .from('orcamentos')
     .select('id')
-    .eq('vidracaria_id', tenantId)
-    .gte('created_at', startIso)
-    .lt('created_at', endIso);
+    .eq('vidracaria_id', tenantId);
 
   if (orcamentosErr) {
     throw new Error(orcamentosErr.message);

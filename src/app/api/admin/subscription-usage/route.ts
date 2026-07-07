@@ -345,71 +345,84 @@ export async function GET(req: Request) {
       unknown: number;
     }>();
 
-    // Consulta confiavel por tenant: resolve via orcamento_id -> vidracaria_id.
-    const { data: orcamentosRows, error: orcamentosError } = await glass
-      .from('orcamentos')
-      .select('id, vidracaria_id')
+    // Fonte principal: consultas no periodo selecionado (data da consulta).
+    const { data: consultRowsByPeriod, error: consultRowsError } = await glass
+      .from('orcamento_credito_consultas')
+      .select('*')
       .gte('created_at', messagesPeriodStart)
       .lte('created_at', rangeEnd.toISOString());
 
-    if (orcamentosError && !isMissingSchemaObjectError(orcamentosError)) {
-      return NextResponse.json({ error: orcamentosError.message }, { status: 500 });
+    if (consultRowsError && !isMissingSchemaObjectError(consultRowsError)) {
+      return NextResponse.json({ error: consultRowsError.message }, { status: 500 });
     }
+
+    const safeConsultRows = consultRowsError && isMissingSchemaObjectError(consultRowsError)
+      ? []
+      : (consultRowsByPeriod || []);
+
+    // Fallback de vinculo: quando a consulta nao traz tenant direto, resolvemos via orcamento_id.
+    const missingTenantOrcamentoIds = Array.from(new Set(
+      safeConsultRows
+        .filter((row: any) => !row?.vidracaria_id && !row?.tenant_id && row?.orcamento_id)
+        .map((row: any) => String(row.orcamento_id))
+        .filter(Boolean)
+    ));
 
     const orcamentoTenantMap = new Map<string, string>();
-    (orcamentosRows || []).forEach((row: any) => {
-      const orcamentoId = String(row?.id || '');
-      const tenantId = String(row?.vidracaria_id || '');
-      if (!orcamentoId || !tenantId) return;
-      orcamentoTenantMap.set(orcamentoId, tenantId);
-    });
+    const missingTenantChunks = splitInChunks(missingTenantOrcamentoIds, 500);
+    for (const ids of missingTenantChunks) {
+      const { data: linkedOrcamentos, error: linkedOrcamentosError } = await glass
+        .from('orcamentos')
+        .select('id, vidracaria_id')
+        .in('id', ids);
 
-    const orcamentoIds = Array.from(orcamentoTenantMap.keys());
-    const idChunks = splitInChunks(orcamentoIds, 500);
-
-    for (const ids of idChunks) {
-      const { data: consultRows, error: consultError } = await glass
-        .from('orcamento_credito_consultas')
-        .select('*')
-        .in('orcamento_id', ids)
-        .gte('created_at', messagesPeriodStart)
-        .lte('created_at', rangeEnd.toISOString());
-
-      if (consultError) {
-        if (isMissingSchemaObjectError(consultError)) {
+      if (linkedOrcamentosError) {
+        if (isMissingSchemaObjectError(linkedOrcamentosError)) {
           continue;
         }
-        return NextResponse.json({ error: consultError.message }, { status: 500 });
+        return NextResponse.json({ error: linkedOrcamentosError.message }, { status: 500 });
       }
 
-      (consultRows || []).forEach((row: any) => {
-        const tenantId = String(orcamentoTenantMap.get(String(row?.orcamento_id || '')) || row?.vidracaria_id || row?.tenant_id || '');
-        if (!tenantId) return;
-
-        const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
-        const consultType = classifyConsultflexType(row as Record<string, any>);
-
-        if (!consultflexByTenant.has(tenantId)) {
-          consultflexByTenant.set(tenantId, {
-            basicSuccess: 0,
-            completeSuccess: 0,
-            failed: 0,
-            unknown: 0,
-          });
-        }
-
-        const bucket = consultflexByTenant.get(tenantId)!;
-
-        if (execution === 'failed') {
-          bucket.failed += 1;
-          return;
-        }
-
-        if (consultType === 'basic') bucket.basicSuccess += 1;
-        else if (consultType === 'complete') bucket.completeSuccess += 1;
-        else bucket.unknown += 1;
+      (linkedOrcamentos || []).forEach((row: any) => {
+        const orcamentoId = String(row?.id || '');
+        const tenantId = String(row?.vidracaria_id || '');
+        if (!orcamentoId || !tenantId) return;
+        orcamentoTenantMap.set(orcamentoId, tenantId);
       });
     }
+
+    safeConsultRows.forEach((row: any) => {
+      const tenantId = String(
+        row?.vidracaria_id
+        || row?.tenant_id
+        || orcamentoTenantMap.get(String(row?.orcamento_id || ''))
+        || ''
+      );
+      if (!tenantId) return;
+
+      const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
+      const consultType = classifyConsultflexType(row as Record<string, any>);
+
+      if (!consultflexByTenant.has(tenantId)) {
+        consultflexByTenant.set(tenantId, {
+          basicSuccess: 0,
+          completeSuccess: 0,
+          failed: 0,
+          unknown: 0,
+        });
+      }
+
+      const bucket = consultflexByTenant.get(tenantId)!;
+
+      if (execution === 'failed') {
+        bucket.failed += 1;
+        return;
+      }
+
+      if (consultType === 'basic') bucket.basicSuccess += 1;
+      else if (consultType === 'complete') bucket.completeSuccess += 1;
+      else bucket.unknown += 1;
+    });
 
     const systemLimits = (planConfig as any)?.system_limits || {};
     const defaultUsersLimit = toNumber(systemLimits.usersIncluded, 10);

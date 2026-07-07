@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { ConfigTabs } from '@/components/ConfigTabs';
-import { ArrowLeft, Loader2, RotateCcw, Save, Sparkles, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, RotateCcw, Save, Sparkles, ShieldCheck } from 'lucide-react';
 
 type PromptConfig = {
   chave: string;
@@ -55,47 +55,65 @@ export default function PromptsIaPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [defaults, setDefaults] = useState(DEFAULTS);
   const [form, setForm] = useState<PromptConfig>(DEFAULTS);
+  const [list, setList] = useState<PromptConfig[]>([DEFAULTS]);
+  const [selectedKey, setSelectedKey] = useState(DEFAULTS.chave);
+  const [newKey, setNewKey] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+
+  const hydratePrompt = (config: any, fallback: PromptConfig): PromptConfig => ({
+    chave: config?.chave || fallback.chave,
+    titulo: config?.titulo || fallback.titulo,
+    descricao: config?.descricao ?? fallback.descricao,
+    system_prompt: config?.system_prompt || fallback.system_prompt || '',
+    user_prompt_template: config?.user_prompt_template || fallback.user_prompt_template || '',
+    ativo: config?.ativo ?? true,
+    versao: config?.versao || 1,
+    updated_by: config?.updated_by || null,
+    updated_at: config?.updated_at || null,
+  });
+
+  const loadPrompt = async (key?: string) => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    const query = key ? `?chave=${encodeURIComponent(key)}` : '';
+    const res = await fetch(`/api/admin/ai-prompts${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(payload?.error || 'Nao foi possivel carregar o prompt.');
+    }
+
+    const nextDefaults = hydratePrompt(payload.defaults || DEFAULTS, DEFAULTS);
+    const current = hydratePrompt(payload.config || DEFAULTS, nextDefaults);
+    const nextList = Array.isArray(payload.list)
+      ? payload.list.map((item: any) => hydratePrompt(item, DEFAULTS))
+      : [current];
+
+    setDefaults(nextDefaults);
+    setForm(current);
+    setSelectedKey(current.chave);
+    setList(nextList);
+    setSavedAt(current.updated_at ? new Date(current.updated_at).toLocaleString('pt-BR') : null);
+  };
 
   useEffect(() => {
     let active = true;
 
     async function init() {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
-      const res = await fetch('/api/admin/ai-prompts', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(payload?.error || 'Nao foi possivel carregar o prompt.');
-        setLoading(false);
-        return;
-      }
-
+      await loadPrompt();
       if (!active) return;
-      const config = payload.config || DEFAULTS;
-      const nextDefaults = payload.defaults || DEFAULTS;
-      setDefaults(nextDefaults);
-      setForm({
-        chave: config.chave || DEFAULTS.chave,
-        titulo: config.titulo || DEFAULTS.titulo,
-        descricao: config.descricao ?? DEFAULTS.descricao,
-        system_prompt: config.system_prompt || nextDefaults.system_prompt || '',
-        user_prompt_template: config.user_prompt_template || nextDefaults.user_prompt_template || '',
-        ativo: config.ativo ?? true,
-        versao: config.versao || 1,
-        updated_by: config.updated_by || null,
-        updated_at: config.updated_at || null,
-      });
       setLoading(false);
     }
 
@@ -130,6 +148,7 @@ export default function PromptsIaPage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
+          chave: selectedKey,
           titulo: form.titulo,
           descricao: form.descricao,
           system_prompt: form.system_prompt,
@@ -144,22 +163,88 @@ export default function PromptsIaPage() {
       }
 
       const config = payload.config || form;
-      setForm({
-        chave: config.chave || DEFAULTS.chave,
-        titulo: config.titulo || DEFAULTS.titulo,
-        descricao: config.descricao ?? DEFAULTS.descricao,
-        system_prompt: config.system_prompt || form.system_prompt,
-        user_prompt_template: config.user_prompt_template || form.user_prompt_template,
-        ativo: config.ativo ?? form.ativo,
-        versao: config.versao || form.versao,
-        updated_by: config.updated_by || null,
-        updated_at: config.updated_at || null,
-      });
+      const nextDefaults = hydratePrompt(payload.defaults || defaults, defaults);
+      const nextConfig = hydratePrompt(config, form);
+      const nextList = Array.isArray(payload.list)
+        ? payload.list.map((item: any) => hydratePrompt(item, DEFAULTS))
+        : list;
+
+      setDefaults(nextDefaults);
+      setForm(nextConfig);
+      setList(nextList);
+      setSelectedKey(nextConfig.chave);
       setSavedAt(new Date().toLocaleString('pt-BR'));
     } catch (err: any) {
       setError(err?.message || 'Nao foi possivel salvar o prompt.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSelectPrompt = async (key: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await loadPrompt(key);
+    } catch (err: any) {
+      setError(err?.message || 'Nao foi possivel carregar o prompt selecionado.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreatePrompt = async () => {
+    const cleanKey = String(newKey || '').trim().toLowerCase();
+    const cleanTitle = String(newTitle || '').trim();
+
+    if (!cleanKey || !/^[a-z0-9_]+$/.test(cleanKey)) {
+      setError('Defina uma chave válida usando apenas letras minúsculas, números e underscore.');
+      return;
+    }
+
+    setCreating(true);
+    setError('');
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch('/api/admin/ai-prompts', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          chave: cleanKey,
+          titulo: cleanTitle || cleanKey.replace(/_/g, ' '),
+          descricao: form.descricao,
+          system_prompt: defaults.system_prompt || form.system_prompt,
+          user_prompt_template: defaults.user_prompt_template || form.user_prompt_template,
+          ativo: true,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || 'Nao foi possivel criar o prompt.');
+      }
+
+      const nextDefaults = hydratePrompt(payload.defaults || DEFAULTS, DEFAULTS);
+      const nextConfig = hydratePrompt(payload.config || DEFAULTS, nextDefaults);
+      const nextList = Array.isArray(payload.list)
+        ? payload.list.map((item: any) => hydratePrompt(item, DEFAULTS))
+        : [nextConfig];
+
+      setDefaults(nextDefaults);
+      setForm(nextConfig);
+      setList(nextList);
+      setSelectedKey(nextConfig.chave);
+      setNewKey('');
+      setNewTitle('');
+      setSavedAt(new Date().toLocaleString('pt-BR'));
+    } catch (err: any) {
+      setError(err?.message || 'Nao foi possivel criar o prompt.');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -199,7 +284,7 @@ export default function PromptsIaPage() {
             Prompts de IA
           </h1>
           <p className="text-sm text-slate-500 mt-1 uppercase tracking-wider">
-            Edite o prompt usado na análise de crédito da Holding.
+            Gerencie múltiplos prompts por contexto (crédito, custos, estoque e outros).
           </p>
         </div>
 
@@ -215,9 +300,59 @@ export default function PromptsIaPage() {
       <ConfigTabs />
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="grid grid-cols-1 xl:grid-cols-3">
+        <div className="grid grid-cols-1 xl:grid-cols-4">
+          <aside className="p-6 border-b xl:border-b-0 xl:border-r border-slate-100 bg-slate-50/70 space-y-4">
+            <div>
+              <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Lista de prompts</label>
+              <select
+                value={selectedKey}
+                onChange={(e) => handleSelectPrompt(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+              >
+                {list.map((item) => (
+                  <option key={item.chave} value={item.chave}>
+                    {item.titulo} ({item.chave})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Novo prompt</p>
+              <input
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value.replace(/\s+/g, '_').toLowerCase())}
+                placeholder="ex: risco_fornecedor"
+                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+              />
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Título do prompt"
+                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+              />
+              <button
+                type="button"
+                onClick={handleCreatePrompt}
+                disabled={creating}
+                className="inline-flex w-full items-center justify-center gap-2 h-10 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase tracking-widest disabled:opacity-60"
+              >
+                {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                Criar prompt
+              </button>
+            </div>
+          </aside>
+
           <div className="xl:col-span-2 p-6 space-y-5 border-b xl:border-b-0 xl:border-r border-slate-100">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Chave</label>
+                <input
+                  value={form.chave}
+                  readOnly
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none bg-slate-50 text-slate-500"
+                />
+              </div>
               <div>
                 <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Título</label>
                 <input
@@ -226,7 +361,7 @@ export default function PromptsIaPage() {
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
                 />
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Descrição</label>
                 <input
                   value={form.descricao || ''}

@@ -75,7 +75,7 @@ export default function NotificacoesPage() {
         <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
           <div className="lg:col-span-2 space-y-3">
             <p className="text-sm text-slate-500 leading-relaxed max-w-2xl uppercase text-[11px] tracking-wide">
-              Aqui você administra o prompt usado na análise de crédito da Holding. É possível ajustar o texto do sistema, o template do usuário e manter o fallback local ativo.
+              Aqui você administra múltiplos prompts de IA da Holding. Crie por contexto (crédito, custos, estoque e outros), ajuste o sistema/template e mantenha versionamento por chave.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-700">

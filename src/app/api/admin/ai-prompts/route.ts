@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
-import { getCreditAiPromptConfig, getCreditAiPromptDefaultConfig, saveCreditAiPromptConfig } from '@/lib/ai-prompts';
+import {
+  CREDIT_AI_PROMPT_KEY,
+  getAiPromptConfig,
+  getAiPromptDefaultConfig,
+  listAiPromptConfigs,
+  saveAiPromptConfig,
+} from '@/lib/ai-prompts';
+
+function normalizeKey(value: string | null) {
+  const key = String(value || '').trim().toLowerCase();
+  if (!key) return CREDIT_AI_PROMPT_KEY;
+  if (!/^[a-z0-9_]+$/.test(key)) return null;
+  return key;
+}
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Acesso negado para patrocinador.');
@@ -8,10 +21,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const prompt = await getCreditAiPromptConfig();
+  const url = new URL(req.url);
+  const key = normalizeKey(url.searchParams.get('chave'));
+  if (!key) {
+    return NextResponse.json({ error: 'A chave do prompt é inválida. Use apenas letras minúsculas, números e underscore.' }, { status: 400 });
+  }
+
+  const prompt = await getAiPromptConfig(key);
+  const list = await listAiPromptConfigs();
   return NextResponse.json({
     config: prompt,
-    defaults: getCreditAiPromptDefaultConfig(),
+    defaults: getAiPromptDefaultConfig(key),
+    list,
   });
 }
 
@@ -22,6 +43,11 @@ export async function PUT(req: Request) {
   }
 
   const body = await req.json().catch(() => ({}));
+  const key = normalizeKey(body?.chave);
+  if (!key) {
+    return NextResponse.json({ error: 'A chave do prompt é inválida. Use apenas letras minúsculas, números e underscore.' }, { status: 400 });
+  }
+
   const titulo = String(body?.titulo || '').trim();
   const descricaoRaw = body?.descricao;
   const descricao = descricaoRaw === null ? null : String(descricaoRaw || '').trim() || null;
@@ -33,13 +59,17 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'O prompt de sistema nao pode ficar vazio.' }, { status: 400 });
   }
 
-  const saved = await saveCreditAiPromptConfig({
-    titulo: titulo || getCreditAiPromptDefaultConfig().titulo,
+  const defaults = getAiPromptDefaultConfig(key);
+
+  const saved = await saveAiPromptConfig(key, {
+    titulo: titulo || defaults.titulo,
     descricao,
     system_prompt: systemPrompt,
-    user_prompt_template: userPromptTemplate || getCreditAiPromptDefaultConfig().user_prompt_template,
+    user_prompt_template: userPromptTemplate || defaults.user_prompt_template,
     ativo,
   }, auth.user.email);
 
-  return NextResponse.json({ config: saved, defaults: getCreditAiPromptDefaultConfig() });
+  const list = await listAiPromptConfigs();
+
+  return NextResponse.json({ config: saved, defaults, list });
 }

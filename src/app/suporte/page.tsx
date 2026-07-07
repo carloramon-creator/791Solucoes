@@ -323,8 +323,13 @@ export default function SuportePage() {
 
   const getSeenMap = () => {
     if (typeof window === 'undefined') return {} as Record<string, string>;
-    const raw = window.sessionStorage.getItem(getSeenStorageKey());
+    const storageKey = getSeenStorageKey();
+    const raw = window.localStorage.getItem(storageKey) || window.sessionStorage.getItem(storageKey);
     if (!raw) return {} as Record<string, string>;
+
+    if (!window.localStorage.getItem(storageKey)) {
+      window.localStorage.setItem(storageKey, raw);
+    }
 
     try {
       return JSON.parse(raw) as Record<string, string>;
@@ -346,7 +351,7 @@ export default function SuportePage() {
     if (next[ticketId] === nextSeenAt) return;
 
     next[ticketId] = nextSeenAt;
-    window.sessionStorage.setItem(getSeenStorageKey(), JSON.stringify(next));
+    window.localStorage.setItem(getSeenStorageKey(), JSON.stringify(next));
     setSeenRevision((value) => value + 1);
     window.dispatchEvent(new CustomEvent('support:tickets-updated'));
   };

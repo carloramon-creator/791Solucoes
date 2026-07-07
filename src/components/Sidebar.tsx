@@ -103,8 +103,13 @@ export function Sidebar() {
 
     const getSeenMap = () => {
       if (typeof window === 'undefined') return {} as Record<string, string>;
-      const raw = window.sessionStorage.getItem('holding.support.ticket.seen');
+      const storageKey = 'holding.support.ticket.seen';
+      const raw = window.localStorage.getItem(storageKey) || window.sessionStorage.getItem(storageKey);
       if (!raw) return {} as Record<string, string>;
+
+      if (!window.localStorage.getItem(storageKey)) {
+        window.localStorage.setItem(storageKey, raw);
+      }
 
       try {
         return JSON.parse(raw) as Record<string, string>;

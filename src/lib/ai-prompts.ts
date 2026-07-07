@@ -279,11 +279,7 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
     throw new Error(legacy.error?.message || 'Nao foi possivel salvar o prompt de IA');
   }
 
-  if (withUsage.error || !withUsage.data) {
-    throw new Error(withUsage.error?.message || 'Nao foi possivel salvar o prompt de IA');
-  }
-
-  return normalizeRow(withUsage.data);
+  throw new Error(withUsage.error?.message || 'Nao foi possivel salvar o prompt de IA');
 }
 
 export function getCreditAiPromptDefaultConfig(): AiPromptConfig {

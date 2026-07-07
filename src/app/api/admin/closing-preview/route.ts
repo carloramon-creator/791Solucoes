@@ -10,6 +10,9 @@ export async function GET(req: Request) {
   }
 
   try {
+    const url = new URL(req.url);
+    const scope = url.searchParams.get('scope') === 'closed' ? 'closed' : 'upcoming';
+
     const holdingUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
     const glassUrl = process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!;
@@ -26,6 +29,7 @@ export async function GET(req: Request) {
     if (tenantsError) throw tenantsError;
 
     const report = {
+      scope,
       scanned: tenants?.length || 0,
       withCharge: 0,
       withoutCharge: 0,
@@ -64,13 +68,21 @@ export async function GET(req: Request) {
 
     for (const tenant of tenants || []) {
       try {
+        const previewNow = new Date();
+        if (scope === 'upcoming') {
+          // Simula o fechamento do mes atual executando no dia 01 do proximo mes.
+          previewNow.setDate(1);
+          previewNow.setMonth(previewNow.getMonth() + 1);
+          previewNow.setHours(0, 0, 0, 0);
+        }
+
         const result = await scheduleMonthlyOverageChargeForTenant({
           holdingSupabase,
           glassSupabase,
           tenantId: tenant.id,
           force: true,
           previewOnly: true,
-          now: new Date(),
+          now: previewNow,
         });
 
         const details = (result as any)?.details || null;

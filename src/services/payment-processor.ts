@@ -679,7 +679,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   const { data: existingOverage } = await holdingSupabase
     .from('system_finance_records')
-    .select('id')
+    .select('id, value, metadata')
     .eq('metadata->>tenant_id', tenantId)
     .eq('metadata->>kind', 'overage')
     .eq('metadata->>ref_month', refMonth)
@@ -687,6 +687,48 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   if (existingOverage?.id && !previewOnly) {
     return { created: false, reason: 'already_exists' as const };
+  }
+
+  if (existingOverage?.id && previewOnly) {
+    const existingMeta = (existingOverage as any)?.metadata || {};
+    const existingValues = existingMeta?.values || {};
+    const existingConsultflex = existingMeta?.consultflex || {};
+    const existingExtras = existingMeta?.extras || {};
+
+    return {
+      created: false,
+      reason: 'preview_existing' as const,
+      details: {
+        refMonth: String(existingMeta?.ref_month || refMonth),
+        dueDate: String(existingMeta?.due_date || dueDate.toISOString().split('T')[0]),
+        consultflex: {
+          source: String(existingConsultflex?.source || 'existing_record'),
+          basic: Number(existingConsultflex?.basic || 0),
+          complete: Number(existingConsultflex?.complete || 0),
+          failed: Number(existingConsultflex?.failed || 0),
+          unknown: Number(existingConsultflex?.unknown || 0),
+          amountSource: String(existingConsultflex?.amount_source || 'existing_record'),
+          amountCalculated: Number(existingConsultflex?.amount_calculated || 0),
+          amountApi: existingConsultflex?.amount_api == null ? null : Number(existingConsultflex?.amount_api || 0),
+          amountFinal: Number(existingValues?.consultflexTotal || existingValues?.consultflex_total || 0),
+        },
+        extras: {
+          users: Number(existingExtras?.users || 0),
+          whatsappUsers: Number(existingExtras?.whatsappUsers || existingExtras?.whatsapp_users || 0),
+          messages: Number(existingExtras?.messages || 0),
+        },
+        values: {
+          users: Number(existingValues?.users || 0),
+          whatsappUsers: Number(existingValues?.whatsappUsers || existingValues?.whatsapp_users || 0),
+          messages: Number(existingValues?.messages || 0),
+          consultflexBasic: Number(existingValues?.consultflexBasic || existingValues?.consultflex_basic || 0),
+          consultflexComplete: Number(existingValues?.consultflexComplete || existingValues?.consultflex_complete || 0),
+          consultflexTotal: Number(existingValues?.consultflexTotal || existingValues?.consultflex_total || 0),
+          total: Number(existingValues?.total || (existingOverage as any)?.value || 0),
+        },
+        existingRecordId: existingOverage.id,
+      },
+    };
   }
 
   const [

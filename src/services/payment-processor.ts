@@ -660,12 +660,14 @@ export async function scheduleMonthlyOverageChargeForTenant({
   glassSupabase,
   tenantId,
   force = false,
+  previewOnly = false,
   now = new Date(),
 }: {
   holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   tenantId: string;
   force?: boolean;
+  previewOnly?: boolean;
   now?: Date;
 }) {
   if (!force && now.getDate() !== 1) {
@@ -683,7 +685,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
     .eq('metadata->>ref_month', refMonth)
     .maybeSingle();
 
-  if (existingOverage?.id) {
+  if (existingOverage?.id && !previewOnly) {
     return { created: false, reason: 'already_exists' as const };
   }
 
@@ -849,6 +851,17 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   if (totalOverage <= 0) {
     return { created: false, reason: 'no_overage' as const, details: closingDetails };
+  }
+
+  if (previewOnly) {
+    return {
+      created: false,
+      reason: 'preview' as const,
+      details: {
+        ...closingDetails,
+        existingRecordId: existingOverage?.id || null,
+      },
+    };
   }
 
   const itemLabels: string[] = [];

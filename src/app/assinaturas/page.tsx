@@ -118,6 +118,45 @@ interface UsageResponse {
   tenants: UsageTenantRow[];
 }
 
+interface ClosingPreviewTenant {
+  tenantId: string;
+  tenantName: string;
+  status: 'with_charge' | 'without_charge' | 'error';
+  reason?: string;
+  consultflex?: {
+    basic?: number;
+    complete?: number;
+    failed?: number;
+    unknown?: number;
+    amountFinal?: number;
+  };
+  extras?: {
+    users?: number;
+    whatsappUsers?: number;
+    messages?: number;
+  };
+  values?: {
+    users?: number;
+    whatsappUsers?: number;
+    messages?: number;
+    consultflexTotal?: number;
+    total?: number;
+  };
+  existingRecordId?: string | null;
+  error?: string;
+}
+
+interface ClosingPreviewReport {
+  scanned: number;
+  withCharge: number;
+  withoutCharge: number;
+  errors: number;
+  projectedRevenueTotal: number;
+  refMonth: string | null;
+  dueDate: string | null;
+  tenantBreakdown: ClosingPreviewTenant[];
+}
+
 interface GlassUserRow {
   userId: string;
   email: string | null;
@@ -176,6 +215,10 @@ export default function AssinaturasPage() {
   const [glassUsersTenantFilter, setGlassUsersTenantFilter] = useState('all');
   const [glassUsersStatusFilter, setGlassUsersStatusFilter] = useState<'all' | 'active' | 'inactive' | 'tenant-inactive'>('all');
   const [glassUsersSort, setGlassUsersSort] = useState<'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc'>('last-access-desc');
+  const [showClosingPreviewModal, setShowClosingPreviewModal] = useState(false);
+  const [closingPreviewLoading, setClosingPreviewLoading] = useState(false);
+  const [closingPreviewError, setClosingPreviewError] = useState('');
+  const [closingPreviewReport, setClosingPreviewReport] = useState<ClosingPreviewReport | null>(null);
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -316,6 +359,45 @@ export default function AssinaturasPage() {
       setGlassUsersError(err?.message || 'Falha ao carregar usuarios do Glass.');
     } finally {
       setGlassUsersLoading(false);
+    }
+  }
+
+  async function fetchClosingPreview() {
+    setClosingPreviewLoading(true);
+    setClosingPreviewError('');
+    try {
+      let accessToken = '';
+
+      const { data: sessionData } = await authClient.auth.getSession();
+      accessToken = sessionData.session?.access_token || '';
+
+      if (!accessToken) {
+        const { data: refreshed } = await authClient.auth.refreshSession();
+        accessToken = refreshed.session?.access_token || '';
+      }
+
+      if (!accessToken) {
+        throw new Error('Sessao nao encontrada. Faca login novamente.');
+      }
+
+      const response = await fetch('/api/admin/closing-preview', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: 'no-store',
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Falha ao carregar previa de fechamento.');
+      }
+
+      setClosingPreviewReport(payload?.report || null);
+    } catch (err: any) {
+      setClosingPreviewError(err?.message || 'Falha ao carregar previa de fechamento.');
+      setClosingPreviewReport(null);
+    } finally {
+      setClosingPreviewLoading(false);
     }
   }
 
@@ -633,6 +715,15 @@ export default function AssinaturasPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setShowClosingPreviewModal(true);
+              await fetchClosingPreview();
+            }}
+            className="bg-white border border-emerald-200 text-emerald-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-emerald-50 transition-all"
+          >
+            <TrendingUp size={16} /> Previa de Fechamento
+          </button>
           <button
             onClick={async () => {
               setShowGlassUsersModal(true);
@@ -1194,6 +1285,116 @@ export default function AssinaturasPage() {
                 >
                   Fechar Painel
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClosingPreviewModal && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-full max-w-6xl rounded-3xl border border-emerald-200 bg-white shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-emerald-100 bg-emerald-50/40 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600">Previa de Fechamento</p>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Projecao de faturamento mensal da Holding</h3>
+                {closingPreviewReport?.refMonth && (
+                  <p className="text-[12px] text-slate-600 mt-1">
+                    Referencia: {closingPreviewReport.refMonth} | Vencimento: {closingPreviewReport.dueDate || '-'}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fetchClosingPreview()}
+                  disabled={closingPreviewLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {closingPreviewLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                  Atualizar
+                </button>
+                <button
+                  onClick={() => setShowClosingPreviewModal(false)}
+                  className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100 transition"
+                  aria-label="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[78vh] overflow-y-auto">
+              {closingPreviewError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+                  {closingPreviewError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Tenants</p>
+                  <p className="mt-2 text-xl font-black text-slate-800">{closingPreviewReport?.scanned || 0}</p>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-emerald-600">Com cobranca</p>
+                  <p className="mt-2 text-xl font-black text-emerald-700">{closingPreviewReport?.withCharge || 0}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Sem cobranca</p>
+                  <p className="mt-2 text-xl font-black text-slate-700">{closingPreviewReport?.withoutCharge || 0}</p>
+                </div>
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-red-500">Erros</p>
+                  <p className="mt-2 text-xl font-black text-red-700">{closingPreviewReport?.errors || 0}</p>
+                </div>
+                <div className="rounded-xl border border-[#3b597b]/25 bg-[#3b597b]/5 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#3b597b]">Faturamento projetado</p>
+                  <p className="mt-2 text-xl font-black text-[#2f4a66]">{formatCurrency(closingPreviewReport?.projectedRevenueTotal || 0)}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[980px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-widest text-slate-500">
+                        <th className="px-3 py-2">Tenant</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2 text-right">CFX Bas</th>
+                        <th className="px-3 py-2 text-right">CFX Comp</th>
+                        <th className="px-3 py-2 text-right">CFX Erro</th>
+                        <th className="px-3 py-2 text-right">Extras</th>
+                        <th className="px-3 py-2 text-right">ConsultFlex</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(closingPreviewReport?.tenantBreakdown || []).map((item) => {
+                        const extrasTotal =
+                          Number(item.values?.users || 0)
+                          + Number(item.values?.whatsappUsers || 0)
+                          + Number(item.values?.messages || 0);
+                        return (
+                          <tr key={item.tenantId} className="hover:bg-slate-50/70">
+                            <td className="px-3 py-2">
+                              <p className="text-[12px] font-bold text-slate-800">{item.tenantName || item.tenantId}</p>
+                              <p className="text-[10px] text-slate-500">{item.reason || '-'}</p>
+                            </td>
+                            <td className="px-3 py-2 text-[11px] font-bold uppercase">
+                              {item.status === 'with_charge' ? 'Com cobranca' : item.status === 'without_charge' ? 'Sem cobranca' : 'Erro'}
+                            </td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.basic || 0)}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.complete || 0)}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.failed || 0)}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(extrasTotal)}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(Number(item.values?.consultflexTotal || 0))}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-black text-[#2f4a66]">{formatCurrency(Number(item.values?.total || 0))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

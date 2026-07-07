@@ -35,7 +35,17 @@ const navigationItems: NavItem[] = [
   { name: 'FINANCEIRO', href: '/financeiro', icon: Receipt, resourceCode: 'menu.financeiro' },
   { name: 'NOTAS FISCAIS', href: '/notas-fiscais', icon: FileCheck, resourceCode: 'menu.notas_fiscais' },
   { name: 'SUPORTE', href: '/suporte', icon: LifeBuoy, resourceCode: 'menu.suporte' },
-  { name: 'ASSINATURAS', href: '/assinaturas', icon: Users, hasSubmenu: true, resourceCode: 'menu.assinaturas' },
+  {
+    name: 'ASSINATURAS',
+    href: '/assinaturas',
+    icon: Users,
+    hasSubmenu: true,
+    resourceCode: 'menu.assinaturas',
+    subItems: [
+      { name: 'Visao Geral', href: '/assinaturas' },
+      { name: 'Previa de Fechamento', href: '/assinaturas/previa-fechamento' },
+    ],
+  },
   { name: 'PATROCINADORES', href: '/patrocinadores', icon: ShieldCheck, resourceCode: 'menu.patrocinadores' },
   {
     name: 'PLANOS',

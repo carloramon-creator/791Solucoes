@@ -396,76 +396,18 @@ function hasAnyField(row: Record<string, any>, keys: string[]) {
 type ConsultflexExecutionStatus = 'success' | 'failed' | 'unknown';
 
 function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
-  const successBooleanKeys = ['success', 'sucesso', 'ok'];
-  for (const key of successBooleanKeys) {
-    if (!(key in row)) continue;
-    const value = row[key];
-    if (typeof value === 'boolean') return value ? 'success' : 'failed';
-    const text = normalizeText(value);
-    if (['true', '1', 'sim', 'success', 'sucesso', 'ok'].includes(text)) return 'success';
-    if (['false', '0', 'nao', 'não', 'erro', 'error', 'fail', 'falha'].includes(text)) return 'failed';
-  }
-
-  const statusKeys = ['status', 'resultado', 'result', 'retorno'];
-  for (const key of statusKeys) {
-    if (!(key in row)) continue;
-    const text = normalizeText(row[key]);
-    if (!text) continue;
-    if (/(erro|error|falha|failed|invalid|timeout|denied|negado|rejeitad)/.test(text)) return 'failed';
-    if (/(sucesso|success|aprovad|ok|complet)/.test(text)) return 'success';
-  }
-
-  const httpStatusKeys = ['http_status', 'status_code', 'statuscode', 'response_status'];
-  for (const key of httpStatusKeys) {
-    if (!(key in row)) continue;
-    const code = toFiniteNumber(row[key]);
-    if (code == null) continue;
-    if (code >= 200 && code < 300) return 'success';
-    return 'failed';
-  }
-
-  const errorKeys = ['error', 'erro', 'error_message', 'erro_mensagem', 'mensagem_erro'];
-  for (const key of errorKeys) {
-    if (!(key in row)) continue;
-    const text = normalizeText(row[key]);
-    if (text) return 'failed';
-  }
-
+  const status = normalizeText(row.status_consulta);
+  if (!status) return 'unknown';
+  if (status.includes('erro')) return 'failed';
+  if (status.includes('atencao') || status.includes('atenção') || status.includes('sucesso') || status.includes('ok')) return 'success';
   return 'unknown';
 }
 
 function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete' | 'unknown' {
-  const preferredKeys = [
-    'tipo_consulta',
-    'consulta_tipo',
-    'tipo',
-    'categoria',
-    'modalidade',
-    'plano',
-    'credit_type',
-    'produto',
-    'produto_consulta',
-    'produto_nome',
-    'consulta_produto',
-    'descricao',
-    'description',
-  ];
-
-  for (const key of preferredKeys) {
-    if (!(key in row)) continue;
-    const text = normalizeText(row[key]);
-    if (!text) continue;
-
-    const hasCreditoContext = text.includes('credito') || text.includes('cred');
-    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
-    if ((text.includes('total') || text.includes('bacen')) && hasCreditoContext) return 'complete';
-    if (text.includes('basica') || text.includes('basic')) return 'basic';
-  }
-
-  const fallback = normalizeText(JSON.stringify(row));
-  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
-  if ((fallback.includes('total') || fallback.includes('bacen')) && (fallback.includes('credito') || fallback.includes('cred'))) return 'complete';
-  if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
+  const type = normalizeText(row.tipo_consulta);
+  if (!type) return 'unknown';
+  if (type.includes('basico') || type.includes('básico') || type.includes('basic')) return 'basic';
+  if (type.includes('completo') || type.includes('complete') || type.includes('full')) return 'complete';
   return 'unknown';
 }
 

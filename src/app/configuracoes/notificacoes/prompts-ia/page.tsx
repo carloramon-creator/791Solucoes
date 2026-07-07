@@ -51,6 +51,21 @@ const DEFAULTS: PromptConfig = {
   updated_at: null,
 };
 
+const SUGGESTED_USAGES = [
+  'orcamentos.credito',
+  'orcamentos.aprovacao',
+  'financeiro.custos',
+  'financeiro.fluxo-caixa',
+  'financeiro.contas-receber',
+  'financeiro.contas-pagar',
+  'estoque.analise',
+  'estoque.reposicao',
+  'estoque.giro',
+  'compras.fornecedor',
+  'compras.cotacao',
+  'crm.risco-cliente',
+];
+
 export default function PromptsIaPage() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowser(), []);
@@ -59,6 +74,7 @@ export default function PromptsIaPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [defaults, setDefaults] = useState(DEFAULTS);
   const [form, setForm] = useState<PromptConfig>(DEFAULTS);
@@ -66,6 +82,33 @@ export default function PromptsIaPage() {
   const [selectedKey, setSelectedKey] = useState(DEFAULTS.chave);
   const [newKey, setNewKey] = useState('');
   const [newTitle, setNewTitle] = useState('');
+  const [viewMode, setViewMode] = useState<'lista' | 'edicao'>('lista');
+
+  const setUsoEmFromText = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      uso_em: Array.from(new Set(
+        value
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter((item) => /^[a-z0-9._-]+$/.test(item))
+      )),
+    }));
+  };
+
+  const addSuggestedUso = (usage: string) => {
+    setForm((prev) => ({
+      ...prev,
+      uso_em: prev.uso_em.includes(usage) ? prev.uso_em : [...prev.uso_em, usage],
+    }));
+  };
+
+  const removeUso = (usage: string) => {
+    setForm((prev) => ({
+      ...prev,
+      uso_em: prev.uso_em.filter((item) => item !== usage),
+    }));
+  };
 
   const hydratePrompt = (config: any, fallback: PromptConfig): PromptConfig => ({
     chave: config?.chave || fallback.chave,
@@ -141,6 +184,7 @@ export default function PromptsIaPage() {
   const handleSave = async () => {
     setSaving(true);
     setError('');
+    setSuccess('');
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -178,6 +222,8 @@ export default function PromptsIaPage() {
       setList(nextList);
       setSelectedKey(nextConfig.chave);
       setSavedAt(new Date().toLocaleString('pt-BR'));
+      setSuccess(`Prompt "${nextConfig.titulo}" salvo com sucesso.`);
+      setViewMode('lista');
     } catch (err: any) {
       setError(err?.message || 'Nao foi possivel salvar o prompt.');
     } finally {
@@ -187,9 +233,11 @@ export default function PromptsIaPage() {
 
   const handleSelectPrompt = async (key: string) => {
     setError('');
+    setSuccess('');
     setLoading(true);
     try {
       await loadPrompt(key);
+      setViewMode('edicao');
     } catch (err: any) {
       setError(err?.message || 'Nao foi possivel carregar o prompt selecionado.');
     } finally {
@@ -201,13 +249,14 @@ export default function PromptsIaPage() {
     const cleanKey = String(newKey || '').trim().toLowerCase();
     const cleanTitle = String(newTitle || '').trim();
 
-    if (!cleanKey || !/^[a-z0-9_]+$/.test(cleanKey)) {
-      setError('Defina uma chave válida usando apenas letras minúsculas, números e underscore.');
+    if (!cleanKey || !/^[a-z0-9._-]+$/.test(cleanKey)) {
+      setError('Defina uma chave válida usando letras minúsculas, números, ponto, hífen e underscore.');
       return;
     }
 
     setCreating(true);
     setError('');
+    setSuccess('');
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -246,6 +295,7 @@ export default function PromptsIaPage() {
       setNewKey('');
       setNewTitle('');
       setSavedAt(new Date().toLocaleString('pt-BR'));
+      setViewMode('edicao');
     } catch (err: any) {
       setError(err?.message || 'Nao foi possivel criar o prompt.');
     } finally {
@@ -304,22 +354,33 @@ export default function PromptsIaPage() {
 
       <ConfigTabs />
 
+      {success && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 font-medium">
+          {success}
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 xl:grid-cols-4">
           <aside className="p-6 border-b xl:border-b-0 xl:border-r border-slate-100 bg-slate-50/70 space-y-4">
             <div>
               <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Lista de prompts</label>
-              <select
-                value={selectedKey}
-                onChange={(e) => handleSelectPrompt(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
-              >
-                {list.map((item) => (
-                  <option key={item.chave} value={item.chave}>
-                    {item.titulo} ({item.chave})
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2 max-h-[300px] overflow-auto space-y-2">
+                {list.map((item) => {
+                  const isSelected = item.chave === selectedKey;
+                  return (
+                    <button
+                      key={item.chave}
+                      type="button"
+                      onClick={() => handleSelectPrompt(item.chave)}
+                      className={`w-full rounded-xl border px-3 py-3 text-left transition-colors ${isSelected ? 'border-[#3b597b]/40 bg-[#3b597b]/5' : 'border-slate-200 bg-white hover:border-[#3b597b]/30'}`}
+                    >
+                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-700">{item.titulo}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">{item.chave}</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
@@ -327,7 +388,7 @@ export default function PromptsIaPage() {
               <input
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value.replace(/\s+/g, '_').toLowerCase())}
-                placeholder="ex: risco_fornecedor"
+                placeholder="ex: risco.fornecedor-v2"
                 className="w-full rounded-xl border border-slate-200 px-3 py-3 text-xs font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
               />
               <input
@@ -348,7 +409,7 @@ export default function PromptsIaPage() {
             </div>
           </aside>
 
-          <div className="xl:col-span-2 p-6 space-y-5 border-b xl:border-b-0 xl:border-r border-slate-100">
+          <div className={`xl:col-span-2 p-6 space-y-5 border-b xl:border-b-0 xl:border-r border-slate-100 ${viewMode === 'lista' ? 'hidden' : ''}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Chave</label>
@@ -378,18 +439,39 @@ export default function PromptsIaPage() {
                 <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Onde será utilizado</label>
                 <input
                   value={form.uso_em.join(', ')}
-                  onChange={(e) => setForm((prev) => ({
-                    ...prev,
-                    uso_em: Array.from(new Set(
-                      e.target.value
-                        .split(',')
-                        .map((item) => item.trim().toLowerCase())
-                        .filter((item) => /^[a-z0-9._-]+$/.test(item))
-                    )),
-                  }))}
+                  onChange={(e) => setUsoEmFromText(e.target.value)}
                   placeholder="ex: orcamentos.credito, financeiro.custos, estoque.analise"
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
                 />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {SUGGESTED_USAGES.map((usage) => {
+                    const active = form.uso_em.includes(usage);
+                    return (
+                      <button
+                        key={usage}
+                        type="button"
+                        onClick={() => addSuggestedUso(usage)}
+                        className={`h-8 px-3 rounded-full border text-[10px] font-black uppercase tracking-wide ${active ? 'border-[#3b597b] bg-[#3b597b]/10 text-[#3b597b]' : 'border-slate-200 bg-white text-slate-600'}`}
+                      >
+                        {usage}
+                      </button>
+                    );
+                  })}
+                </div>
+                {form.uso_em.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {form.uso_em.map((usage) => (
+                      <button
+                        key={usage}
+                        type="button"
+                        onClick={() => removeUso(usage)}
+                        className="h-7 px-3 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black uppercase tracking-wide"
+                      >
+                        {usage} x
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -421,6 +503,13 @@ export default function PromptsIaPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setViewMode('lista')}
+                className="inline-flex items-center gap-2 h-11 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 text-[10px] font-black uppercase tracking-widest"
+              >
+                Voltar para lista
+              </button>
               <button
                 type="button"
                 onClick={handleSave}
@@ -459,6 +548,17 @@ export default function PromptsIaPage() {
             )}
           </div>
 
+          {viewMode === 'lista' && (
+            <div className="xl:col-span-2 p-6 border-b xl:border-b-0 xl:border-r border-slate-100 bg-slate-50/40">
+              <div className="rounded-2xl border border-slate-200 bg-white p-6">
+                <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">Selecione um prompt na lista para editar</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Ao salvar, você volta automaticamente para esta lista com confirmação de sucesso.
+                </p>
+              </div>
+            </div>
+          )}
+
           <aside className="p-6 space-y-4 bg-slate-50/80">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -482,6 +582,18 @@ export default function PromptsIaPage() {
               >
                 Voltar para notificações
               </button>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Uso no 791glass</p>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                O runtime do crédito no 791glass resolve automaticamente pelo uso
+                <span className="font-black text-slate-700"> orcamentos.credito</span>.
+              </p>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Se não encontrar por uso, ele aplica fallback pela chave padrão
+                <span className="font-black text-slate-700"> credito_analise</span>.
+              </p>
             </div>
           </aside>
         </div>

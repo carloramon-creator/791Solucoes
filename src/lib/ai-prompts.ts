@@ -5,6 +5,8 @@ import { supabaseServer } from '@/lib/supabase-server';
 export const CREDIT_AI_PROMPT_KEY = 'credito_analise';
 export const COST_AI_PROMPT_KEY = 'custos_analise';
 export const STOCK_AI_PROMPT_KEY = 'estoque_analise';
+const SELECT_FIELDS_WITH_USAGE = 'chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at';
+const SELECT_FIELDS_LEGACY = 'chave, titulo, descricao, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at';
 
 export const DEFAULT_CREDIT_AI_SYSTEM_PROMPT = [
   'Você é um analista de risco de crédito para orçamento comercial no Brasil.',
@@ -112,6 +114,11 @@ function normalizeUsoEm(value: unknown): string[] {
   );
 }
 
+function isMissingUsoEmColumn(error: any): boolean {
+  const text = String(error?.message || error?.details || '').toLowerCase();
+  return text.includes('uso_em') && (text.includes('does not exist') || text.includes('column'));
+}
+
 function defaultForKey(chave: string): AiPromptConfig {
   const cleanKey = String(chave || '').trim() || CREDIT_AI_PROMPT_KEY;
   const preset = DEFAULT_PROMPTS[cleanKey];
@@ -168,24 +175,52 @@ export function renderAiUserPrompt(template: string, contexto: unknown) {
 
 export async function getAiPromptConfig(chave: string): Promise<AiPromptConfig> {
   const cleanKey = String(chave || '').trim() || CREDIT_AI_PROMPT_KEY;
-  const { data, error } = await supabaseServer
+  const withUsage = await supabaseServer
     .from('ai_prompt_configs')
-    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select(SELECT_FIELDS_WITH_USAGE)
     .eq('chave', cleanKey)
     .maybeSingle();
 
-  if (error || !data) {
+  if (!withUsage.error && withUsage.data) {
+    return normalizeRow(withUsage.data);
+  }
+
+  if (withUsage.error && isMissingUsoEmColumn(withUsage.error)) {
+    const legacy = await supabaseServer
+      .from('ai_prompt_configs')
+      .select(SELECT_FIELDS_LEGACY)
+      .eq('chave', cleanKey)
+      .maybeSingle();
+
+    if (!legacy.error && legacy.data) {
+      return normalizeRow(legacy.data);
+    }
+  }
+
+  if (withUsage.error || !withUsage.data) {
     return defaultForKey(cleanKey);
   }
 
-  return normalizeRow(data);
+  return normalizeRow(withUsage.data);
 }
 
 export async function listAiPromptConfigs(): Promise<AiPromptConfig[]> {
-  const { data, error } = await supabaseServer
+  const withUsage = await supabaseServer
     .from('ai_prompt_configs')
-    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select(SELECT_FIELDS_WITH_USAGE)
     .order('updated_at', { ascending: false });
+
+  let data: any[] | null = withUsage.data;
+  let error: any = withUsage.error;
+
+  if (withUsage.error && isMissingUsoEmColumn(withUsage.error)) {
+    const legacy = await supabaseServer
+      .from('ai_prompt_configs')
+      .select(SELECT_FIELDS_LEGACY)
+      .order('updated_at', { ascending: false });
+    data = legacy.data;
+    error = legacy.error;
+  }
 
   const defaults = getAllAiPromptDefaultConfigs();
   const byKey = new Map<string, AiPromptConfig>();
@@ -219,17 +254,36 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
     updated_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabaseServer
+  const withUsage = await supabaseServer
     .from('ai_prompt_configs')
     .upsert(payload, { onConflict: 'chave' })
-    .select('chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at')
+    .select(SELECT_FIELDS_WITH_USAGE)
     .single();
 
-  if (error || !data) {
-    throw new Error(error?.message || 'Nao foi possivel salvar o prompt de IA');
+  if (!withUsage.error && withUsage.data) {
+    return normalizeRow(withUsage.data);
   }
 
-  return normalizeRow(data);
+  if (withUsage.error && isMissingUsoEmColumn(withUsage.error)) {
+    const { uso_em, ...legacyPayload } = payload;
+    const legacy = await supabaseServer
+      .from('ai_prompt_configs')
+      .upsert(legacyPayload, { onConflict: 'chave' })
+      .select(SELECT_FIELDS_LEGACY)
+      .single();
+
+    if (!legacy.error && legacy.data) {
+      return normalizeRow(legacy.data);
+    }
+
+    throw new Error(legacy.error?.message || 'Nao foi possivel salvar o prompt de IA');
+  }
+
+  if (withUsage.error || !withUsage.data) {
+    throw new Error(withUsage.error?.message || 'Nao foi possivel salvar o prompt de IA');
+  }
+
+  return normalizeRow(withUsage.data);
 }
 
 export function getCreditAiPromptDefaultConfig(): AiPromptConfig {

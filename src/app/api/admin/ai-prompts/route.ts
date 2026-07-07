@@ -11,7 +11,7 @@ import {
 function normalizeKey(value: string | null) {
   const key = String(value || '').trim().toLowerCase();
   if (!key) return CREDIT_AI_PROMPT_KEY;
-  if (!/^[a-z0-9_]+$/.test(key)) return null;
+  if (!/^[a-z0-9._-]+$/.test(key)) return null;
   return key;
 }
 
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const key = normalizeKey(url.searchParams.get('chave'));
   if (!key) {
-    return NextResponse.json({ error: 'A chave do prompt é inválida. Use apenas letras minúsculas, números e underscore.' }, { status: 400 });
+    return NextResponse.json({ error: 'A chave do prompt é inválida. Use letras minúsculas, números, ponto, hífen e underscore.' }, { status: 400 });
   }
 
   const prompt = await getAiPromptConfig(key);
@@ -56,7 +56,7 @@ export async function PUT(req: Request) {
   const body = await req.json().catch(() => ({}));
   const key = normalizeKey(body?.chave);
   if (!key) {
-    return NextResponse.json({ error: 'A chave do prompt é inválida. Use apenas letras minúsculas, números e underscore.' }, { status: 400 });
+    return NextResponse.json({ error: 'A chave do prompt é inválida. Use letras minúsculas, números, ponto, hífen e underscore.' }, { status: 400 });
   }
 
   const titulo = String(body?.titulo || '').trim();
@@ -73,16 +73,27 @@ export async function PUT(req: Request) {
 
   const defaults = getAiPromptDefaultConfig(key);
 
-  const saved = await saveAiPromptConfig(key, {
-    titulo: titulo || defaults.titulo,
-    descricao,
-    uso_em: usoEm.length > 0 ? usoEm : defaults.uso_em,
-    system_prompt: systemPrompt,
-    user_prompt_template: userPromptTemplate || defaults.user_prompt_template,
-    ativo,
-  }, auth.user.email);
+  try {
+    const saved = await saveAiPromptConfig(key, {
+      titulo: titulo || defaults.titulo,
+      descricao,
+      uso_em: usoEm.length > 0 ? usoEm : defaults.uso_em,
+      system_prompt: systemPrompt,
+      user_prompt_template: userPromptTemplate || defaults.user_prompt_template,
+      ativo,
+    }, auth.user.email);
 
-  const list = await listAiPromptConfigs();
+    const list = await listAiPromptConfigs();
 
-  return NextResponse.json({ config: saved, defaults, list });
+    return NextResponse.json({ config: saved, defaults, list });
+  } catch (error: any) {
+    const message = String(error?.message || '').toLowerCase();
+    if (message.includes('uso_em') && (message.includes('column') || message.includes('does not exist'))) {
+      return NextResponse.json({
+        error: 'Nao foi possivel salvar com o campo de uso. Rode a migracao 20260707_ai_prompt_configs_usage_targets.sql e tente novamente.',
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({ error: error?.message || 'Nao foi possivel salvar o prompt.' }, { status: 500 });
+  }
 }

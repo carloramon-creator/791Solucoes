@@ -118,8 +118,6 @@ interface UsageResponse {
   tenants: UsageTenantRow[];
 }
 
-type UsagePeriodMode = 'current_month' | 'previous_month' | 'custom';
-
 interface GlassUserRow {
   userId: string;
   email: string | null;
@@ -162,9 +160,6 @@ export default function AssinaturasPage() {
   const [usageTotals, setUsageTotals] = useState<UsageResponse['totals'] | null>(null);
   const [messagesPeriodStart, setMessagesPeriodStart] = useState('');
   const [usageRangeEnd, setUsageRangeEnd] = useState('');
-  const [usagePeriodMode, setUsagePeriodMode] = useState<UsagePeriodMode>('current_month');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
   const [selectedUsage, setSelectedUsage] = useState<UsageTenantRow | null>(null);
   const [selectedUsageTenant, setSelectedUsageTenant] = useState<Vidracaria | null>(null);
   const [tenantToDelete, setTenantToDelete] = useState<Vidracaria | null>(null);
@@ -192,45 +187,13 @@ export default function AssinaturasPage() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   };
 
-  const buildUsageRange = (mode: UsagePeriodMode, customStart: string, customEnd: string) => {
+  const buildUsageRange = () => {
     const now = new Date();
-
-    if (mode === 'current_month') {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      return {
-        startIso: start.toISOString(),
-        endIso: now.toISOString(),
-      };
-    }
-
-    if (mode === 'previous_month') {
-      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      const previousMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-      const previousMonthEnd = new Date(currentMonthStart.getTime() - 1);
-      return {
-        startIso: previousMonthStart.toISOString(),
-        endIso: previousMonthEnd.toISOString(),
-      };
-    }
-
-    if (!customStart || !customEnd) {
-      throw new Error('Informe início e fim para o intervalo customizado.');
-    }
-
-    const start = new Date(`${customStart}T00:00:00`);
-    const end = new Date(`${customEnd}T23:59:59.999`);
-
-    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) {
-      throw new Error('Datas inválidas no intervalo customizado.');
-    }
-
-    if (start > end) {
-      throw new Error('A data inicial não pode ser maior que a data final.');
-    }
+    const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 
     return {
       startIso: start.toISOString(),
-      endIso: end.toISOString(),
+      endIso: now.toISOString(),
     };
   };
 
@@ -240,11 +203,11 @@ export default function AssinaturasPage() {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   };
 
-  async function fetchUsageSummary(mode = usagePeriodMode, customStart = customStartDate, customEnd = customEndDate) {
+  async function fetchUsageSummary() {
     setUsageLoading(true);
     setUsageError('');
     try {
-      const range = buildUsageRange(mode, customStart, customEnd);
+      const range = buildUsageRange();
       const query = new URLSearchParams({
         startDate: range.startIso,
         endDate: range.endIso,
@@ -309,7 +272,7 @@ export default function AssinaturasPage() {
       });
       setSponsorMap(map);
 
-      await fetchUsageSummary(usagePeriodMode, customStartDate, customEndDate);
+      await fetchUsageSummary();
     } catch (err: any) {
       console.error('Erro ao buscar dados:', err.message);
     } finally {
@@ -359,23 +322,6 @@ export default function AssinaturasPage() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  useEffect(() => {
-    if (usagePeriodMode !== 'custom') return;
-    if (customStartDate && customEndDate) return;
-
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const toInputDate = (date: Date) => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    setCustomStartDate((prev) => prev || toInputDate(startOfMonth));
-    setCustomEndDate((prev) => prev || toInputDate(now));
-  }, [usagePeriodMode, customStartDate, customEndDate]);
 
   const getStatusBadge = (tenant: Vidracaria, diasRestantes: number | null) => {
     // Se no banco já está bloqueada, ou se passou de 5 dias de atraso (regra de bloqueio automático do Glass)
@@ -772,46 +718,11 @@ export default function AssinaturasPage() {
             className="w-full bg-slate-50 border border-slate-100 rounded-lg pl-10 pr-4 h-[40px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
           />
         </div>
-        <div className="w-full md:w-auto flex flex-wrap items-center gap-2">
-          <select
-            value={usagePeriodMode}
-            onChange={(e) => setUsagePeriodMode(e.target.value as UsagePeriodMode)}
-            className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
-          >
-            <option value="current_month">Mês atual</option>
-            <option value="previous_month">Mês anterior</option>
-            <option value="custom">Intervalo customizado</option>
-          </select>
-
-          {usagePeriodMode === 'custom' && (
-            <>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
-              />
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10"
-              />
-            </>
-          )}
-
-          <button
-            onClick={() => fetchUsageSummary()}
-            className="h-[40px] rounded-lg bg-[#3b597b] px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-[#2e4763]"
-          >
-            Aplicar Recorte
-          </button>
-        </div>
       </div>
 
       {(messagesPeriodStart || usageRangeEnd) && (
         <div className="text-[11px] text-slate-500 font-medium">
-          Recorte ativo: {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'} até {usageRangeEnd ? new Date(usageRangeEnd).toLocaleDateString('pt-BR') : '-'}
+          Período fixo (mês atual): {messagesPeriodStart ? new Date(messagesPeriodStart).toLocaleDateString('pt-BR') : '-'} até {usageRangeEnd ? new Date(usageRangeEnd).toLocaleDateString('pt-BR') : '-'}
         </div>
       )}
 

@@ -53,6 +53,38 @@ function splitInChunks<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function getConsultflexAttemptKey(row: Record<string, any>) {
+  const explicitKey = firstNonEmptyString(
+    row.consulta_id,
+    row.consult_id,
+    row.request_id,
+    row.requisicao_id,
+    row.protocolo,
+    row.protocolo_consulta,
+    row.transaction_id,
+    row.external_reference,
+    row.reference,
+    row.id_consulta,
+  );
+
+  if (explicitKey) return explicitKey;
+
+  const createdAt = String(row.created_at || '');
+  const createdAtSec = createdAt ? createdAt.slice(0, 19) : '';
+  const product = firstNonEmptyString(row.produto, row.produto_consulta, row.tipo_consulta, row.consulta_tipo, row.tipo);
+  const document = firstNonEmptyString(row.cpf, row.cnpj, row.documento, row.document);
+  const budget = firstNonEmptyString(row.orcamento_id);
+  return `${createdAtSec}|${product}|${document}|${budget}`;
+}
+
 function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
   const successBooleanKeys = ['success', 'sucesso', 'ok'];
   for (const key of successBooleanKeys) {
@@ -394,18 +426,44 @@ export async function GET(req: Request) {
       });
     }
 
+    const groupedByAttempt = new Map<string, any[]>();
+
     safeConsultRows.forEach((row: any) => {
-      const linkedTenantId = orcamentoTenantMap.get(String(row?.orcamento_id || ''));
+      const key = getConsultflexAttemptKey(row as Record<string, any>);
+      if (!groupedByAttempt.has(key)) groupedByAttempt.set(key, []);
+      groupedByAttempt.get(key)?.push(row);
+    });
+
+    groupedByAttempt.forEach((rows) => {
+      const canonicalRow = rows[0] as Record<string, any>;
+      const linkedTenantId = orcamentoTenantMap.get(String(canonicalRow?.orcamento_id || ''));
       const tenantId = String(
         linkedTenantId
-        || row?.vidracaria_id
-        || row?.tenant_id
+        || canonicalRow?.vidracaria_id
+        || canonicalRow?.tenant_id
         || ''
       );
       if (!tenantId) return;
 
-      const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
-      const consultType = classifyConsultflexType(row as Record<string, any>);
+      // Consolidacao: se qualquer linha da tentativa sinalizar erro, a tentativa inteira e erro.
+      let execution: ConsultflexExecutionStatus = 'unknown';
+      for (const item of rows) {
+        const status = classifyConsultflexExecutionStatus(item as Record<string, any>);
+        if (status === 'failed') {
+          execution = 'failed';
+          break;
+        }
+        if (status === 'success') execution = 'success';
+      }
+
+      let consultType: 'basic' | 'complete' | 'unknown' = 'unknown';
+      for (const item of rows) {
+        const type = classifyConsultflexType(item as Record<string, any>);
+        if (type !== 'unknown') {
+          consultType = type;
+          break;
+        }
+      }
 
       if (!consultflexByTenant.has(tenantId)) {
         consultflexByTenant.set(tenantId, {

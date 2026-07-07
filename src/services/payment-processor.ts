@@ -478,6 +478,38 @@ function splitInChunks<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function getConsultflexAttemptKey(row: Record<string, any>) {
+  const explicitKey = firstNonEmptyString(
+    row.consulta_id,
+    row.consult_id,
+    row.request_id,
+    row.requisicao_id,
+    row.protocolo,
+    row.protocolo_consulta,
+    row.transaction_id,
+    row.external_reference,
+    row.reference,
+    row.id_consulta,
+  );
+
+  if (explicitKey) return explicitKey;
+
+  const createdAt = String(row.created_at || '');
+  const createdAtSec = createdAt ? createdAt.slice(0, 19) : '';
+  const product = firstNonEmptyString(row.produto, row.produto_consulta, row.tipo_consulta, row.consulta_tipo, row.tipo);
+  const document = firstNonEmptyString(row.cpf, row.cnpj, row.documento, row.document);
+  const budget = firstNonEmptyString(row.orcamento_id);
+  return `${createdAtSec}|${product}|${document}|${budget}`;
+}
+
 async function getConsultflexUsageForTenant(params: {
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
   tenantId: string;
@@ -512,26 +544,47 @@ async function getConsultflexUsageForTenant(params: {
     let unknown = 0;
     let statusSignalDetected = false;
 
+    const groupedByAttempt = new Map<string, Record<string, any>[]>();
     for (const row of rows || []) {
       const normalizedRow = row as Record<string, any>;
-      if (hasAnyField(normalizedRow, statusEvidenceKeys)) {
+      const key = getConsultflexAttemptKey(normalizedRow);
+      if (!groupedByAttempt.has(key)) groupedByAttempt.set(key, []);
+      groupedByAttempt.get(key)?.push(normalizedRow);
+    }
+
+    groupedByAttempt.forEach((attemptRows) => {
+      if (attemptRows.some((item) => hasAnyField(item, statusEvidenceKeys))) {
         statusSignalDetected = true;
       }
 
-      const execStatus = classifyConsultflexExecutionStatus(normalizedRow);
-      const tier = classifyConsultflexType(normalizedRow);
+      let execStatus: ConsultflexExecutionStatus = 'unknown';
+      for (const item of attemptRows) {
+        const status = classifyConsultflexExecutionStatus(item);
+        if (status === 'failed') {
+          execStatus = 'failed';
+          break;
+        }
+        if (status === 'success') execStatus = 'success';
+      }
 
       if (execStatus === 'failed') {
         failed += 1;
-        continue;
+        return;
       }
 
-      // Regra de negócio: sem marcador explícito de erro, mas com tipo
-      // reconhecido, a consulta conta como sucesso para cobrança.
+      let tier: 'basic' | 'complete' | 'unknown' = 'unknown';
+      for (const item of attemptRows) {
+        const itemTier = classifyConsultflexType(item);
+        if (itemTier !== 'unknown') {
+          tier = itemTier;
+          break;
+        }
+      }
+
       if (tier === 'basic') basic += 1;
       else if (tier === 'complete') complete += 1;
       else unknown += 1;
-    }
+    });
 
     return {
       basic,

@@ -817,8 +817,38 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const consultflexTotal = consultflexApiAmount != null ? consultflexApiAmount : consultflexCalculatedTotal;
   const totalOverage = values.users + values.whatsappUsers + values.messages + consultflexTotal;
 
+  const closingDetails = {
+    refMonth,
+    dueDate: dueDate.toISOString().split('T')[0],
+    consultflex: {
+      source: consultflexUsage.source,
+      basic: consultflexUsage.basic,
+      complete: consultflexUsage.complete,
+      failed: consultflexUsage.failed,
+      unknown: consultflexUsage.unknown,
+      amountSource: consultflexApiAmount != null ? 'consulflex_api' : 'internal_calculation',
+      amountCalculated: consultflexCalculatedTotal,
+      amountApi: consultflexApiAmount,
+      amountFinal: consultflexTotal,
+    },
+    extras: {
+      users: extras.users,
+      whatsappUsers: extras.whatsappUsers,
+      messages: extras.messages,
+    },
+    values: {
+      users: values.users,
+      whatsappUsers: values.whatsappUsers,
+      messages: values.messages,
+      consultflexBasic: values.consultflexBasic,
+      consultflexComplete: values.consultflexComplete,
+      consultflexTotal,
+      total: totalOverage,
+    },
+  };
+
   if (totalOverage <= 0) {
-    return { created: false, reason: 'no_overage' as const };
+    return { created: false, reason: 'no_overage' as const, details: closingDetails };
   }
 
   const itemLabels: string[] = [];
@@ -896,7 +926,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
         },
       })
       .eq('id', overageRecord.id);
-    return { created: true, reason: 'manual_required' as const, recordId: overageRecord.id };
+    return { created: true, reason: 'manual_required' as const, recordId: overageRecord.id, details: closingDetails };
   }
 
   const asaas = new AsaasClient({ apiKey: asaasApiKey, environment: asaasEnv });
@@ -915,6 +945,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
     });
   }
 
+  let chargeStatus: 'created' | 'charge_error' = 'created';
   try {
     const payment = await asaas.createPayment({
       customer: customer.id,
@@ -937,6 +968,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
       })
       .eq('id', overageRecord.id);
   } catch (chargeErr: any) {
+    chargeStatus = 'charge_error';
     await holdingSupabase
       .from('system_finance_records')
       .update({
@@ -949,7 +981,15 @@ export async function scheduleMonthlyOverageChargeForTenant({
       .eq('id', overageRecord.id);
   }
 
-  return { created: true, reason: 'created' as const, recordId: overageRecord.id };
+  return {
+    created: true,
+    reason: 'created' as const,
+    recordId: overageRecord.id,
+    details: {
+      ...closingDetails,
+      chargeStatus,
+    },
+  };
 }
 
 async function persistInvoiceFailure({

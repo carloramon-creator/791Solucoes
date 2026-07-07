@@ -40,8 +40,38 @@ export async function GET(req: Request) {
       created: 0,
       skipped: 0,
       errors: 0,
+      projectedRevenueTotal: 0,
       skippedByReason: {} as Record<string, number>,
       samples: [] as Array<{ tenantId: string; tenantName: string; status: 'created' | 'skipped' | 'error'; reason?: string; details?: any }>,
+      tenantBreakdown: [] as Array<{
+        tenantId: string;
+        tenantName: string;
+        status: 'created' | 'skipped' | 'error';
+        reason?: string;
+        refMonth?: string;
+        dueDate?: string;
+        chargeStatus?: string;
+        consultflex?: {
+          basic?: number;
+          complete?: number;
+          failed?: number;
+          unknown?: number;
+          amountFinal?: number;
+        };
+        extras?: {
+          users?: number;
+          whatsappUsers?: number;
+          messages?: number;
+        };
+        values?: {
+          users?: number;
+          whatsappUsers?: number;
+          messages?: number;
+          consultflexTotal?: number;
+          total?: number;
+        };
+        error?: string;
+      }>,
     };
 
     for (const tenant of tenants || []) {
@@ -56,29 +86,101 @@ export async function GET(req: Request) {
 
         if (result?.created) {
           report.created += 1;
+          const details = (result as any)?.details || null;
+          const total = Number(details?.values?.total || 0);
+          report.projectedRevenueTotal += Number.isFinite(total) ? total : 0;
+
+          report.tenantBreakdown.push({
+            tenantId: tenant.id,
+            tenantName: tenant.nome || '',
+            status: 'created',
+            reason: String((result as any)?.reason || 'created'),
+            refMonth: details?.refMonth,
+            dueDate: details?.dueDate,
+            chargeStatus: details?.chargeStatus || 'created',
+            consultflex: {
+              basic: Number(details?.consultflex?.basic || 0),
+              complete: Number(details?.consultflex?.complete || 0),
+              failed: Number(details?.consultflex?.failed || 0),
+              unknown: Number(details?.consultflex?.unknown || 0),
+              amountFinal: Number(details?.consultflex?.amountFinal || 0),
+            },
+            extras: {
+              users: Number(details?.extras?.users || 0),
+              whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
+              messages: Number(details?.extras?.messages || 0),
+            },
+            values: {
+              users: Number(details?.values?.users || 0),
+              whatsappUsers: Number(details?.values?.whatsappUsers || 0),
+              messages: Number(details?.values?.messages || 0),
+              consultflexTotal: Number(details?.values?.consultflexTotal || 0),
+              total,
+            },
+          });
+
           if (report.samples.length < 20) {
             report.samples.push({
               tenantId: tenant.id,
               tenantName: tenant.nome || '',
               status: 'created',
+              reason: String((result as any)?.reason || 'created'),
+              details,
             });
           }
         } else {
           report.skipped += 1;
           const reason = String((result as any)?.reason || 'skipped');
+          const details = (result as any)?.details || null;
           report.skippedByReason[reason] = (report.skippedByReason[reason] || 0) + 1;
+
+          report.tenantBreakdown.push({
+            tenantId: tenant.id,
+            tenantName: tenant.nome || '',
+            status: 'skipped',
+            reason,
+            refMonth: details?.refMonth,
+            dueDate: details?.dueDate,
+            consultflex: {
+              basic: Number(details?.consultflex?.basic || 0),
+              complete: Number(details?.consultflex?.complete || 0),
+              failed: Number(details?.consultflex?.failed || 0),
+              unknown: Number(details?.consultflex?.unknown || 0),
+              amountFinal: Number(details?.consultflex?.amountFinal || 0),
+            },
+            extras: {
+              users: Number(details?.extras?.users || 0),
+              whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
+              messages: Number(details?.extras?.messages || 0),
+            },
+            values: {
+              users: Number(details?.values?.users || 0),
+              whatsappUsers: Number(details?.values?.whatsappUsers || 0),
+              messages: Number(details?.values?.messages || 0),
+              consultflexTotal: Number(details?.values?.consultflexTotal || 0),
+              total: Number(details?.values?.total || 0),
+            },
+          });
+
           if (report.samples.length < 20) {
             report.samples.push({
               tenantId: tenant.id,
               tenantName: tenant.nome || '',
               status: 'skipped',
               reason,
-              details: (result as any)?.details || null,
+              details,
             });
           }
         }
       } catch (err) {
         report.errors += 1;
+        report.tenantBreakdown.push({
+          tenantId: tenant.id,
+          tenantName: tenant.nome || '',
+          status: 'error',
+          reason: 'error',
+          error: err instanceof Error ? err.message : 'unknown_error',
+        });
         if (report.samples.length < 20) {
           report.samples.push({
             tenantId: tenant.id,

@@ -1,12 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
-import { supabaseServer } from '@/lib/supabase-server';
 import { getCreditAiPromptConfig, getCreditAiPromptDefaultConfig, saveCreditAiPromptConfig } from '@/lib/ai-prompts';
-
-function canManagePrompt(profile: { is_master?: boolean; perfil_id?: string } | null | undefined) {
-  const perfilId = String(profile?.perfil_id || '').trim().toLowerCase();
-  return Boolean(profile?.is_master || perfilId === 'admin');
-}
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Acesso negado para patrocinador.');
@@ -25,20 +19,6 @@ export async function PUT(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Acesso negado para patrocinador.');
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
-
-  const { data: profile, error: profileError } = await supabaseServer
-    .from('user_profiles')
-    .select('perfil_id, is_master')
-    .eq('user_id', auth.user.id)
-    .maybeSingle();
-
-  if (profileError) {
-    return NextResponse.json({ error: profileError.message || 'Falha ao verificar permissao.' }, { status: 500 });
-  }
-
-  if (!canManagePrompt(profile)) {
-    return NextResponse.json({ error: 'Sem permissao para editar prompts de IA.' }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));

@@ -443,18 +443,24 @@ function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete'
     'modalidade',
     'plano',
     'credit_type',
+    'produto',
+    'produto_consulta',
+    'produto_nome',
+    'consulta_produto',
+    'descricao',
+    'description',
   ];
 
   for (const key of preferredKeys) {
     if (!(key in row)) continue;
     const text = normalizeText(row[key]);
     if (!text) continue;
-    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
+    if (text.includes('completa') || text.includes('complete') || text.includes('full') || text.includes('total') || text.includes('bacen')) return 'complete';
     if (text.includes('basica') || text.includes('basic')) return 'basic';
   }
 
   const fallback = normalizeText(JSON.stringify(row));
-  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
+  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full') || fallback.includes('total') || fallback.includes('bacen')) return 'complete';
   if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
   return 'unknown';
 }
@@ -596,7 +602,9 @@ async function getConsultflexUsageForTenant(params: {
     const { data: creditRows, error: creditsErr } = await glassSupabase
       .from('orcamento_credito_consultas')
       .select('*')
-      .in('orcamento_id', ids);
+      .in('orcamento_id', ids)
+      .gte('created_at', startIso)
+      .lt('created_at', endIso);
 
     if (creditsErr) {
       throw new Error(creditsErr.message);

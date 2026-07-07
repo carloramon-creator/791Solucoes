@@ -44,6 +44,15 @@ function toFiniteNumber(value: unknown) {
   return Number.isFinite(num) ? num : null;
 }
 
+function splitInChunks<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 function classifyConsultflexExecutionStatus(row: Record<string, any>): ConsultflexExecutionStatus {
   const successBooleanKeys = ['success', 'sucesso', 'ok'];
   for (const key of successBooleanKeys) {
@@ -92,18 +101,24 @@ function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete'
     'modalidade',
     'plano',
     'credit_type',
+    'produto',
+    'produto_consulta',
+    'produto_nome',
+    'consulta_produto',
+    'descricao',
+    'description',
   ];
 
   for (const key of preferredKeys) {
     if (!(key in row)) continue;
     const text = normalizeText(row[key]);
     if (!text) continue;
-    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
+    if (text.includes('completa') || text.includes('complete') || text.includes('full') || text.includes('total') || text.includes('bacen')) return 'complete';
     if (text.includes('basica') || text.includes('basic')) return 'basic';
   }
 
   const fallback = normalizeText(JSON.stringify(row));
-  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
+  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full') || fallback.includes('total') || fallback.includes('bacen')) return 'complete';
   if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
   return 'unknown';
 }
@@ -175,7 +190,6 @@ export async function GET(req: Request) {
       { data: sectors, error: sectorsError },
       { data: sectorUsers, error: sectorUsersError },
       { data: messages, error: messagesError },
-      { data: consultflexRows, error: consultflexError },
       { data: planConfig, error: planConfigError },
       { data: invoices, error: invoicesError },
     ] = await Promise.all([
@@ -198,11 +212,6 @@ export async function GET(req: Request) {
         .gte('created_at', messagesPeriodStart)
         .lte('created_at', rangeEnd.toISOString())
         .in('sender_type', ['user', 'system']),
-      glass
-        .from('orcamento_credito_consultas')
-        .select('*')
-        .gte('created_at', messagesPeriodStart)
-        .lte('created_at', rangeEnd.toISOString()),
       supabaseServer
         .from('system_plans')
         .select('system_limits')
@@ -225,14 +234,8 @@ export async function GET(req: Request) {
       planConfigError ||
       invoicesError;
 
-    const consultflexHardError = consultflexError && !isMissingSchemaObjectError(consultflexError)
-      ? consultflexError
-      : null;
-
-    const firstBlockingError = firstError || consultflexHardError;
-
-    if (firstBlockingError) {
-      return NextResponse.json({ error: firstBlockingError.message }, { status: 500 });
+    if (firstError) {
+      return NextResponse.json({ error: firstError.message }, { status: 500 });
     }
 
     const rangeStartTime = rangeStart.getTime();
@@ -342,39 +345,71 @@ export async function GET(req: Request) {
       unknown: number;
     }>();
 
-    const safeConsultflexRows = consultflexError && isMissingSchemaObjectError(consultflexError)
-      ? []
-      : (consultflexRows || []);
+    // Consulta confiavel por tenant: resolve via orcamento_id -> vidracaria_id.
+    const { data: orcamentosRows, error: orcamentosError } = await glass
+      .from('orcamentos')
+      .select('id, vidracaria_id')
+      .gte('created_at', messagesPeriodStart)
+      .lte('created_at', rangeEnd.toISOString());
 
-    safeConsultflexRows.forEach((row: any) => {
-      const tenantId = String(row?.vidracaria_id || row?.tenant_id || '');
-      if (!tenantId) return;
+    if (orcamentosError && !isMissingSchemaObjectError(orcamentosError)) {
+      return NextResponse.json({ error: orcamentosError.message }, { status: 500 });
+    }
 
-      const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
-      const consultType = classifyConsultflexType(row as Record<string, any>);
-
-      if (!consultflexByTenant.has(tenantId)) {
-        consultflexByTenant.set(tenantId, {
-          basicSuccess: 0,
-          completeSuccess: 0,
-          failed: 0,
-          unknown: 0,
-        });
-      }
-
-      const bucket = consultflexByTenant.get(tenantId)!;
-
-      if (execution === 'failed') {
-        bucket.failed += 1;
-        return;
-      }
-
-      // Quando nao houver marcador explicito de erro, mas o tipo da consulta
-      // for reconhecido, tratamos como sucesso.
-      if (consultType === 'basic') bucket.basicSuccess += 1;
-      else if (consultType === 'complete') bucket.completeSuccess += 1;
-      else bucket.unknown += 1;
+    const orcamentoTenantMap = new Map<string, string>();
+    (orcamentosRows || []).forEach((row: any) => {
+      const orcamentoId = String(row?.id || '');
+      const tenantId = String(row?.vidracaria_id || '');
+      if (!orcamentoId || !tenantId) return;
+      orcamentoTenantMap.set(orcamentoId, tenantId);
     });
+
+    const orcamentoIds = Array.from(orcamentoTenantMap.keys());
+    const idChunks = splitInChunks(orcamentoIds, 500);
+
+    for (const ids of idChunks) {
+      const { data: consultRows, error: consultError } = await glass
+        .from('orcamento_credito_consultas')
+        .select('*')
+        .in('orcamento_id', ids)
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString());
+
+      if (consultError) {
+        if (isMissingSchemaObjectError(consultError)) {
+          continue;
+        }
+        return NextResponse.json({ error: consultError.message }, { status: 500 });
+      }
+
+      (consultRows || []).forEach((row: any) => {
+        const tenantId = String(orcamentoTenantMap.get(String(row?.orcamento_id || '')) || row?.vidracaria_id || row?.tenant_id || '');
+        if (!tenantId) return;
+
+        const execution = classifyConsultflexExecutionStatus(row as Record<string, any>);
+        const consultType = classifyConsultflexType(row as Record<string, any>);
+
+        if (!consultflexByTenant.has(tenantId)) {
+          consultflexByTenant.set(tenantId, {
+            basicSuccess: 0,
+            completeSuccess: 0,
+            failed: 0,
+            unknown: 0,
+          });
+        }
+
+        const bucket = consultflexByTenant.get(tenantId)!;
+
+        if (execution === 'failed') {
+          bucket.failed += 1;
+          return;
+        }
+
+        if (consultType === 'basic') bucket.basicSuccess += 1;
+        else if (consultType === 'complete') bucket.completeSuccess += 1;
+        else bucket.unknown += 1;
+      });
+    }
 
     const systemLimits = (planConfig as any)?.system_limits || {};
     const defaultUsersLimit = toNumber(systemLimits.usersIncluded, 10);

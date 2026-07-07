@@ -1097,17 +1097,7 @@ export default function AssinaturasPage() {
                                  }}
                                  className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
                                >
-                                 CFX-B {usage.usage.consultflexBasicSuccess}
-                               </button>
-                               <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
-                               >
-                                 CFX-C {usage.usage.consultflexCompleteSuccess}
+                                 FATURAMENTO {formatCurrency(usage.overage.values.consultflexTotal)}
                                </button>
                              </div>
                            ) : (

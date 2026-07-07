@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { 
   Bell, 
@@ -7,10 +8,8 @@ import {
   Check, 
   ShieldAlert, 
   Info,
-  ArrowLeft,
-  Link as LinkIcon,
-  Globe,
-  ExternalLink
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { ConfigTabs } from '@/components/ConfigTabs';
@@ -63,6 +62,43 @@ export default function NotificacoesPage() {
       </div>
 
       <ConfigTabs />
+
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-[#3b597b]">
+            <Sparkles size={20} />
+            <h2 className="text-sm uppercase tracking-widest">Prompts de IA</h2>
+          </div>
+          <span className="text-[9px] bg-[#3b597b]/10 text-[#3b597b] px-2 py-0.5 rounded uppercase tracking-widest">Novo</span>
+        </div>
+
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          <div className="lg:col-span-2 space-y-3">
+            <p className="text-sm text-slate-500 leading-relaxed max-w-2xl uppercase text-[11px] tracking-wide">
+              Aqui você administra o prompt usado na análise de crédito da Holding. É possível ajustar o texto do sistema, o template do usuário e manter o fallback local ativo.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                Prompt do sistema editável
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                Template com contexto JSON
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-700">
+                Histórico por versão
+              </div>
+            </div>
+          </div>
+
+          <Link
+            href="/configuracoes/notificacoes/prompts-ia"
+            className="bg-[#3b597b] hover:bg-[#2e4763] text-white px-6 py-4 rounded-xl flex items-center justify-center gap-2 transition-all uppercase text-[10px] tracking-widest shadow-sm"
+          >
+            Abrir Editor
+            <ExternalLink size={16} />
+          </Link>
+        </div>
+      </div>
 
       {/* Destaque Inter */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

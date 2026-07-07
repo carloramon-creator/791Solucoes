@@ -68,6 +68,7 @@ interface UsageTenantRow {
     consultflexSuccessTotal: number;
     consultflexFailed: number;
     consultflexUnknown: number;
+    consultflexCountedRows: number;
   };
   limits: {
     users: number;
@@ -1267,6 +1268,9 @@ export default function AssinaturasPage() {
                     <p className="mt-1 text-lg font-black text-indigo-700">{selectedUsage.usage.consultflexFailed + selectedUsage.usage.consultflexUnknown}</p>
                   </div>
                 </div>
+                <p className="mt-3 text-[10px] font-semibold text-indigo-600">
+                  Linhas consideradas no período: {selectedUsage.usage.consultflexCountedRows}
+                </p>
               </div>
 
               <div className="text-right">

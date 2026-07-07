@@ -113,12 +113,16 @@ function classifyConsultflexType(row: Record<string, any>): 'basic' | 'complete'
     if (!(key in row)) continue;
     const text = normalizeText(row[key]);
     if (!text) continue;
-    if (text.includes('completa') || text.includes('complete') || text.includes('full') || text.includes('total') || text.includes('bacen')) return 'complete';
+
+    const hasCreditoContext = text.includes('credito') || text.includes('cred');
+    if (text.includes('completa') || text.includes('complete') || text.includes('full')) return 'complete';
+    if ((text.includes('total') || text.includes('bacen')) && hasCreditoContext) return 'complete';
     if (text.includes('basica') || text.includes('basic')) return 'basic';
   }
 
   const fallback = normalizeText(JSON.stringify(row));
-  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full') || fallback.includes('total') || fallback.includes('bacen')) return 'complete';
+  if (fallback.includes('completa') || fallback.includes('complete') || fallback.includes('full')) return 'complete';
+  if ((fallback.includes('total') || fallback.includes('bacen')) && (fallback.includes('credito') || fallback.includes('credito'))) return 'complete';
   if (fallback.includes('basica') || fallback.includes('basic')) return 'basic';
   return 'unknown';
 }
@@ -485,6 +489,11 @@ export async function GET(req: Request) {
           consultflexSuccessTotal: consultflexUsage.basicSuccess + consultflexUsage.completeSuccess,
           consultflexFailed: consultflexUsage.failed,
           consultflexUnknown: consultflexUsage.unknown,
+          consultflexCountedRows:
+            consultflexUsage.basicSuccess
+            + consultflexUsage.completeSuccess
+            + consultflexUsage.failed
+            + consultflexUsage.unknown,
         },
         limits: {
           users: usersLimit,

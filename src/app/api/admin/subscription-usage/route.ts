@@ -364,16 +364,15 @@ export async function GET(req: Request) {
       ? []
       : (consultRowsByPeriod || []);
 
-    // Fallback de vinculo: quando a consulta nao traz tenant direto, resolvemos via orcamento_id.
-    const missingTenantOrcamentoIds = Array.from(new Set(
+    // Vinculo primario por orcamento_id para evitar atribuicao incorreta por colunas genericas.
+    const linkedOrcamentoIds = Array.from(new Set(
       safeConsultRows
-        .filter((row: any) => !row?.vidracaria_id && !row?.tenant_id && row?.orcamento_id)
-        .map((row: any) => String(row.orcamento_id))
+        .map((row: any) => String(row?.orcamento_id || ''))
         .filter(Boolean)
     ));
 
     const orcamentoTenantMap = new Map<string, string>();
-    const missingTenantChunks = splitInChunks(missingTenantOrcamentoIds, 500);
+    const missingTenantChunks = splitInChunks(linkedOrcamentoIds, 500);
     for (const ids of missingTenantChunks) {
       const { data: linkedOrcamentos, error: linkedOrcamentosError } = await glass
         .from('orcamentos')
@@ -396,10 +395,11 @@ export async function GET(req: Request) {
     }
 
     safeConsultRows.forEach((row: any) => {
+      const linkedTenantId = orcamentoTenantMap.get(String(row?.orcamento_id || ''));
       const tenantId = String(
-        row?.vidracaria_id
+        linkedTenantId
+        || row?.vidracaria_id
         || row?.tenant_id
-        || orcamentoTenantMap.get(String(row?.orcamento_id || ''))
         || ''
       );
       if (!tenantId) return;

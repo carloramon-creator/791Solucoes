@@ -542,35 +542,6 @@ async function getConsultflexUsageForTenant(params: {
     };
   };
 
-  // Preferencia: consumo diretamente por tenant no banco 791glass.
-  const directTenantColumns = ['vidracaria_id', 'tenant_id'] as const;
-  for (const tenantColumn of directTenantColumns) {
-    const { data: directRows, error: directErr } = await glassSupabase
-      .from('orcamento_credito_consultas')
-      .select('*')
-      .eq(tenantColumn, tenantId)
-      .gte('created_at', startIso)
-      .lt('created_at', endIso);
-
-    if (!directErr) {
-      const summary = summarizeRows((directRows || []) as any[]);
-
-      return {
-        source: `direct:${tenantColumn}`,
-        basic: summary.basic,
-        complete: summary.complete,
-        failed: summary.failed,
-        unknown: summary.unknown,
-        blocked: false,
-        blockReason: null,
-      };
-    }
-
-    if (!isMissingColumnError(directErr)) {
-      throw new Error(directErr.message);
-    }
-  }
-
   const { data: orcamentosRows, error: orcamentosErr } = await glassSupabase
     .from('orcamentos')
     .select('id')

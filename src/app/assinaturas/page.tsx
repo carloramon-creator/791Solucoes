@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Check,
   FileCheck,
+  FileText,
   Loader2,
   Trash2
 } from 'lucide-react';
@@ -173,6 +174,19 @@ interface GlassUserRow {
   vidracariaAtiva: boolean | null;
 }
 
+interface TenantInvoiceHistoryItem {
+  id: string;
+  createdAt: string;
+  reference: string;
+  type: string;
+  description: string;
+  status: string;
+  value: number;
+  paymentUrl: string | null;
+  fiscalUrl: string | null;
+  reportUrl: string | null;
+}
+
 import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
@@ -219,6 +233,10 @@ export default function AssinaturasPage() {
   const [closingPreviewLoading, setClosingPreviewLoading] = useState(false);
   const [closingPreviewError, setClosingPreviewError] = useState('');
   const [closingPreviewReport, setClosingPreviewReport] = useState<ClosingPreviewReport | null>(null);
+  const [invoiceHistoryTenant, setInvoiceHistoryTenant] = useState<Vidracaria | null>(null);
+  const [invoiceHistory, setInvoiceHistory] = useState<TenantInvoiceHistoryItem[]>([]);
+  const [invoiceHistoryLoading, setInvoiceHistoryLoading] = useState(false);
+  const [invoiceHistoryError, setInvoiceHistoryError] = useState('');
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -398,6 +416,48 @@ export default function AssinaturasPage() {
       setClosingPreviewReport(null);
     } finally {
       setClosingPreviewLoading(false);
+    }
+  }
+
+  async function openInvoiceHistory(tenant: Vidracaria) {
+    setInvoiceHistoryTenant(tenant);
+    setInvoiceHistory([]);
+    setInvoiceHistoryError('');
+    setInvoiceHistoryLoading(true);
+    try {
+      const { data: sessionData } = await authClient.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão não encontrada. Faça login novamente.');
+      const response = await fetch(`/api/admin/tenant-invoices?tenantId=${encodeURIComponent(tenant.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Falha ao carregar histórico de faturas.');
+      setInvoiceHistory(Array.isArray(payload?.invoices) ? payload.invoices : []);
+    } catch (error: any) {
+      setInvoiceHistoryError(error?.message || 'Falha ao carregar histórico de faturas.');
+    } finally {
+      setInvoiceHistoryLoading(false);
+    }
+  }
+
+  async function downloadConsultflexReport(reportUrl: string, reference: string) {
+    try {
+      const { data: sessionData } = await authClient.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão não encontrada.');
+      const response = await fetch(reportUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error('Não foi possível gerar o demonstrativo.');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `consultflex-${reference}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(error?.message || 'Não foi possível baixar o demonstrativo.');
     }
   }
 
@@ -1277,6 +1337,12 @@ export default function AssinaturasPage() {
 
               <div className="text-right">
                 <button
+                  onClick={() => openInvoiceHistory(selectedUsageTenant)}
+                  className="mr-3 inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-700 hover:bg-indigo-100"
+                >
+                  <FileText size={15} /> Histórico de Faturas
+                </button>
+                <button
                   onClick={() => {
                     setSelectedUsage(null);
                     setSelectedUsageTenant(null);
@@ -1286,6 +1352,40 @@ export default function AssinaturasPage() {
                   Fechar Painel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {invoiceHistoryTenant && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/40 px-6 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Histórico de Faturamento</p>
+                <h3 className="mt-1 text-xl font-black text-slate-800">{invoiceHistoryTenant.nome}</h3>
+              </div>
+              <button onClick={() => setInvoiceHistoryTenant(null)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
+            </div>
+            <div className="max-h-[65vh] overflow-auto">
+              {invoiceHistoryLoading ? <div className="p-12 text-center text-sm font-semibold text-slate-400">Carregando faturas...</div> : invoiceHistoryError ? <div className="p-8 text-sm font-semibold text-red-600">{invoiceHistoryError}</div> : (
+                <table className="w-full text-left">
+                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-5 py-3">Data</th><th className="px-5 py-3">Tipo</th><th className="px-5 py-3">Descrição</th><th className="px-5 py-3 text-center">Status</th><th className="px-5 py-3 text-right">Valor</th><th className="px-5 py-3 text-center">Pgto</th><th className="px-5 py-3 text-center">Fiscal</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {invoiceHistory.length === 0 ? <tr><td colSpan={7} className="px-5 py-10 text-center text-sm font-semibold text-slate-400">Nenhuma fatura encontrada.</td></tr> : invoiceHistory.map((invoice) => (
+                      <tr key={invoice.id} className="text-[12px] text-slate-700">
+                        <td className="px-5 py-3 whitespace-nowrap">{new Date(invoice.createdAt).toLocaleDateString('pt-BR')}</td>
+                        <td className="px-5 py-3"><span className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase ${invoice.type === 'Excedente' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>{invoice.type}</span></td>
+                        <td className="px-5 py-3"><div className="font-black text-[#3b597b]">{invoice.reference}</div><div className="mt-0.5 text-[11px] text-slate-500">{invoice.description}</div></td>
+                        <td className="px-5 py-3 text-center"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold ${['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'PAGO' : 'PENDENTE'}</span></td>
+                        <td className="px-5 py-3 text-right font-bold whitespace-nowrap">{formatCurrency(invoice.value)}</td>
+                        <td className="px-5 py-3 text-center">{invoice.paymentUrl ? <a href={invoice.paymentUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'Ver' : 'Pagar'}</a> : '—'}</td>
+                        <td className="px-5 py-3 text-center"><div className="flex items-center justify-center gap-2">{invoice.reportUrl && <button onClick={() => downloadConsultflexReport(invoice.reportUrl || '', invoice.reference)} title="Baixar demonstrativo" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><FileText size={14} /></button>}{invoice.fiscalUrl && <a href={invoice.fiscalUrl} target="_blank" rel="noreferrer" title="Ver nota fiscal" className="rounded-lg border border-purple-200 bg-purple-50 p-2 text-purple-600"><FileCheck size={14} /></a>}</div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>

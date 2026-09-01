@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { PaymentProcessor } from '@/services/payment-processor';
+import { emitirNFeExcedentePago, PaymentProcessor } from '@/services/payment-processor';
 import { supabase } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
         
         const { data: financeRecord, error: financeRecordError } = await holdingService
           .from('system_finance_records')
-          .select('id, metadata')
+          .select('id, value, metadata')
             .eq('id', recordId)
           .single();
 
@@ -136,6 +136,19 @@ export async function POST(req: Request) {
               recordId,
               metadata: mergedMetadata,
             });
+
+            try {
+              await emitirNFeExcedentePago({
+                holdingSupabase: holdingService,
+                glassSupabase: glassService,
+                financeRecordId: recordId,
+                metadata: mergedMetadata,
+                valor: Number(financeRecord.value || payment.value || 0),
+                asaasPaymentId: String(payment.id || ''),
+              });
+            } catch (invoiceError: any) {
+              console.error('[ASAAS WEBHOOK] Falha ao emitir NF-e do excedente:', invoiceError?.message || invoiceError);
+            }
           } else if (String(existingMetadata.kind || '') === 'extra_quotas') {
              const sponsorId = existingMetadata.sponsor_id;
              const qty = Number(existingMetadata.quantity) || 0;

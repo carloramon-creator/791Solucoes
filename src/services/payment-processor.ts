@@ -596,65 +596,6 @@ async function getConsultflexUsageForTenant(params: {
   };
 }
 
-async function getConsultflexAmountFromProvider(params: {
-  providerConfig: any;
-  tenantId: string;
-  refMonth: string;
-}) {
-  const { providerConfig, tenantId, refMonth } = params;
-
-  const baseUrl = String(providerConfig?.consulflexBillingUrl || providerConfig?.consultflexBillingUrl || '').trim();
-  const apiKey = String(providerConfig?.consulflexApiKey || providerConfig?.consultflexApiKey || '').trim();
-  if (!baseUrl || !apiKey) {
-    return { enabled: false as const };
-  }
-
-  const endpoint = new URL(baseUrl);
-  endpoint.searchParams.set('tenantId', tenantId);
-  endpoint.searchParams.set('refMonth', refMonth);
-
-  const response = await fetch(endpoint.toString(), {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'x-api-key': apiKey,
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Consulflex billing API ${response.status}: ${text.slice(0, 300)}`);
-  }
-
-  const payload = await response.json();
-  const amountCandidates = [
-    payload?.amount,
-    payload?.value,
-    payload?.total,
-    payload?.consultflexAmount,
-    payload?.consultflex_total,
-    payload?.data?.amount,
-    payload?.data?.value,
-    payload?.data?.total,
-    payload?.data?.consultflexAmount,
-  ];
-
-  const amount = amountCandidates
-    .map(toFiniteNumber)
-    .find((num) => num != null && num >= 0);
-
-  if (amount == null) {
-    throw new Error('Consulflex billing API retornou sem valor numérico válido.');
-  }
-
-  return {
-    enabled: true as const,
-    amount,
-    payload,
-  };
-}
-
 export async function scheduleMonthlyOverageChargeForTenant({
   holdingSupabase,
   glassSupabase,
@@ -840,25 +781,8 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   const financeApiConfig = (financeApiData?.value || {}) as any;
 
-  let consultflexApiAmount: number | null = null;
-  let consultflexApiMeta: any = null;
-  try {
-    const providerResult = await getConsultflexAmountFromProvider({
-      providerConfig: financeApiConfig,
-      tenantId,
-      refMonth,
-    });
-
-    if (providerResult.enabled) {
-      consultflexApiAmount = Number(providerResult.amount || 0);
-      consultflexApiMeta = providerResult.payload || null;
-    }
-  } catch (providerErr: any) {
-    console.warn(`[PAYMENT PROCESSOR] Falha ao consultar API Consulflex para ${tenantId}: ${providerErr?.message || providerErr}`);
-  }
-
   const consultflexCalculatedTotal = values.consultflexBasic + values.consultflexComplete;
-  const consultflexTotal = consultflexApiAmount != null ? consultflexApiAmount : consultflexCalculatedTotal;
+  const consultflexTotal = consultflexCalculatedTotal;
   const totalOverage = values.users + values.whatsappUsers + values.messages + consultflexTotal;
 
   const closingDetails = {
@@ -870,9 +794,9 @@ export async function scheduleMonthlyOverageChargeForTenant({
       complete: consultflexUsage.complete,
       failed: consultflexUsage.failed,
       unknown: consultflexUsage.unknown,
-      amountSource: consultflexApiAmount != null ? 'consulflex_api' : 'internal_calculation',
+      amountSource: 'holding_system_plan',
       amountCalculated: consultflexCalculatedTotal,
-      amountApi: consultflexApiAmount,
+      amountApi: null,
       amountFinal: consultflexTotal,
     },
     extras: {
@@ -912,7 +836,6 @@ export async function scheduleMonthlyOverageChargeForTenant({
   if (extras.messages > 0) itemLabels.push(`Mensagens extras (${extras.messages})`);
   if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
   if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa (${consultflexUsage.complete})`);
-  if (consultflexApiAmount != null) itemLabels.push('ConsultFlex (valor oficial API)');
 
   const description = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
 
@@ -930,10 +853,10 @@ export async function scheduleMonthlyOverageChargeForTenant({
       complete: consultflexUsage.complete,
       failed: consultflexUsage.failed,
       unknown: consultflexUsage.unknown,
-      amount_source: consultflexApiAmount != null ? 'consulflex_api' : 'internal_calculation',
+      amount_source: 'holding_system_plan',
       amount_calculated: consultflexCalculatedTotal,
-      amount_api: consultflexApiAmount,
-      api_payload: consultflexApiMeta,
+      amount_api: null,
+      api_payload: null,
     },
     prices,
     values: {
@@ -1087,6 +1010,48 @@ async function persistInvoiceFailure({
   }
 }
 
+export async function emitirNFeExcedentePago({
+  holdingSupabase,
+  glassSupabase,
+  financeRecordId,
+  metadata,
+  valor,
+  asaasPaymentId,
+}: {
+  holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
+  glassSupabase: SupabaseClient<any, 'public', any, any, any>;
+  financeRecordId: string;
+  metadata: Record<string, any>;
+  valor: number;
+  asaasPaymentId: string;
+}) {
+  const tenantId = String(metadata?.tenant_id || '').trim();
+  if (!tenantId) throw new Error('Excedente sem vidraçaria vinculada para emissão fiscal.');
+
+  const basic = Number(metadata?.consultflex?.basic || 0);
+  const complete = Number(metadata?.consultflex?.complete || 0);
+  const refMonth = String(metadata?.ref_month || new Date().toISOString().slice(0, 7));
+  const discriminacao = `${basic} Consultas básicas; ${complete} Consultas completas`;
+
+  await emitirNFeSaas({
+    holdingSupabase,
+    glassSupabase,
+    vidracariaId: tenantId,
+    valor,
+    ciclo: 'overage',
+    asaasPaymentId,
+    mesRef: refMonth,
+    discriminacao,
+    invoiceMetadata: {
+      kind: 'overage',
+      finance_record_id: financeRecordId,
+      period_start: metadata?.period_start || null,
+      period_end: metadata?.period_end || null,
+      consultflex: { basic, complete },
+    },
+  });
+}
+
 /**
  * Emite NF-e para assinatura SaaS 791glass após pagamento confirmado.
  * Busca dados da vidraçaria no Glass, configurações do prestador na Holding,
@@ -1099,6 +1064,9 @@ async function emitirNFeSaas({
   valor,
   ciclo,
   asaasPaymentId,
+  mesRef: mesRefParam,
+  discriminacao,
+  invoiceMetadata,
 }: {
   holdingSupabase: SupabaseClient<any, 'public', any, any, any>;
   glassSupabase: SupabaseClient<any, 'public', any, any, any>;
@@ -1106,6 +1074,9 @@ async function emitirNFeSaas({
   valor: number;
   ciclo: string;
   asaasPaymentId?: string | null;
+  mesRef?: string;
+  discriminacao?: string;
+  invoiceMetadata?: Record<string, any>;
 }) {
   // Evita NF-e duplicada para o mesmo pagamento do Asaas (idempotência de webhook)
   if (asaasPaymentId) {
@@ -1121,7 +1092,7 @@ async function emitirNFeSaas({
     }
   }
 
-  const mesRef = new Date().toISOString().slice(0, 7); // "2026-06"
+  const mesRef = mesRefParam || new Date().toISOString().slice(0, 7);
 
   // Busca dados da vidraçaria (Tomador)
   const { data: vidracaria, error: vErr } = await glassSupabase
@@ -1187,7 +1158,7 @@ async function emitirNFeSaas({
     servico: {
       valorServicos: valor,
       codigoItemListaServico: config.tax_code || '01.01.01',
-      discriminacao: `Assinatura 791glass - Ciclo ${ciclo} - Ref. ${mesAno}`,
+      discriminacao: discriminacao || `Assinatura 791glass - Ciclo ${ciclo} - Ref. ${mesAno}`,
       aliquota: 0,
     },
   };
@@ -1219,6 +1190,7 @@ async function emitirNFeSaas({
       asaas_payment_id: asaasPaymentId,
       xml: result.xml,
       origem: 'webhook_asaas',
+      ...(invoiceMetadata || {}),
     },
   });
 

@@ -187,6 +187,18 @@ interface TenantInvoiceHistoryItem {
   reportUrl: string | null;
 }
 
+interface OverageDetailItem {
+  id: string;
+  name: string;
+  document: string;
+  user: string;
+  seller: string;
+  orderNumber: string;
+  value: number;
+  source: string;
+  type: string;
+}
+
 import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
@@ -237,6 +249,10 @@ export default function AssinaturasPage() {
   const [invoiceHistory, setInvoiceHistory] = useState<TenantInvoiceHistoryItem[]>([]);
   const [invoiceHistoryLoading, setInvoiceHistoryLoading] = useState(false);
   const [invoiceHistoryError, setInvoiceHistoryError] = useState('');
+  const [overageDetailsInvoice, setOverageDetailsInvoice] = useState<TenantInvoiceHistoryItem | null>(null);
+  const [overageDetails, setOverageDetails] = useState<OverageDetailItem[]>([]);
+  const [overageDetailsLoading, setOverageDetailsLoading] = useState(false);
+  const [overageDetailsError, setOverageDetailsError] = useState('');
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -461,6 +477,29 @@ export default function AssinaturasPage() {
       URL.revokeObjectURL(url);
     } catch (error: any) {
       alert(error?.message || 'Não foi possível baixar o demonstrativo.');
+    }
+  }
+
+  async function openOverageDetails(invoice: TenantInvoiceHistoryItem) {
+    setOverageDetailsInvoice(invoice);
+    setOverageDetails([]);
+    setOverageDetailsError('');
+    setOverageDetailsLoading(true);
+    try {
+      const { data: sessionData } = await authClient.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão não encontrada. Faça login novamente.');
+      const response = await fetch(`${invoice.reportUrl}${invoice.reportUrl.includes('?') ? '&' : '?'}format=json`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Falha ao carregar os detalhes do excedente.');
+      setOverageDetails(Array.isArray(payload?.items) ? payload.items : []);
+    } catch (error: any) {
+      setOverageDetailsError(error?.message || 'Falha ao carregar os detalhes do excedente.');
+    } finally {
+      setOverageDetailsLoading(false);
     }
   }
 
@@ -1398,13 +1437,46 @@ export default function AssinaturasPage() {
                         <td className="px-5 py-3 text-center"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold ${['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'PAGO' : 'PENDENTE'}</span></td>
                         <td className="px-5 py-3 text-right font-bold whitespace-nowrap">{formatCurrency(invoice.value)}</td>
                         <td className="px-5 py-3 text-center">{invoice.paymentUrl ? <a href={invoice.paymentUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'Ver' : 'Pagar'}</a> : '—'}</td>
-                        <td className="px-5 py-3 text-center">{invoice.type === 'Excedente' && invoice.reportUrl ? <button onClick={() => downloadConsultflexReport(invoice.reportUrl || '', invoice.reference)} aria-label="Detalhar fatura do excedente" title="Detalhar fatura do excedente" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100"><FileText size={14} /> Detalhar</button> : <span className="text-slate-300">-</span>}</td>
+                        <td className="px-5 py-3 text-center">{invoice.type === 'Excedente' && invoice.reportUrl ? <button onClick={() => openOverageDetails(invoice)} aria-label="Detalhar fatura do excedente" title="Detalhar fatura do excedente" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100"><FileText size={14} /> Detalhar</button> : <span className="text-slate-300">-</span>}</td>
                         <td className="px-5 py-3 text-center">{invoice.fiscalUrl && <a href={invoice.fiscalUrl} target="_blank" rel="noreferrer" title="Ver nota fiscal" aria-label="Ver nota fiscal" className="inline-flex rounded-lg border border-purple-200 bg-purple-50 p-2 text-purple-600"><FileCheck size={14} /></a>}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overageDetailsInvoice && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-7xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Detalhamento do excedente</p>
+                <h3 className="mt-1 text-xl font-black text-slate-800">{invoiceHistoryTenant?.nome} · {overageDetailsInvoice.reference}</h3>
+                <p className="mt-1 text-xs text-slate-500">Cada linha representa uma utilização incluída nesta cobrança.</p>
+              </div>
+              <button onClick={() => setOverageDetailsInvoice(null)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto">
+              {overageDetailsLoading ? <div className="p-12 text-center text-sm font-semibold text-slate-400">Carregando utilizações...</div> : overageDetailsError ? <div className="p-8 text-sm font-semibold text-red-600">{overageDetailsError}</div> : (
+                <table className="w-full min-w-[1050px] text-left">
+                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-4 py-3">Nome</th><th className="px-4 py-3">CPF/CNPJ</th><th className="px-4 py-3">Usuário</th><th className="px-4 py-3">Vendedor</th><th className="px-4 py-3">Orç/Ped</th><th className="px-4 py-3 text-right">Valor</th><th className="px-4 py-3">Fonte</th><th className="px-4 py-3">Tipo</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {overageDetails.length === 0 ? <tr><td colSpan={8} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Nenhuma utilização encontrada.</td></tr> : overageDetails.map((item) => (
+                      <tr key={item.id} className="text-xs text-slate-700 hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-800">{item.name}</td><td className="px-4 py-3 whitespace-nowrap">{item.document}</td><td className="px-4 py-3">{item.user}</td><td className="px-4 py-3">{item.seller}</td><td className="px-4 py-3 whitespace-nowrap font-semibold">{item.orderNumber}</td><td className="px-4 py-3 text-right font-black whitespace-nowrap">{formatCurrency(item.value)}</td><td className="px-4 py-3">{item.source}</td><td className="px-4 py-3 whitespace-nowrap">{item.type}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/30 px-6 py-4">
+              {overageDetailsInvoice.reportUrl && <button onClick={() => downloadConsultflexReport(overageDetailsInvoice.reportUrl || '', overageDetailsInvoice.reference)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100"><FileText size={15} /> Baixar PDF</button>}
+              <button onClick={() => setOverageDetailsInvoice(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100">Fechar</button>
             </div>
           </div>
         </div>

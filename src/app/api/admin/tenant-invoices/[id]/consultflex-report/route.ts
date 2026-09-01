@@ -62,7 +62,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     for (let index = 0; index < orcamentoIds.length; index += 500) {
       const result = await glass
         .from('orcamento_credito_consultas')
-        .select('*')
+        .select('*, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(*)')
         .in('orcamento_id', orcamentoIds.slice(index, index + 500))
         .in('tipo_consulta', ['basico', 'completo'])
         .gte('created_at', metadata.period_start)
@@ -86,6 +86,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const sellers = Object.fromEntries((sellersResult.data || []).map((row: any) => [row.id, text(row.nome)]));
   const prices = metadata.prices || {};
 
+  const detailItems = rows.map((row: any, index) => {
+    const pessoa = Array.isArray(row.pessoa) ? row.pessoa[0] : row.pessoa;
+    const orcamento = Array.isArray(row.orcamento) ? row.orcamento[0] : row.orcamento;
+    const orderNumber = orcamento?.numero_orcamento
+      || orcamento?.numero_pedido
+      || orcamento?.numero
+      || orcamento?.codigo
+      || row.numero_orcamento
+      || row.numero_pedido
+      || row.orcamento_id
+      || '-';
+    return {
+      id: String(row.id || `${row.orcamento_id || 'consumo'}-${index}`),
+      name: text(pessoa?.nome || row.cliente_nome, 'Consumo ConsultFlex'),
+      document: text(pessoa?.documento || row.cliente_documento),
+      user: users[row.usuario_id] || text(row.usuario_id, 'Não identificado'),
+      seller: sellers[row._seller_id] || text(pessoa?.responsavel_comercial || row.responsavel_comercial, 'Não identificado'),
+      orderNumber: String(orderNumber),
+      value: Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice),
+      source: 'Consultflex',
+      type: row.tipo_consulta === 'completo' ? 'ConsultFlex Completa' : 'ConsultFlex Básica',
+    };
+  });
+
+  if (new URL(req.url).searchParams.get('format') === 'json') {
+    return NextResponse.json({
+      invoiceId: record.id,
+      reference: metadata.ref_month,
+      items: detailItems,
+      extras: metadata.extras || {},
+      values: metadata.values || {},
+    });
+  }
+
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 32 });
   const stream = new PassThrough(); const chunks: Buffer[] = [];
   stream.on('data', (chunk) => chunks.push(chunk)); doc.pipe(stream);
@@ -96,23 +130,28 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   doc.fillColor('#FFFFFF').fontSize(18).text('DEMONSTRATIVO DE EXCEDENTES', 125, 24);
   doc.fontSize(14).text(`Fatura nº ${formatReference(metadata.ref_month)}`, 650, 21, { width: 155, align: 'right' });
   doc.fontSize(9).text(`${text(tenantResult.data?.nome, 'Vidracaria')} - ${formatDocument(tenantResult.data?.cnpj)}        |        Referência ${formatReferenceMonth(metadata.ref_month)}        |        Período: ${formatPeriod(metadata.period_start, metadata.period_end)}`, 125, 49);
-  const columns = [32, 145, 230, 345, 460, 575, 705];
-  const labels = ['Nome', 'CPF/CNPJ', 'Usuário', 'Vendedor', 'Tipo', 'Fonte', 'Valor'];
+  const columns = [32, 138, 222, 288, 389, 490, 596, 712];
+  const columnWidths = [100, 78, 60, 95, 95, 100, 110, 95];
+  const labels = ['Nome', 'CPF/CNPJ', 'Ped/Orç', 'Usuário', 'Vendedor', 'Tipo', 'Fonte', 'Valor'];
   doc.fillColor('#1E293B').fontSize(9); labels.forEach((label, index) => doc.text(label, columns[index], 92));
   let y = 110;
   for (const row of rows || []) {
     if (y > 520) { doc.addPage(); y = 42; labels.forEach((label, index) => doc.text(label, columns[index], y)); y += 18; }
     const type = row.tipo_consulta === 'completo' ? 'Consultflex Completa' : 'Consultflex Básica';
+    const pessoa = Array.isArray(row.pessoa) ? row.pessoa[0] : row.pessoa;
+    const orcamento = Array.isArray(row.orcamento) ? row.orcamento[0] : row.orcamento;
+    const orderNumber = orcamento?.numero_orcamento || orcamento?.numero_pedido || orcamento?.numero || orcamento?.codigo || row.orcamento_id || '-';
     const values = [
-      text(row.cliente_nome || row.pessoa_nome, 'Consumo ConsultFlex'),
-      text(row.cliente_documento || row.pessoa_documento),
+      text(pessoa?.nome || row.cliente_nome, 'Consumo ConsultFlex'),
+      text(pessoa?.documento || row.cliente_documento),
+      String(orderNumber),
       users[row.usuario_id] || 'Não identificado',
-      sellers[row._seller_id] || text(row.responsavel_comercial, 'Não identificado'),
+      sellers[row._seller_id] || text(pessoa?.responsavel_comercial || row.responsavel_comercial, 'Não identificado'),
       type,
       'Consultflex',
       money(Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice)),
     ];
-    doc.fillColor('#334155').fontSize(8); values.forEach((value, index) => doc.text(value, columns[index], y, { width: index === 0 ? 108 : index === 1 ? 82 : index === 2 || index === 3 ? 110 : index === 4 ? 100 : index === 5 ? 135 : 70, ellipsis: true, lineBreak: false }));
+    doc.fillColor('#334155').fontSize(8); values.forEach((value, index) => doc.text(value, columns[index], y, { width: columnWidths[index], ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }
   const extras = metadata.extras || {}; const values = metadata.values || {};
@@ -123,8 +162,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   ].filter((item) => Number(item[3]) > 0);
   for (const [type, name, reason, value] of extraItems) {
     if (y > 520) { doc.addPage(); y = 42; labels.forEach((label, index) => doc.text(label, columns[index], y)); y += 18; }
-    const rowValues = [name, '-', '-', '-', type, reason, money(Number(value))];
-    doc.fillColor('#334155').fontSize(8); rowValues.forEach((item, index) => doc.text(String(item), columns[index], y, { width: index === 0 ? 108 : index === 1 ? 82 : index === 2 || index === 3 ? 110 : index === 4 ? 100 : index === 5 ? 135 : 70, ellipsis: true, lineBreak: false }));
+    const rowValues = [name, '-', '-', '-', '-', type, reason, money(Number(value))];
+    doc.fillColor('#334155').fontSize(8); rowValues.forEach((item, index) => doc.text(String(item), columns[index], y, { width: columnWidths[index], ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }
   doc.fillColor('#0F172A').fontSize(11).text(`Itens faturados: ${(rows || []).length + extraItems.length}`, 32, y + 15);

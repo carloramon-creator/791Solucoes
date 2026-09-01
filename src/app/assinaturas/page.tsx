@@ -486,6 +486,7 @@ export default function AssinaturasPage() {
     setOverageDetailsError('');
     setOverageDetailsLoading(true);
     try {
+      if (!invoice.reportUrl) throw new Error('Demonstrativo não disponível para esta fatura.');
       const { data: sessionData } = await authClient.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão não encontrada. Faça login novamente.');

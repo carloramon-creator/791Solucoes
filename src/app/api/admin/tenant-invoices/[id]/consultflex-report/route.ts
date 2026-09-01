@@ -6,6 +6,7 @@ import path from 'path';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 import { getGlassClient } from '@/lib/glass-client';
+import { notoSansBase64 } from '@/services/nfse/noto-sans-base64';
 
 const text = (value: unknown, fallback = '-') => String(value || '').trim() || fallback;
 const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
@@ -120,9 +121,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   }
 
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 32 });
+  try {
+  const appFontBuffer = Buffer.from(notoSansBase64, 'base64');
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 32, font: appFontBuffer as any });
   const stream = new PassThrough(); const chunks: Buffer[] = [];
-  stream.on('data', (chunk) => chunks.push(chunk)); doc.pipe(stream);
+  stream.on('data', (chunk) => chunks.push(chunk));
+  doc.registerFont('AppFont', appFontBuffer);
+  doc.font('AppFont');
+  doc.pipe(stream);
   doc.rect(0, 0, 105, 72).fill('#FFFFFF');
   doc.rect(105, 0, doc.page.width - 105, 72).fill('#0E6B5F');
   const logoPath = path.join(process.cwd(), 'public', 'logo.png');
@@ -168,6 +174,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
   doc.fillColor('#0F172A').fontSize(11).text(`Itens faturados: ${(rows || []).length + extraItems.length}`, 32, y + 15);
   doc.text(`Total cobrado: ${money(Number(record.value || 0))}`, 650, y + 15, { width: 155, align: 'right' });
-  doc.end(); await new Promise<void>((resolve) => stream.on('end', resolve));
-  return new NextResponse(Buffer.concat(chunks), { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="consultflex-${text(metadata.ref_month)}.pdf"` } });
+  doc.end();
+  const buffer = await new Promise<Buffer>((resolve, reject) => {
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+  return new Response(new Uint8Array(buffer), { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="consultflex-${text(metadata.ref_month)}.pdf"` } });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Falha ao gerar o demonstrativo em PDF.' }, { status: 500 });
+  }
 }

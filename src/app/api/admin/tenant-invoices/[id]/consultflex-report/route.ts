@@ -49,23 +49,35 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let glass: Awaited<ReturnType<typeof getGlassClient>>;
   try {
     glass = await getGlassClient();
-    const result = await glass
-      .from('orcamento_credito_consultas')
-      .select('usuario_id, tipo_consulta, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(vendedor_id)')
-      .eq('vidracaria_id', metadata.tenant_id)
-      .in('tipo_consulta', ['basico', 'completo'])
-      .in('status_consulta', ['atencao', 'aprovado'])
-      .gte('created_at', metadata.period_start)
-      .lt('created_at', metadata.period_end)
-      .order('created_at');
-    if (result.error) return NextResponse.json({ error: `Falha ao consultar excedentes no Glass: ${result.error.message}` }, { status: 502 });
-    rows = result.data || [];
+    const orcamentosResult = await glass
+      .from('orcamentos')
+      .select('id, vendedor_id')
+      .eq('vidracaria_id', metadata.tenant_id);
+    if (orcamentosResult.error) return NextResponse.json({ error: `Falha ao consultar orçamentos no Glass: ${orcamentosResult.error.message}` }, { status: 502 });
+
+    const orcamentos = orcamentosResult.data || [];
+    const orcamentoIds = orcamentos.map((row: any) => String(row.id)).filter(Boolean);
+    const sellerByBudget = Object.fromEntries(orcamentos.map((row: any) => [String(row.id), row.vendedor_id]));
+
+    for (let index = 0; index < orcamentoIds.length; index += 500) {
+      const result = await glass
+        .from('orcamento_credito_consultas')
+        .select('*')
+        .in('orcamento_id', orcamentoIds.slice(index, index + 500))
+        .in('tipo_consulta', ['basico', 'completo'])
+        .in('status_consulta', ['atencao', 'aprovado'])
+        .gte('created_at', metadata.period_start)
+        .lt('created_at', metadata.period_end)
+        .order('created_at');
+      if (result.error) return NextResponse.json({ error: `Falha ao consultar consumos excedentes no Glass: ${result.error.message}` }, { status: 502 });
+      rows.push(...(result.data || []).map((row: any) => ({ ...row, _seller_id: sellerByBudget[String(row.orcamento_id)] || null })));
+    }
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Falha ao conectar ao Glass para gerar o demonstrativo.' }, { status: 502 });
   }
 
   const userIds = Array.from(new Set((rows || []).map((row: any) => text(row.usuario_id, '')).filter(Boolean)));
-  const sellerIds = Array.from(new Set((rows || []).map((row: any) => text(row?.orcamento?.vendedor_id, '')).filter(Boolean)));
+  const sellerIds = Array.from(new Set((rows || []).map((row: any) => text(row?._seller_id, '')).filter(Boolean)));
   const [usersResult, sellersResult, tenantResult] = await Promise.all([
     userIds.length ? glass.from('user_profiles').select('user_id, nome_exibicao').in('user_id', userIds) : Promise.resolve({ data: [] }),
     sellerIds.length ? glass.from('pessoas').select('id, nome').in('id', sellerIds) : Promise.resolve({ data: [] }),
@@ -93,8 +105,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (y > 520) { doc.addPage(); y = 42; labels.forEach((label, index) => doc.text(label, columns[index], y)); y += 18; }
     const type = row.tipo_consulta === 'completo' ? 'Consultflex Completa' : 'Consultflex Básica';
     const pessoa = Array.isArray((row as any).pessoa) ? (row as any).pessoa[0] : (row as any).pessoa;
-    const orcamento = Array.isArray((row as any).orcamento) ? (row as any).orcamento[0] : (row as any).orcamento;
-    const values = [text(pessoa?.nome, 'Sem cliente'), text(pessoa?.documento), users[row.usuario_id] || 'Não identificado', sellers[orcamento?.vendedor_id] || text(pessoa?.responsavel_comercial), type, 'Consultflex', money(Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice))];
+    const values = [text(pessoa?.nome, 'Sem cliente'), text(pessoa?.documento), users[row.usuario_id] || 'Não identificado', sellers[row._seller_id] || text(pessoa?.responsavel_comercial), type, 'Consultflex', money(Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice))];
     doc.fillColor('#334155').fontSize(8); values.forEach((value, index) => doc.text(value, columns[index], y, { width: index === 0 ? 108 : index === 1 ? 82 : index === 2 || index === 3 ? 110 : index === 4 ? 100 : index === 5 ? 135 : 70, ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }

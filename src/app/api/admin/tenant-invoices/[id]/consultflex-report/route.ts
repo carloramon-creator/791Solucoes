@@ -65,7 +65,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         .select('*')
         .in('orcamento_id', orcamentoIds.slice(index, index + 500))
         .in('tipo_consulta', ['basico', 'completo'])
-        .in('status_consulta', ['atencao', 'aprovado'])
         .gte('created_at', metadata.period_start)
         .lt('created_at', metadata.period_end)
         .order('created_at');
@@ -104,8 +103,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   for (const row of rows || []) {
     if (y > 520) { doc.addPage(); y = 42; labels.forEach((label, index) => doc.text(label, columns[index], y)); y += 18; }
     const type = row.tipo_consulta === 'completo' ? 'Consultflex Completa' : 'Consultflex Básica';
-    const pessoa = Array.isArray((row as any).pessoa) ? (row as any).pessoa[0] : (row as any).pessoa;
-    const values = [text(pessoa?.nome, 'Sem cliente'), text(pessoa?.documento), users[row.usuario_id] || 'Não identificado', sellers[row._seller_id] || text(pessoa?.responsavel_comercial), type, 'Consultflex', money(Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice))];
+    const values = [
+      text(row.cliente_nome || row.pessoa_nome, 'Consumo ConsultFlex'),
+      text(row.cliente_documento || row.pessoa_documento),
+      users[row.usuario_id] || 'Não identificado',
+      sellers[row._seller_id] || text(row.responsavel_comercial, 'Não identificado'),
+      type,
+      'Consultflex',
+      money(Number(row.tipo_consulta === 'completo' ? prices.consultflexCompletePrice : prices.consultflexBasicPrice)),
+    ];
     doc.fillColor('#334155').fontSize(8); values.forEach((value, index) => doc.text(value, columns[index], y, { width: index === 0 ? 108 : index === 1 ? 82 : index === 2 || index === 3 ? 110 : index === 4 ? 100 : index === 5 ? 135 : 70, ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }

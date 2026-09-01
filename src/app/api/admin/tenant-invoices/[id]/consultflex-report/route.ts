@@ -41,17 +41,28 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (error || !record) return NextResponse.json({ error: 'Excedente não encontrado.' }, { status: 404 });
 
   const metadata = (record.metadata || {}) as Record<string, any>;
-  const glass = await getGlassClient();
-  const { data: rows, error: rowsError } = await glass
-    .from('orcamento_credito_consultas')
-    .select('usuario_id, tipo_consulta, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(vendedor_id)')
-    .eq('vidracaria_id', metadata.tenant_id)
-    .in('tipo_consulta', ['basico', 'completo'])
-    .in('status_consulta', ['atencao', 'aprovado'])
-    .gte('created_at', metadata.period_start)
-    .lt('created_at', metadata.period_end)
-    .order('created_at');
-  if (rowsError) return NextResponse.json({ error: rowsError.message }, { status: 500 });
+  if (!metadata.tenant_id || !metadata.period_start || !metadata.period_end) {
+    return NextResponse.json({ error: 'A fatura não possui vidraçaria ou período de excedente.' }, { status: 422 });
+  }
+
+  let rows: any[] = [];
+  let glass: Awaited<ReturnType<typeof getGlassClient>>;
+  try {
+    glass = await getGlassClient();
+    const result = await glass
+      .from('orcamento_credito_consultas')
+      .select('usuario_id, tipo_consulta, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(vendedor_id)')
+      .eq('vidracaria_id', metadata.tenant_id)
+      .in('tipo_consulta', ['basico', 'completo'])
+      .in('status_consulta', ['atencao', 'aprovado'])
+      .gte('created_at', metadata.period_start)
+      .lt('created_at', metadata.period_end)
+      .order('created_at');
+    if (result.error) return NextResponse.json({ error: `Falha ao consultar excedentes no Glass: ${result.error.message}` }, { status: 502 });
+    rows = result.data || [];
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || 'Falha ao conectar ao Glass para gerar o demonstrativo.' }, { status: 502 });
+  }
 
   const userIds = Array.from(new Set((rows || []).map((row: any) => text(row.usuario_id, '')).filter(Boolean)));
   const sellerIds = Array.from(new Set((rows || []).map((row: any) => text(row?.orcamento?.vendedor_id, '')).filter(Boolean)));

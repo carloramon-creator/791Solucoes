@@ -448,7 +448,10 @@ export default function AssinaturasPage() {
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão não encontrada.');
       const response = await fetch(reportUrl, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) throw new Error('Não foi possível gerar o demonstrativo.');
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Não foi possível gerar o demonstrativo.');
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -1019,7 +1022,7 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-4 py-2 text-center whitespace-nowrap">
-                        <div className="flex justify-center gap-2">
+                          <div className="flex justify-center gap-3">
                           <button 
                             onClick={() => {
                               setVidracariaToEmit(tenant);
@@ -1078,24 +1081,24 @@ export default function AssinaturasPage() {
                             });
                             setIsEmitModalOpen(true);
                           }}
-                          className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" 
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-purple-50 hover:text-purple-600" 
                           title="Emitir Nota Fiscal"
                         >
                           <FileCheck size={18} />
                         </button>
                          <button 
                            onClick={() => router.push(`/assinaturas/${tenant.id}/configurar`)}
-                           className="p-2 text-slate-400 hover:text-[#3b597b] hover:bg-slate-100 rounded-lg transition-all" 
+                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-slate-100 hover:text-[#3b597b]" 
                            title="Configurar Plano e Módulos"
                          >
                            <Settings size={18} />
                          </button>
-                         <button className="p-2 text-slate-400 hover:text-[#3b597b] hover:bg-slate-100 rounded-lg transition-all" title="Financeiro">
+                         <button className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-slate-100 hover:text-[#3b597b]" title="Financeiro">
                            <CreditCard size={18} />
                          </button>
                          <button
                            onClick={() => openInvoiceHistory(tenant)}
-                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600"
                            title="Histórico de faturas"
                            aria-label="Histórico de faturas"
                          >
@@ -1106,7 +1109,7 @@ export default function AssinaturasPage() {
                              setTenantToDelete(tenant);
                              setDeleteConfirmInput('');
                            }}
-                           className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
                            title="Excluir definitivamente"
                          >
                            <Trash2 size={18} />
@@ -1132,10 +1135,10 @@ export default function AssinaturasPage() {
                            </div>
                            
                            {/* Linha 2: Consumo */}
-                           {usage ? (
+                           {usage && (usage.overage.extraUsers > 0 || usage.overage.extraWhatsappUsers > 0 || usage.overage.extraMessages > 0 || usage.overage.values.consultflexTotal > 0) ? (
                              <div className="flex flex-wrap items-center gap-2">
                                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Consumo:</span>
-                               <button
+                               {usage.overage.extraUsers > 0 && <button
                                  type="button"
                                  onClick={() => {
                                    setSelectedUsage(usage);
@@ -1143,9 +1146,9 @@ export default function AssinaturasPage() {
                                  }}
                                  className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
                                >
-                                 SIS {usage.usage.registeredUsers}/{usage.limits.users}
-                               </button>
-                               <button
+                                 SIS +{usage.overage.extraUsers}
+                               </button>}
+                               {usage.overage.extraWhatsappUsers > 0 && <button
                                  type="button"
                                  onClick={() => {
                                    setSelectedUsage(usage);
@@ -1153,9 +1156,9 @@ export default function AssinaturasPage() {
                                  }}
                                  className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
                                >
-                                 WPP {usage.usage.whatsappUsers}/{usage.limits.whatsappUsers}
-                               </button>
-                               <button
+                                 WPP +{usage.overage.extraWhatsappUsers}
+                               </button>}
+                               {usage.overage.extraMessages > 0 && <button
                                  type="button"
                                  onClick={() => {
                                    setSelectedUsage(usage);
@@ -1163,9 +1166,9 @@ export default function AssinaturasPage() {
                                  }}
                                  className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
                                >
-                                 MSG {usage.usage.messagesSent}/{usage.limits.messages}
-                               </button>
-                               <button
+                                 MSG +{usage.overage.extraMessages}
+                               </button>}
+                               {usage.overage.values.consultflexTotal > 0 && <button
                                  type="button"
                                  onClick={() => {
                                    setSelectedUsage(usage);
@@ -1173,8 +1176,8 @@ export default function AssinaturasPage() {
                                  }}
                                  className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
                                >
-                                 FATURAMENTO {formatCurrency(usage.overage.values.consultflexTotal)}
-                               </button>
+                                 FAT {formatCurrency(usage.overage.values.consultflexTotal)}
+                               </button>}
                              </div>
                            ) : (
                              <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>

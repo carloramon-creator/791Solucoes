@@ -1134,7 +1134,15 @@ export default function FinancePage() {
 
         {activeSection === "records" && (
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full min-w-[980px] table-fixed text-left">
+              <colgroup>
+                <col className="w-[15%]" />
+                <col className="w-[34%]" />
+                <col className="w-[17%]" />
+                <col className="w-[13%]" />
+                <col className="w-[12%]" />
+                <col className="w-[9%]" />
+              </colgroup>
               <thead>
                 <tr className="text-[10px] text-slate-400 uppercase tracking-[0.2em] font-black border-b border-slate-50 bg-slate-50/50">
                   <th className="px-6 py-3">Data / Status</th>
@@ -1164,24 +1172,26 @@ export default function FinancePage() {
                     </td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.payment_method || "Pix"}</td>
-                    <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
+                    <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
                     <td className="px-6 py-3 text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-1">
                         <button
                           onClick={() => openEditModal(record)}
                           disabled={record.status === "paid" && !canManagePaidRecords}
-                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para editar lancamento pago" : undefined}
-                          className="text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        ><Pencil size={12} />Editar</button>
+                          aria-label="Editar lançamento"
+                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para editar lancamento pago" : "Editar lançamento"}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        ><Pencil size={13} /></button>
                         {record.status !== "paid" && (
-                          <button onClick={() => openSettleModal(record)} className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><CheckCircle2 size={12} />Baixar</button>
+                          <button onClick={() => openSettleModal(record)} aria-label="Baixar lançamento" title="Baixar lançamento" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><CheckCircle2 size={13} /></button>
                         )}
                         <button
                           onClick={() => handleDelete(record)}
                           disabled={record.status === "paid" && !canManagePaidRecords}
-                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para excluir lancamento pago" : undefined}
-                          className="text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                        ><Trash2 size={12} />Excluir</button>
+                          aria-label="Excluir lançamento"
+                          title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para excluir lancamento pago" : "Excluir lançamento"}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        ><Trash2 size={13} /></button>
                       </div>
                     </td>
                   </tr>
@@ -1215,9 +1225,9 @@ export default function FinancePage() {
                     <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
                     <td className="px-6 py-3 text-xs text-slate-600">{record.category || "Geral"}</td>
-                    <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
+                    <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
                     <td className="px-6 py-3 text-right">
-                      <button onClick={() => openSettleModal(record)} className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><CheckCircle2 size={12} />Baixar</button>
+                      <button onClick={() => openSettleModal(record)} aria-label="Baixar lançamento" title="Baixar lançamento" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><CheckCircle2 size={13} /></button>
                     </td>
                   </tr>
                 ))}
@@ -1250,9 +1260,9 @@ export default function FinancePage() {
                     <td className="px-6 py-3 text-sm font-semibold text-slate-800">{getDisplayDescription(record)}</td>
                     <td className="px-6 py-3 text-xs text-slate-600 uppercase tracking-widest font-bold">{record.source_label || "Sem conta"}</td>
                     <td className="px-6 py-3 text-xs text-slate-600">{record.category || "Geral"}</td>
-                    <td className={`px-6 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
+                    <td className={`whitespace-nowrap px-4 py-3 text-right text-sm font-black ${record.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{record.type === "revenue" ? "+" : "-"} {formatCurrency(Number(record.value || 0))}</td>
                     <td className="px-6 py-3 text-right">
-                      <button onClick={() => openSettleModal(record)} className="text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1"><CheckCircle2 size={12} />Baixar</button>
+                      <button onClick={() => openSettleModal(record)} aria-label="Baixar lançamento" title="Baixar lançamento" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><CheckCircle2 size={13} /></button>
                     </td>
                   </tr>
                 ))}

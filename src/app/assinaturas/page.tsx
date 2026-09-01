@@ -937,6 +937,13 @@ export default function AssinaturasPage() {
                   valorTotal += extraWpp * Number(systemPlan?.system_limits?.extraDevicePrice || 0);
 
                   const basicIds = systemPlan?.included_modules || [];
+                  const selectedModuleNames = Array.from(new Set(
+                    (tenant.modulos_ativos || [])
+                      .map((modRef) => modules.find((mod) => mod.slug === modRef || mod.id === modRef))
+                      .filter((mod): mod is Module => Boolean(mod && !mod.parent_slug))
+                      .filter((mod) => !basicIds.includes(mod.id) && !basicIds.includes(mod.slug || ''))
+                      .map((mod) => mod.nome)
+                  ));
 
                   // Aplicar Desconto do Ciclo (Apenas uma vez!)
                   if (tenant.ciclo_pagamento === 'semiannual') {
@@ -1087,6 +1094,14 @@ export default function AssinaturasPage() {
                            <CreditCard size={18} />
                          </button>
                          <button
+                           onClick={() => openInvoiceHistory(tenant)}
+                           className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                           title="Histórico de faturas"
+                           aria-label="Histórico de faturas"
+                         >
+                           <FileText size={18} />
+                         </button>
+                         <button
                            onClick={() => {
                              setTenantToDelete(tenant);
                              setDeleteConfirmInput('');
@@ -1101,21 +1116,19 @@ export default function AssinaturasPage() {
                       <td className="px-4 py-2">
                         <div className="flex flex-col gap-2">
                            {/* Linha 1: Plano e Módulos */}
-                           <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Plano Básico</span>
-                              {(tenant.modulos_ativos || []).length > 0 ? tenant.modulos_ativos?.map(modRef => {
-                                const mod = modules.find(m => m.slug === modRef || m.id === modRef);
-                                if (!mod || mod.parent_slug) return null;
-                                
-                                const isBasic = basicIds.includes(mod.id) || basicIds.includes(mod.slug || '');
-                                if (isBasic) return null;
-
-                                return (
-                                  <span key={modRef} className="text-[9px] font-medium text-[#3b597b] bg-blue-50 px-1.5 py-0.5 rounded uppercase tracking-tighter border border-blue-100">
-                                    + {mod.nome}
-                                  </span>
-                                );
-                              }) : <span className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem adicionais</span>}
+                           <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight">
+                                Plano Básico{selectedModuleNames.length > 0 ? ` + ${selectedModuleNames.length}` : ''}
+                              </span>
+                              {selectedModuleNames.length > 0 && (
+                                <span
+                                  className="inline-flex h-5 min-w-5 cursor-help items-center justify-center rounded-full border border-blue-100 bg-blue-50 px-1.5 text-[9px] font-black text-[#3b597b]"
+                                  title={`Módulos: ${selectedModuleNames.join(', ')}`}
+                                  aria-label={`Módulos selecionados: ${selectedModuleNames.join(', ')}`}
+                                >
+                                  {selectedModuleNames.length}
+                                </span>
+                              )}
                            </div>
                            
                            {/* Linha 2: Consumo */}
@@ -1370,9 +1383,9 @@ export default function AssinaturasPage() {
             <div className="max-h-[65vh] overflow-auto">
               {invoiceHistoryLoading ? <div className="p-12 text-center text-sm font-semibold text-slate-400">Carregando faturas...</div> : invoiceHistoryError ? <div className="p-8 text-sm font-semibold text-red-600">{invoiceHistoryError}</div> : (
                 <table className="w-full text-left">
-                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-5 py-3">Data</th><th className="px-5 py-3">Tipo</th><th className="px-5 py-3">Descrição</th><th className="px-5 py-3 text-center">Status</th><th className="px-5 py-3 text-right">Valor</th><th className="px-5 py-3 text-center">Pgto</th><th className="px-5 py-3 text-center">Fiscal</th></tr></thead>
+                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-5 py-3">Data</th><th className="px-5 py-3">Tipo</th><th className="px-5 py-3">Descrição</th><th className="px-5 py-3 text-center">Status</th><th className="px-5 py-3 text-right">Valor</th><th className="px-5 py-3 text-center">Pgto</th><th className="px-5 py-3 text-center">Detalhes</th><th className="px-5 py-3 text-center">Fiscal</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
-                    {invoiceHistory.length === 0 ? <tr><td colSpan={7} className="px-5 py-10 text-center text-sm font-semibold text-slate-400">Nenhuma fatura encontrada.</td></tr> : invoiceHistory.map((invoice) => (
+                    {invoiceHistory.length === 0 ? <tr><td colSpan={8} className="px-5 py-10 text-center text-sm font-semibold text-slate-400">Nenhuma fatura encontrada.</td></tr> : invoiceHistory.map((invoice) => (
                       <tr key={invoice.id} className="text-[12px] text-slate-700">
                         <td className="px-5 py-3 whitespace-nowrap">{new Date(invoice.createdAt).toLocaleDateString('pt-BR')}</td>
                         <td className="px-5 py-3"><span className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase ${invoice.type === 'Excedente' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>{invoice.type}</span></td>
@@ -1380,7 +1393,8 @@ export default function AssinaturasPage() {
                         <td className="px-5 py-3 text-center"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold ${['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'PAGO' : 'PENDENTE'}</span></td>
                         <td className="px-5 py-3 text-right font-bold whitespace-nowrap">{formatCurrency(invoice.value)}</td>
                         <td className="px-5 py-3 text-center">{invoice.paymentUrl ? <a href={invoice.paymentUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'Ver' : 'Pagar'}</a> : '—'}</td>
-                        <td className="px-5 py-3 text-center"><div className="flex items-center justify-center gap-2">{invoice.reportUrl && <button onClick={() => downloadConsultflexReport(invoice.reportUrl || '', invoice.reference)} title="Baixar demonstrativo" className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><FileText size={14} /></button>}{invoice.fiscalUrl && <a href={invoice.fiscalUrl} target="_blank" rel="noreferrer" title="Ver nota fiscal" className="rounded-lg border border-purple-200 bg-purple-50 p-2 text-purple-600"><FileCheck size={14} /></a>}</div></td>
+                        <td className="px-5 py-3 text-center">{invoice.type === 'Excedente' && invoice.reportUrl ? <button onClick={() => downloadConsultflexReport(invoice.reportUrl || '', invoice.reference)} aria-label="Detalhar fatura do excedente" title="Detalhar fatura do excedente" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100"><FileText size={14} /> Detalhar</button> : <span className="text-slate-300">-</span>}</td>
+                        <td className="px-5 py-3 text-center">{invoice.fiscalUrl && <a href={invoice.fiscalUrl} target="_blank" rel="noreferrer" title="Ver nota fiscal" aria-label="Ver nota fiscal" className="inline-flex rounded-lg border border-purple-200 bg-purple-50 p-2 text-purple-600"><FileCheck size={14} /></a>}</td>
                       </tr>
                     ))}
                   </tbody>

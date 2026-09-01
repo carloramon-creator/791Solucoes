@@ -30,10 +30,14 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // A tela de login deve abrir mesmo quando o Supabase estiver indisponível.
+  const isLoginPage = request.nextUrl.pathname === '/login';
+  if (isLoginPage) {
+    return supabaseResponse;
+  }
+
   // Renova a sessão (obrigatório)
   const { data: { user } } = await supabase.auth.getUser();
-
-  const isLoginPage = request.nextUrl.pathname === '/login';
 
   // Se não está logado e não está na página de login → redireciona para login
   if (!user && !isLoginPage) {

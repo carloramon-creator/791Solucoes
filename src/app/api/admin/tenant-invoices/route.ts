@@ -4,6 +4,12 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 const metadataOf = (value: unknown): Record<string, any> => value && typeof value === 'object' ? value as Record<string, any> : {};
 
+const formatOverageReference = (value: unknown) => {
+  const raw = String(value || '');
+  const match = raw.match(/^(?:EXC[-\s]*)?(\d{4})[-/](\d{2})$/i);
+  return match ? `EXC - ${match[2]}/${match[1]}` : raw;
+};
+
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -44,7 +50,7 @@ export async function GET(req: Request) {
       return {
         id: `finance-${row.id}`,
         createdAt: row.created_at,
-        reference: isOverage ? `EXC-${metadata.ref_month || String(row.id).slice(0, 8)}` : `COB-${String(row.id).slice(0, 8)}`,
+        reference: isOverage ? formatOverageReference(metadata.ref_month || String(row.id).slice(0, 8)) : `COB-${String(row.id).slice(0, 8)}`,
         type: isOverage ? 'Excedente' : 'Assinatura',
         description: row.description || 'Cobrança 791glass',
         status: row.status,

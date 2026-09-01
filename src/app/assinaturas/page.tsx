@@ -465,8 +465,14 @@ export default function AssinaturasPage() {
       if (!token) throw new Error('Sessão não encontrada.');
       const response = await fetch(reportUrl, { headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.error || 'Não foi possível gerar o demonstrativo.');
+        const errorBody = await response.text();
+        let errorMessage = 'Não foi possível gerar o demonstrativo.';
+        try {
+          errorMessage = JSON.parse(errorBody)?.error || errorMessage;
+        } catch {
+          if (errorBody.trim()) errorMessage = errorBody.slice(0, 300);
+        }
+        throw new Error(errorMessage);
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -1456,7 +1462,7 @@ export default function AssinaturasPage() {
             <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Detalhamento do excedente</p>
-                <h3 className="mt-1 text-xl font-black text-slate-800">{invoiceHistoryTenant?.nome} · {overageDetailsInvoice.reference}</h3>
+                <h3 className="mt-1 text-xl font-black text-slate-800">{invoiceHistoryTenant?.nome} · {overageDetailsInvoice.reference.replace(/^EXC[-\s]*/, 'EXC - ')}</h3>
                 <p className="mt-1 text-xs text-slate-500">Cada linha representa uma utilização incluída nesta cobrança.</p>
               </div>
               <button onClick={() => setOverageDetailsInvoice(null)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
@@ -1464,11 +1470,11 @@ export default function AssinaturasPage() {
             <div className="max-h-[70vh] overflow-auto">
               {overageDetailsLoading ? <div className="p-12 text-center text-sm font-semibold text-slate-400">Carregando utilizações...</div> : overageDetailsError ? <div className="p-8 text-sm font-semibold text-red-600">{overageDetailsError}</div> : (
                 <table className="w-full min-w-[1050px] text-left">
-                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-4 py-3">Nome</th><th className="px-4 py-3">CPF/CNPJ</th><th className="px-4 py-3">Usuário</th><th className="px-4 py-3">Vendedor</th><th className="px-4 py-3">Orç/Ped</th><th className="px-4 py-3 text-right">Valor</th><th className="px-4 py-3">Fonte</th><th className="px-4 py-3">Tipo</th></tr></thead>
+                  <thead className="sticky top-0 bg-white text-[10px] font-black uppercase tracking-widest text-slate-400 shadow-sm"><tr><th className="px-4 py-3">Nome</th><th className="px-4 py-3">CPF/CNPJ</th><th className="px-4 py-3">Orç/Ped</th><th className="px-4 py-3">Usuário</th><th className="px-4 py-3">Vendedor</th><th className="px-4 py-3 text-right">Valor</th><th className="px-4 py-3">Fonte</th><th className="px-4 py-3">Tipo</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {overageDetails.length === 0 ? <tr><td colSpan={8} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Nenhuma utilização encontrada.</td></tr> : overageDetails.map((item) => (
                       <tr key={item.id} className="text-xs text-slate-700 hover:bg-slate-50">
-                        <td className="px-4 py-3 font-semibold text-slate-800">{item.name}</td><td className="px-4 py-3 whitespace-nowrap">{item.document}</td><td className="px-4 py-3">{item.user}</td><td className="px-4 py-3">{item.seller}</td><td className="px-4 py-3 whitespace-nowrap font-semibold">{item.orderNumber}</td><td className="px-4 py-3 text-right font-black whitespace-nowrap">{formatCurrency(item.value)}</td><td className="px-4 py-3">{item.source}</td><td className="px-4 py-3 whitespace-nowrap">{item.type}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{item.name}</td><td className="px-4 py-3 whitespace-nowrap">{item.document}</td><td className="px-4 py-3 whitespace-nowrap font-semibold">{item.orderNumber}</td><td className="px-4 py-3">{item.user}</td><td className="px-4 py-3">{item.seller}</td><td className="px-4 py-3 text-right font-black whitespace-nowrap">{formatCurrency(item.value)}</td><td className="px-4 py-3">{item.source}</td><td className="px-4 py-3 whitespace-nowrap">{item.type}</td>
                       </tr>
                     ))}
                   </tbody>

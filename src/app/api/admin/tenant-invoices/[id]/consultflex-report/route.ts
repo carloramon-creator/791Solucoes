@@ -132,7 +132,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   doc.fontSize(9).text(`${text(tenantResult.data?.nome, 'Vidracaria')} - ${formatDocument(tenantResult.data?.cnpj)}        |        Referência ${formatReferenceMonth(metadata.ref_month)}        |        Período: ${formatPeriod(metadata.period_start, metadata.period_end)}`, 125, 49);
   const columns = [32, 138, 222, 288, 389, 490, 596, 712];
   const columnWidths = [100, 78, 60, 95, 95, 100, 110, 95];
-  const labels = ['Nome', 'CPF/CNPJ', 'Ped/Orç', 'Usuário', 'Vendedor', 'Tipo', 'Fonte', 'Valor'];
+  const labels = ['Nome', 'CPF/CNPJ', 'Orç/Ped', 'Usuário', 'Vendedor', 'Tipo', 'Fonte', 'Valor'];
   doc.fillColor('#1E293B').fontSize(9); labels.forEach((label, index) => doc.text(label, columns[index], 92));
   let y = 110;
   for (const row of rows || []) {

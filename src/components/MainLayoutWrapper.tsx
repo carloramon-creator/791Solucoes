@@ -39,6 +39,20 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [sponsorId, setSponsorId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const storedValue = window.localStorage.getItem('holding.sidebar.collapsed');
+    if (storedValue === 'true') setSidebarCollapsed(true);
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem('holding.sidebar.collapsed', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     // 1. Interceptação imediata de hash na montagem (para convites e recuperações de senha)
@@ -219,7 +233,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   // Layout administrativo padrão
   return (
     <div className="flex h-screen bg-[#f8fafc] text-slate-900 overflow-hidden w-full">
-      <Sidebar />
+      <Sidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
       <div className="flex flex-1 flex-col h-full overflow-hidden">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#f8fafc]">

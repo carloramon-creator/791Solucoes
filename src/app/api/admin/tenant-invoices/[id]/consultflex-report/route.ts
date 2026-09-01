@@ -9,6 +9,29 @@ import { getGlassClient } from '@/lib/glass-client';
 
 const text = (value: unknown, fallback = '-') => String(value || '').trim() || fallback;
 const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+const formatReference = (value: unknown) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})$/);
+  return match ? `${match[2]}/${match[1]}` : text(value);
+};
+const formatPeriod = (start: unknown, end: unknown) => {
+  const startDate = new Date(String(start || '')); const endDate = new Date(String(end || ''));
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) return '-';
+  endDate.setUTCDate(endDate.getUTCDate() - 1);
+  const format = (date: Date) => date.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: '2-digit' });
+  return `${format(startDate)} à ${format(endDate)}`;
+};
+const formatReferenceMonth = (value: unknown) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return text(value);
+  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  return `${months[Number(match[2]) - 1]}/${match[1].slice(-2)}`;
+};
+const formatDocument = (value: unknown) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 11) return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  if (digits.length === 14) return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  return text(value, 'Documento não informado');
+};
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authenticateHoldingAdmin(req);
@@ -32,9 +55,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const userIds = Array.from(new Set((rows || []).map((row: any) => text(row.usuario_id, '')).filter(Boolean)));
   const sellerIds = Array.from(new Set((rows || []).map((row: any) => text(row?.orcamento?.vendedor_id, '')).filter(Boolean)));
-  const [usersResult, sellersResult] = await Promise.all([
+  const [usersResult, sellersResult, tenantResult] = await Promise.all([
     userIds.length ? glass.from('user_profiles').select('user_id, nome_exibicao').in('user_id', userIds) : Promise.resolve({ data: [] }),
     sellerIds.length ? glass.from('pessoas').select('id, nome').in('id', sellerIds) : Promise.resolve({ data: [] }),
+    glass.from('vidracarias').select('nome, cnpj').eq('id', metadata.tenant_id).single(),
   ]);
   const users = Object.fromEntries((usersResult.data || []).map((row: any) => [row.user_id, text(row.nome_exibicao)]));
   const sellers = Object.fromEntries((sellersResult.data || []).map((row: any) => [row.id, text(row.nome)]));
@@ -43,13 +67,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 32 });
   const stream = new PassThrough(); const chunks: Buffer[] = [];
   stream.on('data', (chunk) => chunks.push(chunk)); doc.pipe(stream);
-  doc.rect(0, 0, doc.page.width, 72).fill('#0E6B5F');
+  doc.rect(0, 0, 105, 72).fill('#FFFFFF');
+  doc.rect(105, 0, doc.page.width - 105, 72).fill('#0E6B5F');
   const logoPath = path.join(process.cwd(), 'public', 'logo.png');
-  if (fs.existsSync(logoPath)) doc.image(logoPath, 747, 16, { width: 55, height: 36, fit: [55, 36] });
-  doc.fillColor('#FFFFFF').fontSize(18).text('791glass - Demonstrativo de excedentes', 32, 24);
-  doc.fontSize(9).text(`Referência ${text(metadata.ref_month)} | ${text(record.description)}`, 32, 49);
-  const columns = [32, 145, 230, 345, 460, 565, 705];
-  const labels = ['Nome', 'CPF/CNPJ', 'Usuário', 'Vendedor', 'Tipo', 'Motivo', 'Valor'];
+  if (fs.existsSync(logoPath)) doc.image(logoPath, 25, 18, { fit: [55, 32] });
+  doc.fillColor('#FFFFFF').fontSize(18).text('DEMONSTRATIVO DE EXCEDENTES', 125, 24);
+  doc.fontSize(14).text(`Fatura nº ${formatReference(metadata.ref_month)}`, 650, 21, { width: 155, align: 'right' });
+  doc.fontSize(9).text(`${text(tenantResult.data?.nome, 'Vidracaria')} - ${formatDocument(tenantResult.data?.cnpj)}        |        Referência ${formatReferenceMonth(metadata.ref_month)}        |        Período: ${formatPeriod(metadata.period_start, metadata.period_end)}`, 125, 49);
+  const columns = [32, 145, 230, 345, 460, 575, 705];
+  const labels = ['Nome', 'CPF/CNPJ', 'Usuário', 'Vendedor', 'Tipo', 'Fonte', 'Valor'];
   doc.fillColor('#1E293B').fontSize(9); labels.forEach((label, index) => doc.text(label, columns[index], 92));
   let y = 110;
   for (const row of rows || []) {

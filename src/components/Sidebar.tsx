@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronDown,
   PanelLeftClose,
+  PanelLeftOpen,
   LogOut,
   Loader2,
   FileCheck,
@@ -62,7 +63,12 @@ const navigationItems: NavItem[] = [
   { name: 'CONFIGURAÇÕES', href: '/configuracoes', icon: Settings, hasSubmenu: false, resourceCode: 'menu.configuracoes' },
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  collapsed: boolean;
+  onToggle: () => void;
+};
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
   const supabase = createSupabaseBrowser();
 
@@ -262,18 +268,24 @@ export function Sidebar() {
   if (pathname === '/login') return null;
 
   return (
-    <div className="flex h-full w-[260px] flex-col border-r border-slate-200 bg-white">
+    <div className={`flex h-full shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-out ${collapsed ? 'w-[72px]' : 'w-[260px]'}`}>
       <div className="relative flex h-20 shrink-0 items-center justify-center border-b border-slate-100 px-4">
-        <Link href="/" className="flex items-center justify-center text-lg font-bold text-slate-800 transition-opacity hover:opacity-80">
+        <Link href="/" className={`flex items-center justify-center text-lg font-bold text-slate-800 transition-opacity hover:opacity-80 ${collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'}`}>
           <img src="/logo.png" alt="791 Soluções" className="h-[40px] w-auto max-w-[200px] object-contain" />
         </Link>
-        <button className="absolute right-4 text-slate-400 hover:text-slate-600" type="button">
-          <PanelLeftClose size={20} />
+        <button
+          aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+          className={`absolute text-slate-400 transition-colors hover:text-slate-600 ${collapsed ? 'right-1/2 translate-x-1/2' : 'right-4'}`}
+          onClick={onToggle}
+          title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
+          type="button"
+        >
+          {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto py-4">
-        <nav className="flex flex-col gap-1 px-3">
+        <nav className={`flex flex-col gap-1 ${collapsed ? 'px-2' : 'px-3'}`}>
           {visibleItems.map((item) => {
             const Icon = item.icon;
             const visibleSubItems = item.subItems?.filter((sub) => canAccess(sub.resourceCode));
@@ -286,30 +298,31 @@ export function Sidebar() {
                 <Link
                   href={item.href}
                   onClick={(e) => toggleMenu(e, item.name, hasVisibleSubItems)}
-                  className={`group flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-medium transition-all ${
+                  className={`group flex items-center rounded-md py-2.5 text-sm font-medium transition-all ${collapsed ? 'justify-center px-0' : 'justify-between px-3'} ${
                     isActive ? 'bg-[#3b597b] text-white' : 'text-slate-500 hover:bg-slate-50'
                   }`}
+                  title={collapsed ? item.name : undefined}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
                     <Icon size={18} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'} />
-                    <span className={!isActive && item.name === item.name.toUpperCase() ? 'text-xs font-semibold tracking-wider' : ''}>
+                    <span className={`${collapsed ? 'hidden' : ''} ${!isActive && item.name === item.name.toUpperCase() ? 'text-xs font-semibold tracking-wider' : ''}`}>
                       {item.name}
                     </span>
                     {item.href === '/suporte' && newAssignedTicketCount > 0 && (
                       <span className={`inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black ${
-                        isActive ? 'bg-red-500 text-white' : 'bg-red-100 text-red-700'
+                        `${collapsed ? 'absolute ml-5 -mt-5' : ''} ${isActive ? 'bg-red-500 text-white' : 'bg-red-100 text-red-700'}`
                       }`}>
                         {newAssignedTicketCount}
                       </span>
                     )}
                   </div>
 
-                  {item.hasSubmenu && hasVisibleSubItems && (
+                  {!collapsed && item.hasSubmenu && hasVisibleSubItems && (
                     isOpen ? <ChevronDown size={16} className={isActive ? 'text-white/70' : 'text-slate-400'} /> : <ChevronRight size={16} className={isActive ? 'text-white/70' : 'text-slate-300'} />
                   )}
                 </Link>
 
-                {visibleSubItems && isOpen && (
+                {!collapsed && visibleSubItems && isOpen && (
                   <div className="mt-1 flex flex-col gap-1 pb-2 pl-10 pr-2">
                     {visibleSubItems.map((subItem) => {
                       const isSubActive = pathname === subItem.href;
@@ -333,12 +346,12 @@ export function Sidebar() {
         </nav>
       </div>
 
-      <div className="border-t border-slate-100 p-4">
-        <div className="flex items-center gap-3">
+      <div className={`border-t border-slate-100 ${collapsed ? 'p-3' : 'p-4'}`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#3b597b] text-[11px] font-black text-white">
             {displayName.slice(0, 2).toUpperCase()}
           </div>
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className={`flex min-w-0 flex-1 flex-col overflow-hidden ${collapsed ? 'hidden' : ''}`}>
             <span className="truncate text-xs font-bold uppercase text-slate-700">
               {displayName} <span className="text-green-500">●</span>
             </span>
@@ -348,7 +361,7 @@ export function Sidebar() {
             onClick={handleLogout}
             disabled={loggingOut}
             title="Sair do sistema"
-            className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+            className={`shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 ${collapsed ? 'hidden' : ''}`}
             type="button"
           >
             {loggingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}

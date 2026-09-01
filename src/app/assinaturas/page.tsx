@@ -1423,7 +1423,7 @@ export default function AssinaturasPage() {
 
       {invoiceHistoryTenant && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
-          <div className="w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="w-full max-w-6xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/40 px-6 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Histórico de Faturamento</p>
@@ -1458,7 +1458,7 @@ export default function AssinaturasPage() {
 
       {overageDetailsInvoice && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-7xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="w-full max-w-7xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Detalhamento do excedente</p>

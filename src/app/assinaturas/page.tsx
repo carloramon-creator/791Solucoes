@@ -888,6 +888,7 @@ export default function AssinaturasPage() {
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidraçaria / Cliente</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Vencimento</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Ações</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano, Módulos & Consumo</th>
@@ -984,6 +985,7 @@ export default function AssinaturasPage() {
                               </span>
                             </span>
                             <span className="text-xs text-slate-500">{tenant.email || 'E-mail não cadastrado'}</span>
+                            <span className="text-[10px] text-slate-400">Criada em {new Date(tenant.created_at).toLocaleDateString('pt-BR')}</span>
                             {sponsorMap[tenant.id] && (
                               <span className="text-[10px] text-red-600 font-black uppercase mt-0.5">
                                 Patrocinado por {sponsorMap[tenant.id]}
@@ -993,23 +995,23 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-4 py-2">
-                        <div className="flex flex-col items-center gap-2">
-                          {getStatusBadge(tenant, diasRestantes)}
-                          {tenant.vencimento_assinatura ? (
-                            <div className="flex flex-col items-center justify-center text-center bg-slate-50 border border-slate-100 rounded px-2 py-1 w-full min-w-[100px]">
-                              <span className="text-[9px] font-black uppercase text-slate-500 text-center">Vence {vencimentoStr}</span>
-                              <span className={`text-[9px] font-bold mt-0.5 text-center ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                {diasRestantes! < 0 
-                                  ? `Atrasado ${Math.abs(diasRestantes!)} dias` 
-                                  : diasRestantes === 0 
-                                    ? 'Vence Hoje' 
-                                    : `Faltam ${diasRestantes} dias`}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-[9px] text-slate-400 italic text-center">Sem vencimento</span>
-                          )}
-                        </div>
+                        <div className="flex justify-center">{getStatusBadge(tenant, diasRestantes)}</div>
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        {tenant.vencimento_assinatura ? (
+                          <div className="mx-auto flex min-w-[100px] flex-col items-center justify-center rounded border border-slate-100 bg-slate-50 px-2 py-1 text-center">
+                            <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
+                            <span className={`mt-0.5 text-[9px] font-bold ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                              {diasRestantes! < 0
+                                ? `Atrasado ${Math.abs(diasRestantes!)} dias`
+                                : diasRestantes === 0
+                                  ? 'Vence Hoje'
+                                  : `Faltam ${diasRestantes} dias`}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[9px] italic text-slate-400">Sem vencimento</span>
+                        )}
                       </td>
                       <td className="px-4 py-2 text-center whitespace-nowrap">
                         <div className="flex flex-col items-center gap-1">

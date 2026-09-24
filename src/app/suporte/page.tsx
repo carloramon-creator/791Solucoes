@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { DONE_STATUSES, OPEN_STATUSES, type SupportQueue } from '@/lib/support-queue';
-import { BellDot, CircleDot, Clock3, Eye, EyeOff, LifeBuoy, Loader2, MessageSquare, Paperclip, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
+import { BellDot, CircleDot, Clock3, Eye, EyeOff, LifeBuoy, Loader2, MessageSquare, Monitor, Paperclip, PencilLine, RefreshCcw, Send, Trash2, UserRoundCheck } from 'lucide-react';
 
 type Subject = {
   id: string;
@@ -228,6 +228,7 @@ export default function SuportePage() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [concludingTicket, setConcludingTicket] = useState(false);
   const [deletingTicket, setDeletingTicket] = useState(false);
+  const [startingInvestigation, setStartingInvestigation] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [creatingTicket, setCreatingTicket] = useState(false);
   const [creatingSubject, setCreatingSubject] = useState(false);
@@ -753,6 +754,25 @@ export default function SuportePage() {
     }
   };
 
+  const handleStartTenantInvestigation = async () => {
+    if (!selectedTicket) return;
+
+    setStartingInvestigation(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const result = await api(`/api/support/tickets/${selectedTicket.id}/investigation`, { method: 'POST' });
+      setFeedback(`Investigacao registrada para ${result?.investigation?.tenantName || selectedTicket.tenant_name || selectedTicket.tenant_slug}.`);
+      await loadMessages(selectedTicket.id);
+      await loadSupportData(queue, true);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao iniciar investigacao do tenant.');
+    } finally {
+      setStartingInvestigation(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!selectedTicket || (!draftMessage.trim() && !draftAttachment)) return;
 
@@ -1214,6 +1234,17 @@ export default function SuportePage() {
                     <div className="text-[17px] font-bold text-slate-800">{selectedTicket.title}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {can('action.support.investigate_tenant') && (
+                      <button
+                        onClick={handleStartTenantInvestigation}
+                        disabled={startingInvestigation}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider hover:bg-blue-100 disabled:opacity-50"
+                        title="Registra uma investigacao vinculada a este ticket"
+                      >
+                        {startingInvestigation ? <Loader2 className="animate-spin" size={14} /> : <Monitor size={14} />}
+                        {startingInvestigation ? 'Iniciando...' : 'Investigar tenant'}
+                      </button>
+                    )}
                     {!['resolved', 'closed'].includes(selectedTicket.status) && (
                       <button
                         onClick={handleConcludeTicket}

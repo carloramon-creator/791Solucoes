@@ -67,6 +67,33 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     is_internal: true,
   });
 
+  const glassSupportUrl = String(process.env.GLASS_SUPPORT_URL || '').replace(/\/$/, '');
+  const sharedSecret = String(process.env.HOLDING_SUPPORT_SHARED_SECRET || '');
+  if (!glassSupportUrl || !sharedSecret) {
+    return NextResponse.json({ error: 'Configure GLASS_SUPPORT_URL e HOLDING_SUPPORT_SHARED_SECRET para abrir o cenário do tenant.' }, { status: 500 });
+  }
+
+  const supportResponse = await fetch(`${glassSupportUrl}/api/support/holding-session`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${sharedSecret}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      investigationId: investigation.id,
+      ticketId: ticket.id,
+      tenantId: ticket.tenant_id ? String(ticket.tenant_id) : undefined,
+      tenantSlug,
+      holdingUserEmail: investigatorEmail,
+      expiresAt: investigation.expires_at,
+    }),
+    cache: 'no-store',
+  });
+  const supportPayload = await supportResponse.json().catch(() => ({}));
+  if (!supportResponse.ok || !supportPayload?.supportUrl) {
+    return NextResponse.json({ error: supportPayload?.error || 'Falha ao emitir o acesso de suporte.' }, { status: 502 });
+  }
+
   return NextResponse.json({
     ok: true,
     investigation: {
@@ -75,6 +102,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       protocol: ticket.protocol,
       tenantName: ticket.tenant_name || tenantSlug,
       expiresAt: investigation.expires_at,
+      supportUrl: supportPayload.supportUrl,
     },
   });
 }

@@ -763,9 +763,9 @@ export default function SuportePage() {
 
     try {
       const result = await api(`/api/support/tickets/${selectedTicket.id}/investigation`, { method: 'POST' });
-      setFeedback(`Investigacao registrada para ${result?.investigation?.tenantName || selectedTicket.tenant_name || selectedTicket.tenant_slug}.`);
-      await loadMessages(selectedTicket.id);
-      await loadSupportData(queue, true);
+      const supportUrl = String(result?.investigation?.supportUrl || '');
+      if (!supportUrl) throw new Error('O link de suporte nao foi emitido.');
+      window.location.assign(supportUrl);
     } catch (err: any) {
       setError(err?.message || 'Falha ao iniciar investigacao do tenant.');
     } finally {

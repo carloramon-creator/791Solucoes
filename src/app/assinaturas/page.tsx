@@ -199,6 +199,12 @@ interface OverageDetailItem {
   type: string;
 }
 
+interface TenantReport {
+  tenant: { id: string; nome: string; slug: string };
+  period: { start: string; end: string };
+  metrics: Record<string, number> & { auditedDeletesByTable?: Record<string, number> };
+}
+
 import { useRouter } from 'next/navigation';
 
 export default function AssinaturasPage() {
@@ -253,6 +259,12 @@ export default function AssinaturasPage() {
   const [overageDetails, setOverageDetails] = useState<OverageDetailItem[]>([]);
   const [overageDetailsLoading, setOverageDetailsLoading] = useState(false);
   const [overageDetailsError, setOverageDetailsError] = useState('');
+  const [tenantReport, setTenantReport] = useState<TenantReport | null>(null);
+  const [tenantReportLoading, setTenantReportLoading] = useState(false);
+  const [tenantReportError, setTenantReportError] = useState('');
+  const [tenantReportTenant, setTenantReportTenant] = useState<Vidracaria | null>(null);
+  const [tenantReportStart, setTenantReportStart] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
+  const [tenantReportEnd, setTenantReportEnd] = useState(() => new Date().toISOString().slice(0, 10));
   
   // Estado para Emissão de Nota
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
@@ -455,6 +467,27 @@ export default function AssinaturasPage() {
       setInvoiceHistoryError(error?.message || 'Falha ao carregar histórico de faturas.');
     } finally {
       setInvoiceHistoryLoading(false);
+    }
+  }
+
+  async function generateTenantReport() {
+    if (!tenantReportTenant) return;
+    setTenantReportLoading(true);
+    setTenantReportError('');
+    try {
+      const { data } = await authClient.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error('Sessao nao encontrada.');
+      const query = new URLSearchParams({ tenantId: tenantReportTenant.id, start: tenantReportStart, end: tenantReportEnd });
+      const response = await fetch(`/api/admin/tenant-report?${query.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || 'Falha ao gerar relatorio.');
+      setTenantReport(payload);
+    } catch (error: unknown) {
+      setTenantReportError(error instanceof Error ? error.message : 'Falha ao gerar relatorio.');
+      setTenantReport(null);
+    } finally {
+      setTenantReportLoading(false);
     }
   }
 
@@ -1154,6 +1187,18 @@ export default function AssinaturasPage() {
                          </button>
                          <button
                            onClick={() => {
+                             setTenantReportTenant(tenant);
+                             setTenantReport(null);
+                             setTenantReportError('');
+                           }}
+                           className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600"
+                           title="Relatório de uso por período"
+                           aria-label="Relatório de uso por período"
+                         >
+                           <TrendingUp size={18} />
+                         </button>
+                         <button
+                           onClick={() => {
                              setTenantToDelete(tenant);
                              setDeleteConfirmInput('');
                            }}
@@ -1239,6 +1284,50 @@ export default function AssinaturasPage() {
           </table>
         </div>
       </div>
+
+      {tenantReportTenant && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600">Relatório de uso</p>
+                <h3 className="mt-1 text-xl font-black text-slate-800">{tenantReportTenant.nome}</h3>
+                <p className="mt-1 text-xs text-slate-500">Base para análise de consumo, limites e futuros planos.</p>
+              </div>
+              <button onClick={() => setTenantReportTenant(null)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
+            </div>
+            <div className="space-y-4 p-6">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Data inicial<input type="date" value={tenantReportStart} onChange={(event) => setTenantReportStart(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700" /></label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Data final<input type="date" value={tenantReportEnd} onChange={(event) => setTenantReportEnd(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700" /></label>
+                <button type="button" onClick={generateTenantReport} disabled={tenantReportLoading} className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-emerald-700 disabled:opacity-50">{tenantReportLoading ? <Loader2 size={15} className="animate-spin" /> : <TrendingUp size={15} />} Gerar relatório</button>
+              </div>
+              {tenantReportError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{tenantReportError}</div>}
+              {tenantReport && (
+                <>
+                  <p className="text-xs font-semibold text-slate-500">Período: {new Date(`${tenantReport.period.start}T12:00:00`).toLocaleDateString('pt-BR')} até {new Date(`${tenantReport.period.end}T12:00:00`).toLocaleDateString('pt-BR')}</p>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {[
+                      ['Orçamentos criados', tenantReport.metrics.budgetsCreated],
+                      ['Orçamentos aprovados', tenantReport.metrics.budgetsApproved],
+                      ['Clientes criados', tenantReport.metrics.clientsCreated],
+                      ['NFs emitidas', tenantReport.metrics.invoicesIssued],
+                      ['Projetos criados', tenantReport.metrics.projectsCreated],
+                      ['Sacadas criadas', tenantReport.metrics.sacadasCreated],
+                      ['OS criadas', tenantReport.metrics.workOrdersCreated],
+                      ['Exclusões auditadas', tenantReport.metrics.auditedDeletes],
+                      ['WhatsApp recebidas', tenantReport.metrics.whatsappReceived],
+                      ['WhatsApp enviadas', tenantReport.metrics.whatsappSent],
+                    ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</p><p className="mt-2 text-2xl font-black text-slate-800">{value}</p></div>)}
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-4"><span className="text-sm font-bold text-emerald-800">Valor dos orçamentos aprovados</span><strong className="text-xl text-emerald-700">{formatCurrency(tenantReport.metrics.budgetsApprovedValue)}</strong></div>
+                  <p className="text-[11px] text-slate-400">“Exclusões auditadas” considera apenas deletes registrados no histórico de auditoria. NFs são contabilizadas pela data de emissão vinculada ao orçamento.</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Emissão de Nota Fiscal */}
       {isEmitModalOpen && vidracariaToEmit && (

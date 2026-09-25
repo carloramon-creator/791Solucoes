@@ -91,7 +91,10 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   });
   const supportPayload = await supportResponse.json().catch(() => ({}));
   if (!supportResponse.ok || !supportPayload?.supportUrl) {
-    return NextResponse.json({ error: supportPayload?.error || 'Falha ao emitir o acesso de suporte.' }, { status: 502 });
+    const detail = supportPayload?.error
+      || supportPayload?.message
+      || `A 791glass respondeu HTTP ${supportResponse.status} (${supportResponse.statusText || 'sem status textual'}).`;
+    return NextResponse.json({ error: `Falha ao emitir acesso: ${detail}` }, { status: 502 });
   }
 
   return NextResponse.json({

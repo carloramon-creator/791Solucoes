@@ -1311,7 +1311,6 @@ export default function AssinaturasPage() {
                       ['Orçamentos criados', tenantReport.metrics.budgetsCreated],
                       ['Orçamentos aprovados', tenantReport.metrics.budgetsApproved],
                       ['Clientes criados', tenantReport.metrics.clientsCreated],
-                      ['NFs emitidas', tenantReport.metrics.invoicesIssued],
                       ['Projetos criados', tenantReport.metrics.projectsCreated],
                       ['Sacadas criadas', tenantReport.metrics.sacadasCreated],
                       ['OS criadas', tenantReport.metrics.workOrdersCreated],
@@ -1321,7 +1320,7 @@ export default function AssinaturasPage() {
                     ].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</p><p className="mt-2 text-2xl font-black text-slate-800">{value}</p></div>)}
                   </div>
                   <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-4"><span className="text-sm font-bold text-emerald-800">Valor dos orçamentos aprovados</span><strong className="text-xl text-emerald-700">{formatCurrency(tenantReport.metrics.budgetsApprovedValue)}</strong></div>
-                  <p className="text-[11px] text-slate-400">“Exclusões auditadas” considera apenas deletes registrados no histórico de auditoria. NFs são contabilizadas pela data de emissão vinculada ao orçamento.</p>
+                  <p className="text-[11px] text-slate-400">“Exclusões auditadas” considera apenas deletes registrados no histórico de auditoria.</p>
                 </>
               )}
             </div>

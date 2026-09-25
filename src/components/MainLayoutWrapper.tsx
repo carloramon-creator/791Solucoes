@@ -6,6 +6,7 @@ import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { Loader2 } from 'lucide-react';
+import InternalTenantChatWidget from '@/components/InternalTenantChatWidget';
 
 const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
   { path: '/', resourceCode: 'menu.dashboard' },
@@ -41,17 +42,8 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const [sponsorId, setSponsorId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  useEffect(() => {
-    const storedValue = window.localStorage.getItem('holding.sidebar.collapsed');
-    if (storedValue === 'true') setSidebarCollapsed(true);
-  }, []);
-
   const toggleSidebar = () => {
-    setSidebarCollapsed((current) => {
-      const next = !current;
-      window.localStorage.setItem('holding.sidebar.collapsed', String(next));
-      return next;
-    });
+    setSidebarCollapsed((current) => !current);
   };
 
   useEffect(() => {
@@ -239,6 +231,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#f8fafc]">
           {children}
         </main>
+        <InternalTenantChatWidget />
       </div>
     </div>
   );

@@ -275,7 +275,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </Link>
         <button
           aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
-          className={`absolute text-slate-400 transition-colors hover:text-slate-600 ${collapsed ? 'right-1/2 translate-x-1/2' : 'right-4'}`}
+          className={`absolute z-20 flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition-colors hover:text-slate-700 ${collapsed ? '-right-4 border border-slate-200 bg-white shadow-md' : 'right-3 hover:bg-slate-100'}`}
           onClick={onToggle}
           title={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'}
           type="button"

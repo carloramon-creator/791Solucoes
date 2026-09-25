@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { getGlassClient } from '@/lib/glass-client';
-import { supabaseServer } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -31,19 +30,18 @@ export async function GET(req: Request) {
     const scoped = (table: string, select: string, dateColumn = 'created_at') => glass
       .from(table).select(select).eq('vidracaria_id', tenantId).gte(dateColumn, startIso).lte(dateColumn, endIso);
 
-    const [tenant, budgets, clients, projects, sacadas, workOrders, invoices, messages, deletes] = await Promise.all([
+    const [tenant, budgets, clients, projects, sacadas, workOrders, messages, deletes] = await Promise.all([
       glass.from('vidracarias').select('id, nome, slug').eq('id', tenantId).maybeSingle(),
       scoped('orcamentos', 'id, status, valor_total'),
       scoped('pessoas', 'id').eq('is_cliente', true),
       scoped('projetos', 'id'),
       scoped('sacadas', 'id'),
       scoped('ordens_servico', 'id'),
-      supabaseServer.from('system_invoices').select('id').eq('metadata->>vidracaria_id', tenantId).gte('created_at', startIso).lte('created_at', endIso),
       scoped('whatsapp_messages', 'id, sender_type'),
       scoped('audit_logs', 'id, tabela').eq('operacao', 'DELETE'),
     ]);
 
-    const firstError = [budgets, clients, projects, sacadas, workOrders, invoices, messages, deletes]
+    const firstError = [budgets, clients, projects, sacadas, workOrders, messages, deletes]
       .map((result) => result.error)
       .find((error) => error !== null);
     if (firstError) return NextResponse.json({ error: firstError.message }, { status: 500 });
@@ -67,7 +65,6 @@ export async function GET(req: Request) {
         projectsCreated: (projects.data || []).length,
         sacadasCreated: (sacadas.data || []).length,
         workOrdersCreated: (workOrders.data || []).length,
-        invoicesIssued: (invoices.data || []).length,
         whatsappReceived: messageRows.filter((row) => row.sender_type === 'contact').length,
         whatsappSent: messageRows.filter((row) => ['user', 'system'].includes(String(row.sender_type))).length,
         auditedDeletes: deleteRows.length,

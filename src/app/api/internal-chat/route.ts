@@ -5,7 +5,14 @@ import { getGlassClient } from '@/lib/glass-client';
 
 const ATTACHMENT_BUCKET = 'internal-chat-attachments';
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-const VALID_STATUSES = new Set(['available', 'away', 'busy']);
+const ACTIVE_WINDOW_MS = 30 * 60 * 1000;
+
+function resolvePresence(user: { user_metadata?: Record<string, unknown>; updated_at?: string }) {
+  const lastActivityAt = String(user.user_metadata?.internal_chat_last_activity_at || '');
+  const lastActivity = new Date(lastActivityAt).getTime();
+  if (user.user_metadata?.internal_chat_online !== true || !Number.isFinite(lastActivity)) return 'offline';
+  return Date.now() - lastActivity <= ACTIVE_WINDOW_MS ? 'online' : 'idle';
+}
 
 function identityEmail(holdingEmail: string, tenantId: string) {
   const hash = createHash('sha256').update(`${holdingEmail.trim().toLowerCase()}:${tenantId}`).digest('hex').slice(0, 24);
@@ -88,13 +95,29 @@ export async function GET(req: Request) {
 
     const [{ data: users, error: usersError }, { data: conversations, error: conversationsError }, authUsers] = await Promise.all([
       glass.from('user_profiles').select('user_id, nome_exibicao, ativo').eq('vidracaria_id', tenantId).eq('ativo', true).order('nome_exibicao'),
-      glass.from('internal_chat_conversations').select('id, titulo, tipo, updated_at, participants:internal_chat_participants(user_id)').eq('vidracaria_id', tenantId).order('updated_at', { ascending: false }),
+      glass.from('internal_chat_conversations').select('id, titulo, tipo, updated_at').eq('vidracaria_id', tenantId).order('updated_at', { ascending: false }),
       glass.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
     const firstError = usersError || conversationsError || authUsers.error;
     if (firstError) return NextResponse.json({ error: firstError.message }, { status: 500 });
+    const conversationIds = (conversations || []).map((conversation) => conversation.id);
+    const { data: participants, error: participantsError } = conversationIds.length > 0
+      ? await glass.from('internal_chat_participants').select('conversation_id, user_id')
+        .eq('vidracaria_id', tenantId).in('conversation_id', conversationIds)
+      : { data: [], error: null };
+    if (participantsError) return NextResponse.json({ error: participantsError.message }, { status: 500 });
+    const participantsByConversation = new Map<string, Array<{ user_id: string }>>();
+    for (const participant of participants || []) {
+      const current = participantsByConversation.get(participant.conversation_id) || [];
+      current.push({ user_id: participant.user_id });
+      participantsByConversation.set(participant.conversation_id, current);
+    }
+    const conversationsWithParticipants = (conversations || []).map((conversation) => ({
+      ...conversation,
+      participants: participantsByConversation.get(conversation.id) || [],
+    }));
     const tenantNameById = new Map((users || []).map((user) => [user.user_id, user.nome_exibicao || 'Usuario do tenant']));
-    const ownConversations = (conversations || [])
+    const ownConversations = conversationsWithParticipants
       .filter((conversation) => (conversation.participants || []).some((participant) => participant.user_id === identity.id))
       .map((conversation) => {
         const otherParticipant = (conversation.participants || []).find((participant) => participant.user_id !== identity.id);
@@ -103,8 +126,8 @@ export async function GET(req: Request) {
     const relevantIds = new Set([identity.id, ...(users || []).map((user) => user.user_id)]);
     const presence = (authUsers.data.users || []).filter((user) => relevantIds.has(user.id)).map((user) => ({
       user_id: user.id,
-      status: VALID_STATUSES.has(user.user_metadata?.internal_chat_status) ? user.user_metadata.internal_chat_status : 'available',
-      updated_at: user.user_metadata?.internal_chat_status_updated_at || user.updated_at,
+      status: resolvePresence(user),
+      updated_at: user.user_metadata?.internal_chat_last_activity_at || user.updated_at,
     }));
     return NextResponse.json({ tenant, currentUserId: identity.id, users: users || [], conversations: ownConversations, presence });
   } catch (error: unknown) {
@@ -119,18 +142,37 @@ export async function POST(req: Request) {
     const value = (key: string) => String(isMultipart ? payload.get(key) || '' : payload?.[key] || '').trim();
     const tenantId = value('tenantId');
     const action = value('action');
+
+    if (action === 'offline-all') {
+      const auth = await authenticateHoldingAdmin(req, 'Acesso ao chat interno nao autorizado.');
+      if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+      if (!auth.user.email) return NextResponse.json({ error: 'Usuario invalido.' }, { status: 400 });
+      const glass = await getGlassClient();
+      const { data, error } = await glass.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      const holdingEmail = auth.user.email.trim().toLowerCase();
+      const identities = (data.users || []).filter((user) =>
+        user.user_metadata?.holding_chat && String(user.user_metadata?.holding_email || '').trim().toLowerCase() === holdingEmail);
+      await Promise.all(identities.map((identity) => glass.auth.admin.updateUserById(identity.id, {
+        user_metadata: {
+          ...identity.user_metadata,
+          internal_chat_online: false,
+          internal_chat_last_activity_at: new Date().toISOString(),
+        },
+      })));
+      return NextResponse.json({ ok: true });
+    }
+
     const context = await resolveContext(req, tenantId);
     if ('response' in context) return context.response;
     const { glass, identity } = context;
 
     if (action === 'presence') {
-      const status = value('status');
-      if (!VALID_STATUSES.has(status)) return NextResponse.json({ error: 'Status invalido.' }, { status: 400 });
       const { error } = await glass.auth.admin.updateUserById(identity.id, {
         user_metadata: {
           ...identity.user_metadata,
-          internal_chat_status: status,
-          internal_chat_status_updated_at: new Date().toISOString(),
+          internal_chat_online: true,
+          internal_chat_last_activity_at: new Date().toISOString(),
         },
       });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });

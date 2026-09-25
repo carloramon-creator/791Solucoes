@@ -257,6 +257,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) {
+        await fetch('/api/internal-chat', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'offline-all' }),
+        }).catch(() => undefined);
+      }
       await supabase.auth.signOut();
     } catch (err) {
       console.error('Erro ao sair:', err);

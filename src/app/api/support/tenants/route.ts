@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getGlassClient } from '@/lib/glass-client';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { isTenantChatEnabled } from '@/lib/tenant-chat-access';
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem consultar vidracarias.');
@@ -12,7 +13,7 @@ export async function GET(req: Request) {
     const glass = await getGlassClient();
     const { data, error } = await glass
       .from('vidracarias')
-      .select('id, nome, slug, ativa')
+      .select('id, nome, slug, ativa, status_assinatura, vencimento_assinatura')
       .order('nome', { ascending: true });
 
     if (error) {
@@ -20,8 +21,8 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({
-      total: (data || []).length,
-      tenants: (data || []).map((tenant: any) => ({
+      total: (data || []).filter(isTenantChatEnabled).length,
+      tenants: (data || []).filter(isTenantChatEnabled).map((tenant: any) => ({
         id: String(tenant.id || ''),
         nome: tenant.nome ? String(tenant.nome) : null,
         slug: tenant.slug ? String(tenant.slug) : '',

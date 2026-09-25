@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { getGlassClient } from '@/lib/glass-client';
+import { isTenantChatEnabled } from '@/lib/tenant-chat-access';
 
 const ATTACHMENT_BUCKET = 'internal-chat-attachments';
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
@@ -50,8 +51,11 @@ async function resolveContext(req: Request, tenantId: string) {
   if (!auth.ok) return { response: NextResponse.json({ error: auth.error }, { status: auth.status }) };
   if (!tenantId || !auth.user.email) return { response: NextResponse.json({ error: 'Tenant ou usuario invalido.' }, { status: 400 }) };
   const glass = await getGlassClient();
-  const { data: tenant } = await glass.from('vidracarias').select('id, nome, slug').eq('id', tenantId).maybeSingle();
+  const { data: tenant } = await glass.from('vidracarias').select('id, nome, slug, ativa, status_assinatura, vencimento_assinatura').eq('id', tenantId).maybeSingle();
   if (!tenant) return { response: NextResponse.json({ error: 'Tenant nao encontrado.' }, { status: 404 }) };
+  if (!isTenantChatEnabled(tenant)) {
+    return { response: NextResponse.json({ error: 'Chat indisponivel para tenant bloqueado.' }, { status: 403 }) };
+  }
   const identity = await findOrCreateIdentity(glass, auth.user.email, tenantId);
   return { auth, glass, tenant, identity };
 }
@@ -60,10 +64,71 @@ export async function GET(req: Request) {
   try {
     const params = new URL(req.url).searchParams;
     const tenantId = String(params.get('tenantId') || '').trim();
+    const action = params.get('action') || 'bootstrap';
+
+    if (action === 'notifications') {
+      const auth = await authenticateHoldingAdmin(req, 'Acesso ao chat interno nao autorizado.');
+      if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+      if (!auth.user.email) return NextResponse.json({ notifications: [] });
+      const glass = await getGlassClient();
+      const { data: authUsers, error: authUsersError } = await glass.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (authUsersError) return NextResponse.json({ error: authUsersError.message }, { status: 500 });
+      const holdingEmail = auth.user.email.trim().toLowerCase();
+      const identities = (authUsers.users || []).filter((user) =>
+        user.user_metadata?.holding_chat && String(user.user_metadata?.holding_email || '').trim().toLowerCase() === holdingEmail);
+      if (identities.length === 0) return NextResponse.json({ notifications: [] });
+
+      const identityIds = identities.map((identity) => identity.id);
+      const { data: ownParticipants, error: ownParticipantsError } = await glass
+        .from('internal_chat_participants')
+        .select('conversation_id, vidracaria_id, user_id, last_read_at')
+        .in('user_id', identityIds);
+      if (ownParticipantsError) return NextResponse.json({ error: ownParticipantsError.message }, { status: 500 });
+      const conversationIds = (ownParticipants || []).map((participant) => participant.conversation_id);
+      if (conversationIds.length === 0) return NextResponse.json({ notifications: [] });
+
+      const [{ data: conversations, error: conversationsError }, { data: participants, error: participantsError }, { data: messages, error: messagesError }] = await Promise.all([
+        glass.from('internal_chat_conversations').select('id, vidracaria_id, titulo').in('id', conversationIds),
+        glass.from('internal_chat_participants').select('conversation_id, user_id').in('conversation_id', conversationIds),
+        glass.from('internal_chat_messages').select('id, conversation_id, sender_id, body, content_type, created_at').in('conversation_id', conversationIds).order('created_at'),
+      ]);
+      const firstError = conversationsError || participantsError || messagesError;
+      if (firstError) return NextResponse.json({ error: firstError.message }, { status: 500 });
+
+      const otherUserIds = (participants || []).map((participant) => participant.user_id).filter((userId) => !identityIds.includes(userId));
+      const tenantIds = Array.from(new Set((conversations || []).map((conversation) => conversation.vidracaria_id)));
+      const [{ data: profiles }, { data: tenants }] = await Promise.all([
+        otherUserIds.length > 0 ? glass.from('user_profiles').select('user_id, nome_exibicao').in('user_id', otherUserIds) : { data: [] },
+        tenantIds.length > 0 ? glass.from('vidracarias').select('id, nome, ativa, status_assinatura, vencimento_assinatura').in('id', tenantIds) : { data: [] },
+      ]);
+      const profileNameById = new Map((profiles || []).map((profile) => [profile.user_id, profile.nome_exibicao || 'Usuario do tenant']));
+      const tenantNameById = new Map((tenants || []).map((tenant) => [tenant.id, tenant.nome || 'Tenant']));
+
+      const enabledTenantIds = new Set((tenants || []).filter(isTenantChatEnabled).map((tenant) => tenant.id));
+      const notifications = (conversations || []).filter((conversation) => enabledTenantIds.has(conversation.vidracaria_id)).map((conversation) => {
+        const ownParticipant = (ownParticipants || []).find((participant) => participant.conversation_id === conversation.id);
+        const lastReadAt = ownParticipant?.last_read_at ? new Date(ownParticipant.last_read_at).getTime() : 0;
+        const conversationMessages = (messages || []).filter((message) => message.conversation_id === conversation.id);
+        const unreadCount = conversationMessages.filter((message) =>
+          message.sender_id !== ownParticipant?.user_id && new Date(message.created_at).getTime() > lastReadAt).length;
+        const otherParticipant = (participants || []).find((participant) =>
+          participant.conversation_id === conversation.id && participant.user_id !== ownParticipant?.user_id);
+        return {
+          conversationId: conversation.id,
+          tenantId: conversation.vidracaria_id,
+          tenantName: tenantNameById.get(conversation.vidracaria_id) || 'Tenant',
+          currentUserId: ownParticipant?.user_id || '',
+          title: otherParticipant ? profileNameById.get(otherParticipant.user_id) || conversation.titulo : conversation.titulo,
+          unread_count: unreadCount,
+          last_message: conversationMessages.at(-1) || null,
+        };
+      }).filter((notification) => notification.unread_count > 0);
+      return NextResponse.json({ notifications });
+    }
+
     const context = await resolveContext(req, tenantId);
     if ('response' in context) return context.response;
     const { glass, tenant, identity } = context;
-    const action = params.get('action') || 'bootstrap';
 
     if (action === 'messages') {
       const conversationId = String(params.get('conversationId') || '').trim();
@@ -102,26 +167,40 @@ export async function GET(req: Request) {
     if (firstError) return NextResponse.json({ error: firstError.message }, { status: 500 });
     const conversationIds = (conversations || []).map((conversation) => conversation.id);
     const { data: participants, error: participantsError } = conversationIds.length > 0
-      ? await glass.from('internal_chat_participants').select('conversation_id, user_id')
+      ? await glass.from('internal_chat_participants').select('conversation_id, user_id, last_read_at')
         .eq('vidracaria_id', tenantId).in('conversation_id', conversationIds)
       : { data: [], error: null };
     if (participantsError) return NextResponse.json({ error: participantsError.message }, { status: 500 });
-    const participantsByConversation = new Map<string, Array<{ user_id: string }>>();
+    const participantsByConversation = new Map<string, Array<{ user_id: string; last_read_at: string | null }>>();
     for (const participant of participants || []) {
       const current = participantsByConversation.get(participant.conversation_id) || [];
-      current.push({ user_id: participant.user_id });
+      current.push({ user_id: participant.user_id, last_read_at: participant.last_read_at });
       participantsByConversation.set(participant.conversation_id, current);
     }
     const conversationsWithParticipants = (conversations || []).map((conversation) => ({
       ...conversation,
       participants: participantsByConversation.get(conversation.id) || [],
     }));
+    const { data: conversationMessages, error: messagesError } = conversationIds.length > 0
+      ? await glass.from('internal_chat_messages').select('id, conversation_id, sender_id, body, content_type, created_at')
+        .eq('vidracaria_id', tenantId).in('conversation_id', conversationIds).order('created_at')
+      : { data: [], error: null };
+    if (messagesError) return NextResponse.json({ error: messagesError.message }, { status: 500 });
     const tenantNameById = new Map((users || []).map((user) => [user.user_id, user.nome_exibicao || 'Usuario do tenant']));
     const ownConversations = conversationsWithParticipants
       .filter((conversation) => (conversation.participants || []).some((participant) => participant.user_id === identity.id))
       .map((conversation) => {
         const otherParticipant = (conversation.participants || []).find((participant) => participant.user_id !== identity.id);
-        return { ...conversation, titulo: otherParticipant ? tenantNameById.get(otherParticipant.user_id) || conversation.titulo : conversation.titulo };
+        const ownParticipant = (conversation.participants || []).find((participant) => participant.user_id === identity.id);
+        const lastReadAt = ownParticipant?.last_read_at ? new Date(ownParticipant.last_read_at).getTime() : 0;
+        const messageList = (conversationMessages || []).filter((message) => message.conversation_id === conversation.id);
+        const unreadCount = messageList.filter((message) => message.sender_id !== identity.id && new Date(message.created_at).getTime() > lastReadAt).length;
+        return {
+          ...conversation,
+          titulo: otherParticipant ? tenantNameById.get(otherParticipant.user_id) || conversation.titulo : conversation.titulo,
+          unread_count: unreadCount,
+          last_message: messageList.at(-1) || null,
+        };
       });
     const relevantIds = new Set([identity.id, ...(users || []).map((user) => user.user_id)]);
     const presence = (authUsers.data.users || []).filter((user) => relevantIds.has(user.id)).map((user) => ({
@@ -176,6 +255,20 @@ export async function POST(req: Request) {
         },
       });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === 'read') {
+      const conversationId = value('conversationId');
+      const { data, error } = await glass.from('internal_chat_participants')
+        .update({ last_read_at: new Date().toISOString() })
+        .eq('conversation_id', conversationId)
+        .eq('vidracaria_id', tenantId)
+        .eq('user_id', identity.id)
+        .select('conversation_id')
+        .maybeSingle();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (!data) return NextResponse.json({ error: 'Conversa nao encontrada.' }, { status: 404 });
       return NextResponse.json({ ok: true });
     }
 

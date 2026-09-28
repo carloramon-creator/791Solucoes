@@ -148,18 +148,18 @@ export default function InternalTenantChatWidget() {
 
   useEffect(() => {
     if (!tenantId) return;
-    const sync = (force = false) => {
-      if (!force && Date.now() - lastPresenceAtRef.current < 60_000) return;
-      lastPresenceAtRef.current = Date.now();
-      void api('/api/internal-chat', { method: 'POST', body: JSON.stringify({ action: 'presence', tenantId }) }).catch(() => undefined);
+    const sync = (activity = false) => {
+      if (activity && Date.now() - lastPresenceAtRef.current < 60_000) return;
+      if (activity) lastPresenceAtRef.current = Date.now();
+      void api('/api/internal-chat', { method: 'POST', body: JSON.stringify({ action: 'presence', tenantId, activity }) }).catch(() => undefined);
     };
-    const onActivity = () => sync();
+    const onActivity = () => sync(true);
     const onVisibility = () => { if (!document.hidden) sync(true); };
     sync(true);
     window.addEventListener('pointerdown', onActivity);
     window.addEventListener('keydown', onActivity);
     document.addEventListener('visibilitychange', onVisibility);
-    const interval = window.setInterval(() => sync(true), 5 * 60_000);
+    const interval = window.setInterval(() => sync(false), 30_000);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener('pointerdown', onActivity);

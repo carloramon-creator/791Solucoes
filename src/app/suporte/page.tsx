@@ -767,7 +767,7 @@ export default function SuportePage() {
       if (!supportUrl) throw new Error('O link de suporte nao foi emitido.');
       window.location.assign(supportUrl);
     } catch (err: any) {
-      setError(err?.message || 'Falha ao iniciar investigacao do tenant.');
+      setError(err?.message || 'Falha ao iniciar investigacao do cliente.');
     } finally {
       setStartingInvestigation(false);
     }
@@ -1239,10 +1239,10 @@ export default function SuportePage() {
                         onClick={handleStartTenantInvestigation}
                         disabled={startingInvestigation}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider hover:bg-blue-100 disabled:opacity-50"
-                        title="Registra uma investigacao vinculada a este ticket"
+                        title="Abre uma sessao temporaria somente leitura para este cliente"
                       >
                         {startingInvestigation ? <Loader2 className="animate-spin" size={14} /> : <Monitor size={14} />}
-                        {startingInvestigation ? 'Iniciando...' : 'Investigar tenant'}
+                        {startingInvestigation ? 'Iniciando...' : 'Investigar cliente'}
                       </button>
                     )}
                     {!['resolved', 'closed'].includes(selectedTicket.status) && (
@@ -1287,7 +1287,7 @@ export default function SuportePage() {
                 </div>
 
                 <div className="text-xs text-slate-500">
-                  Tenant: <span className="font-semibold text-slate-700">{selectedTicket.tenant_name || selectedTicket.tenant_slug}</span> • Criado em {formatDate(selectedTicket.created_at)}
+                  Cliente: <span className="font-semibold text-slate-700">{selectedTicket.tenant_name || selectedTicket.tenant_slug}</span> • Criado em {formatDate(selectedTicket.created_at)}
                 </div>
                 <div className={`text-xs font-semibold ${getDeadlineTone(selectedTicket)}`}>
                   Prazo: {selectedTicket.due_at ? formatDate(selectedTicket.due_at) : 'Sem prazo'} • {formatRelativeDeadline(selectedTicket.due_at)}

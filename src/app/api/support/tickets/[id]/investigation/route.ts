@@ -7,14 +7,14 @@ const INVESTIGATE_TENANT_PERMISSION = 'action.support.investigate_tenant';
 const SESSION_TTL_MINUTES = 30;
 
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem investigar tenants.');
+  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem investigar clientes.');
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const allowed = await userCanAccessResource(auth.user.email, INVESTIGATE_TENANT_PERMISSION);
   if (!allowed) {
-    return NextResponse.json({ error: 'Sem permissao para investigar o tenant deste ticket.' }, { status: 403 });
+    return NextResponse.json({ error: 'Sem permissao para investigar o cliente deste ticket.' }, { status: 403 });
   }
 
   const { id } = await context.params;
@@ -35,7 +35,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
   const tenantSlug = String(ticket.tenant_slug || '').trim();
   if (!tenantSlug) {
-    return NextResponse.json({ error: 'O ticket nao possui tenant vinculado.' }, { status: 422 });
+    return NextResponse.json({ error: 'O ticket nao possui cliente vinculado.' }, { status: 422 });
   }
 
   const openedAt = new Date();

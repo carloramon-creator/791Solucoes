@@ -7,11 +7,15 @@ import { isTenantChatEnabled } from '@/lib/tenant-chat-access';
 const ATTACHMENT_BUCKET = 'internal-chat-attachments';
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ACTIVE_WINDOW_MS = 30 * 60 * 1000;
+const HEARTBEAT_WINDOW_MS = 3 * 60 * 1000;
 
 function resolvePresence(user: { user_metadata?: Record<string, unknown>; updated_at?: string }) {
   const lastActivityAt = String(user.user_metadata?.internal_chat_last_activity_at || '');
+  const lastSeenAt = String(user.user_metadata?.internal_chat_last_seen_at || '');
   const lastActivity = new Date(lastActivityAt).getTime();
-  if (user.user_metadata?.internal_chat_online !== true || !Number.isFinite(lastActivity)) return 'offline';
+  const lastSeen = new Date(lastSeenAt).getTime();
+  if (user.user_metadata?.internal_chat_online !== true || !Number.isFinite(lastSeen) || Date.now() - lastSeen > HEARTBEAT_WINDOW_MS) return 'offline';
+  if (!Number.isFinite(lastActivity)) return 'idle';
   return Date.now() - lastActivity <= ACTIVE_WINDOW_MS ? 'online' : 'idle';
 }
 
@@ -247,11 +251,16 @@ export async function POST(req: Request) {
     const { glass, identity } = context;
 
     if (action === 'presence') {
+      const hasActivity = value('activity') === 'true';
+      const updatedAt = new Date().toISOString();
       const { error } = await glass.auth.admin.updateUserById(identity.id, {
         user_metadata: {
           ...identity.user_metadata,
           internal_chat_online: true,
-          internal_chat_last_activity_at: new Date().toISOString(),
+          internal_chat_last_seen_at: updatedAt,
+          internal_chat_last_activity_at: hasActivity
+            ? updatedAt
+            : identity.user_metadata?.internal_chat_last_activity_at || updatedAt,
         },
       });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });

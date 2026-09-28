@@ -856,7 +856,7 @@ export default function AssinaturasPage() {
             Monitoramento centralizado de todas as vidraçarias cadastradas no SaaS.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             onClick={async () => {
               setShowClosingPreviewModal(true);
@@ -1190,14 +1190,6 @@ export default function AssinaturasPage() {
                            <Settings size={18} />
                          </button>
                          <button
-                           onClick={() => openInvoiceHistory(tenant)}
-                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-indigo-50 hover:text-indigo-600"
-                           title="Histórico de faturas"
-                           aria-label="Histórico de faturas"
-                         >
-                           <FileText size={18} />
-                         </button>
-                         <button
                            onClick={() => {
                              setTenantReportTenant(tenant);
                              setTenantReport(null);
@@ -1253,16 +1245,6 @@ export default function AssinaturasPage() {
                                >
                                  SIS +{usage.overage.extraUsers}
                                </button>}
-                               {usage.overage.extraWhatsappUsers > 0 && <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.whatsappUsers)}`}
-                               >
-                                 WPP +{usage.overage.extraWhatsappUsers}
-                               </button>}
                                {usage.overage.extraMessages > 0 && <button
                                  type="button"
                                  onClick={() => {
@@ -1287,6 +1269,14 @@ export default function AssinaturasPage() {
                            ) : (
                              <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
                            )}
+                           <button
+                             type="button"
+                             onClick={() => void openInvoiceHistory(tenant)}
+                             className="inline-flex w-fit items-center gap-1 rounded-md border border-indigo-100 bg-indigo-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-indigo-700 transition hover:bg-indigo-100"
+                             title={`Abrir faturas SaaS de ${tenant.nome}`}
+                           >
+                             <FileText size={12} /> Faturas
+                           </button>
                         </div>
                       </td>
                   </tr>

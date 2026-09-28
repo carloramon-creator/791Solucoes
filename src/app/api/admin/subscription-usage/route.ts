@@ -172,6 +172,12 @@ export async function GET(req: Request) {
       { data: sectors, error: sectorsError },
       { data: sectorUsers, error: sectorUsersError },
       { data: messages, error: messagesError },
+      { data: budgets, error: budgetsError },
+      { data: clients, error: clientsError },
+      { data: projects, error: projectsError },
+      { data: sacadas, error: sacadasError },
+      { data: workOrders, error: workOrdersError },
+      { data: auditedDeletes, error: auditedDeletesError },
       { data: planConfig, error: planConfigError },
       { data: invoices, error: invoicesError },
     ] = await Promise.all([
@@ -193,7 +199,39 @@ export async function GET(req: Request) {
         .select('vidracaria_id, sender_type, created_at')
         .gte('created_at', messagesPeriodStart)
         .lte('created_at', rangeEnd.toISOString())
-        .in('sender_type', ['user', 'system']),
+        .in('sender_type', ['contact', 'user', 'system']),
+      glass
+        .from('orcamentos')
+        .select('vidracaria_id, status, valor_total, created_at')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
+      glass
+        .from('pessoas')
+        .select('vidracaria_id, created_at')
+        .eq('is_cliente', true)
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
+      glass
+        .from('projetos')
+        .select('vidracaria_id, created_at')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
+      glass
+        .from('sacadas')
+        .select('vidracaria_id, created_at')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
+      glass
+        .from('ordens_servico')
+        .select('vidracaria_id, created_at')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
+      glass
+        .from('audit_logs')
+        .select('vidracaria_id, tabela, created_at')
+        .eq('operacao', 'DELETE')
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString()),
       supabaseServer
         .from('system_plans')
         .select('system_limits')
@@ -213,6 +251,12 @@ export async function GET(req: Request) {
       sectorsError ||
       sectorUsersError ||
       messagesError ||
+      budgetsError ||
+      clientsError ||
+      projectsError ||
+      sacadasError ||
+      workOrdersError ||
+      auditedDeletesError ||
       planConfigError ||
       invoicesError;
 
@@ -314,10 +358,72 @@ export async function GET(req: Request) {
     });
 
     const messagesByTenant = new Map<string, number>();
+    const whatsappReceivedByTenant = new Map<string, number>();
     (messages || []).forEach((msg: any) => {
       const tenantId = String(msg?.vidracaria_id || '');
       if (!tenantId) return;
-      messagesByTenant.set(tenantId, (messagesByTenant.get(tenantId) || 0) + 1);
+      if (msg.sender_type === 'contact') {
+        whatsappReceivedByTenant.set(tenantId, (whatsappReceivedByTenant.get(tenantId) || 0) + 1);
+      } else {
+        messagesByTenant.set(tenantId, (messagesByTenant.get(tenantId) || 0) + 1);
+      }
+    });
+
+    const activityByTenant = new Map<string, {
+      budgetsCreated: number;
+      budgetsApproved: number;
+      budgetsApprovedValue: number;
+      clientsCreated: number;
+      projectsCreated: number;
+      sacadasCreated: number;
+      workOrdersCreated: number;
+      auditedDeletes: number;
+    }>();
+    const getActivity = (tenantId: string) => {
+      if (!activityByTenant.has(tenantId)) {
+        activityByTenant.set(tenantId, {
+          budgetsCreated: 0,
+          budgetsApproved: 0,
+          budgetsApprovedValue: 0,
+          clientsCreated: 0,
+          projectsCreated: 0,
+          sacadasCreated: 0,
+          workOrdersCreated: 0,
+          auditedDeletes: 0,
+        });
+      }
+      return activityByTenant.get(tenantId)!;
+    };
+
+    (budgets || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (!tenantId) return;
+      const activity = getActivity(tenantId);
+      activity.budgetsCreated += 1;
+      if (['aprovado', 'pre_aprovado'].includes(normalizeText(row?.status))) {
+        activity.budgetsApproved += 1;
+        activity.budgetsApprovedValue += toNumber(row?.valor_total, 0);
+      }
+    });
+    (clients || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (tenantId) getActivity(tenantId).clientsCreated += 1;
+    });
+    (projects || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (tenantId) getActivity(tenantId).projectsCreated += 1;
+    });
+    (sacadas || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (tenantId) getActivity(tenantId).sacadasCreated += 1;
+    });
+    (workOrders || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (tenantId) getActivity(tenantId).workOrdersCreated += 1;
+    });
+    (auditedDeletes || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (tenantId) getActivity(tenantId).auditedDeletes += 1;
     });
 
     const consultflexByTenant = new Map<string, {
@@ -452,6 +558,17 @@ export async function GET(req: Request) {
       const whatsappUsers = whatsappUsersByTenant.get(tenantId)?.size || 0;
       const sectorsCount = sectorsByTenant.get(tenantId) || 0;
       const messagesSent = messagesByTenant.get(tenantId) || 0;
+      const whatsappReceived = whatsappReceivedByTenant.get(tenantId) || 0;
+      const activity = activityByTenant.get(tenantId) || {
+        budgetsCreated: 0,
+        budgetsApproved: 0,
+        budgetsApprovedValue: 0,
+        clientsCreated: 0,
+        projectsCreated: 0,
+        sacadasCreated: 0,
+        workOrdersCreated: 0,
+        auditedDeletes: 0,
+      };
       const consultflexUsage = consultflexByTenant.get(tenantId) || {
         basicSuccess: 0,
         completeSuccess: 0,
@@ -490,6 +607,7 @@ export async function GET(req: Request) {
           whatsappUsers,
           sectors: sectorsCount,
           messagesSent,
+          whatsappReceived,
           consultflexBasicSuccess: consultflexUsage.basicSuccess,
           consultflexCompleteSuccess: consultflexUsage.completeSuccess,
           consultflexSuccessTotal: consultflexUsage.basicSuccess + consultflexUsage.completeSuccess,
@@ -501,6 +619,7 @@ export async function GET(req: Request) {
             + consultflexUsage.failed
             + consultflexUsage.unknown,
         },
+          activity,
         limits: {
           users: usersLimit,
           whatsappUsers: whatsappUsersLimit,
@@ -545,9 +664,18 @@ export async function GET(req: Request) {
         acc.whatsappUsers += tenant.usage.whatsappUsers;
         acc.sectors += tenant.usage.sectors;
         acc.messagesSent += tenant.usage.messagesSent;
+        acc.whatsappReceived += tenant.usage.whatsappReceived;
         acc.consultflexBasicSuccess += tenant.usage.consultflexBasicSuccess;
         acc.consultflexCompleteSuccess += tenant.usage.consultflexCompleteSuccess;
         acc.consultflexSuccess += tenant.usage.consultflexSuccessTotal;
+        acc.budgetsCreated += tenant.activity.budgetsCreated;
+        acc.budgetsApproved += tenant.activity.budgetsApproved;
+        acc.budgetsApprovedValue += tenant.activity.budgetsApprovedValue;
+        acc.clientsCreated += tenant.activity.clientsCreated;
+        acc.projectsCreated += tenant.activity.projectsCreated;
+        acc.sacadasCreated += tenant.activity.sacadasCreated;
+        acc.workOrdersCreated += tenant.activity.workOrdersCreated;
+        acc.auditedDeletes += tenant.activity.auditedDeletes;
         // Não adiciona mais o overage, pois usaremos o faturamento real
 
         if (tenant.status.users === 'exceeded') acc.usersExceeded += 1;
@@ -562,6 +690,15 @@ export async function GET(req: Request) {
         whatsappUsers: 0,
         sectors: 0,
         messagesSent: 0,
+        whatsappReceived: 0,
+        budgetsCreated: 0,
+        budgetsApproved: 0,
+        budgetsApprovedValue: 0,
+        clientsCreated: 0,
+        projectsCreated: 0,
+        sacadasCreated: 0,
+        workOrdersCreated: 0,
+        auditedDeletes: 0,
         consultflexBasicSuccess: 0,
         consultflexCompleteSuccess: 0,
         consultflexSuccess: 0,

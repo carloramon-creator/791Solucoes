@@ -16,11 +16,22 @@ type TenantUsage = {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    whatsappReceived: number;
     consultflexBasicSuccess: number;
     consultflexCompleteSuccess: number;
     consultflexSuccessTotal: number;
     consultflexFailed: number;
     consultflexUnknown: number;
+  };
+  activity: {
+    budgetsCreated: number;
+    budgetsApproved: number;
+    budgetsApprovedValue: number;
+    clientsCreated: number;
+    projectsCreated: number;
+    sacadasCreated: number;
+    workOrdersCreated: number;
+    auditedDeletes: number;
   };
   limits: { users: number; whatsappUsers: number; messages: number };
   overage: {
@@ -35,11 +46,30 @@ type ReportPayload = {
   generatedAt: string;
   messagesPeriodStart: string;
   rangeEnd: string;
-  totals: { tenants: number; registeredUsers: number; activeUsers: number; whatsappUsers: number; sectors: number; messagesSent: number; consultflexBasicSuccess: number; consultflexCompleteSuccess: number; consultflexSuccess: number };
+  totals: {
+    tenants: number;
+    registeredUsers: number;
+    activeUsers: number;
+    whatsappUsers: number;
+    sectors: number;
+    messagesSent: number;
+    whatsappReceived: number;
+    consultflexBasicSuccess: number;
+    consultflexCompleteSuccess: number;
+    consultflexSuccess: number;
+    budgetsCreated: number;
+    budgetsApproved: number;
+    budgetsApprovedValue: number;
+    clientsCreated: number;
+    projectsCreated: number;
+    sacadasCreated: number;
+    workOrdersCreated: number;
+    auditedDeletes: number;
+  };
   tenants: TenantUsage[];
 };
 
-type SortKey = 'nome' | 'registeredUsers' | 'activeUsers' | 'whatsappUsers' | 'messagesSent' | 'consultflexBasicSuccess' | 'consultflexCompleteSuccess' | 'extraUsers' | 'extraWhatsappUsers' | 'extraMessages' | 'overageTotal';
+type SortKey = 'nome' | 'budgetsCreated' | 'budgetsApproved' | 'budgetsApprovedValue' | 'clientsCreated' | 'projectsCreated' | 'sacadasCreated' | 'workOrdersCreated' | 'auditedDeletes' | 'whatsappReceived' | 'whatsappSent' | 'registeredUsers' | 'activeUsers' | 'whatsappUsers' | 'messagesSent' | 'consultflexBasicSuccess' | 'consultflexCompleteSuccess' | 'extraUsers' | 'extraWhatsappUsers' | 'extraMessages' | 'overageTotal';
 type SortDirection = 'asc' | 'desc';
 
 const numberFormat = new Intl.NumberFormat('pt-BR');
@@ -104,11 +134,28 @@ export default function TenantConsumptionReportPage() {
 
   const getSortValue = (tenant: TenantUsage, key: SortKey): number | string => {
     if (key === 'nome') return tenant.nome || tenant.slug || '';
-    if (key === 'extraUsers') return tenant.overage.extraUsers;
-    if (key === 'extraWhatsappUsers') return tenant.overage.extraWhatsappUsers;
-    if (key === 'extraMessages') return tenant.overage.extraMessages;
-    if (key === 'overageTotal') return tenant.overage.values.total;
-    return tenant.usage[key];
+    if (key === 'whatsappSent') return tenant.usage.messagesSent;
+    switch (key) {
+      case 'budgetsCreated': return tenant.activity.budgetsCreated;
+      case 'budgetsApproved': return tenant.activity.budgetsApproved;
+      case 'budgetsApprovedValue': return tenant.activity.budgetsApprovedValue;
+      case 'clientsCreated': return tenant.activity.clientsCreated;
+      case 'projectsCreated': return tenant.activity.projectsCreated;
+      case 'sacadasCreated': return tenant.activity.sacadasCreated;
+      case 'workOrdersCreated': return tenant.activity.workOrdersCreated;
+      case 'auditedDeletes': return tenant.activity.auditedDeletes;
+      case 'whatsappReceived': return tenant.usage.whatsappReceived;
+      case 'registeredUsers': return tenant.usage.registeredUsers;
+      case 'activeUsers': return tenant.usage.activeUsers;
+      case 'whatsappUsers': return tenant.usage.whatsappUsers;
+      case 'messagesSent': return tenant.usage.messagesSent;
+      case 'consultflexBasicSuccess': return tenant.usage.consultflexBasicSuccess;
+      case 'consultflexCompleteSuccess': return tenant.usage.consultflexCompleteSuccess;
+      case 'extraUsers': return tenant.overage.extraUsers;
+      case 'extraWhatsappUsers': return tenant.overage.extraWhatsappUsers;
+      case 'extraMessages': return tenant.overage.extraMessages;
+      case 'overageTotal': return tenant.overage.values.total;
+    }
   };
 
   const sortedTenants = useMemo(() => {
@@ -126,6 +173,15 @@ export default function TenantConsumptionReportPage() {
   const totals = useMemo(() => {
     const rows = report?.tenants || [];
     return rows.reduce((sum, tenant) => ({
+      budgetsCreated: sum.budgetsCreated + tenant.activity.budgetsCreated,
+      budgetsApproved: sum.budgetsApproved + tenant.activity.budgetsApproved,
+      budgetsApprovedValue: sum.budgetsApprovedValue + tenant.activity.budgetsApprovedValue,
+      clientsCreated: sum.clientsCreated + tenant.activity.clientsCreated,
+      projectsCreated: sum.projectsCreated + tenant.activity.projectsCreated,
+      sacadasCreated: sum.sacadasCreated + tenant.activity.sacadasCreated,
+      workOrdersCreated: sum.workOrdersCreated + tenant.activity.workOrdersCreated,
+      auditedDeletes: sum.auditedDeletes + tenant.activity.auditedDeletes,
+      whatsappReceived: sum.whatsappReceived + tenant.usage.whatsappReceived,
       registeredUsers: sum.registeredUsers + tenant.usage.registeredUsers,
       activeUsers: sum.activeUsers + tenant.usage.activeUsers,
       whatsappUsers: sum.whatsappUsers + tenant.usage.whatsappUsers,
@@ -137,6 +193,9 @@ export default function TenantConsumptionReportPage() {
       extraMessages: sum.extraMessages + tenant.overage.extraMessages,
       overageTotal: sum.overageTotal + tenant.overage.values.total,
     }), {
+      budgetsCreated: 0, budgetsApproved: 0, budgetsApprovedValue: 0,
+      clientsCreated: 0, projectsCreated: 0, sacadasCreated: 0,
+      workOrdersCreated: 0, auditedDeletes: 0, whatsappReceived: 0,
       registeredUsers: 0, activeUsers: 0, whatsappUsers: 0, messagesSent: 0,
       consultflexBasicSuccess: 0, consultflexCompleteSuccess: 0,
       extraUsers: 0, extraWhatsappUsers: 0, extraMessages: 0, overageTotal: 0,
@@ -153,9 +212,15 @@ export default function TenantConsumptionReportPage() {
 
   const exportCsv = () => {
     if (!report) return;
-    const headings = ['Cliente', 'Slug', 'Situação', 'Usuários cadastrados', 'Usuários ativos', 'Limite usuários', 'Usuários WhatsApp', 'Limite WhatsApp', 'Mensagens enviadas', 'Limite mensagens', 'ConsultFlex básica', 'ConsultFlex completa', 'Excedente usuários', 'Excedente WhatsApp', 'Excedente mensagens', 'Excedente estimado'];
+    const headings = ['Cliente', 'Slug', 'Situação', 'Orçamentos criados', 'Orçamentos aprovados', 'Valor orçamentos aprovados', 'Clientes criados', 'Projetos criados', 'Sacadas criadas', 'OS criadas', 'Exclusões auditadas', 'WhatsApp recebidas', 'WhatsApp enviadas', 'Usuários cadastrados', 'Usuários ativos', 'Limite usuários', 'Usuários WhatsApp', 'Limite WhatsApp', 'Mensagens enviadas', 'Limite mensagens', 'ConsultFlex básica', 'ConsultFlex completa', 'Excedente usuários', 'Excedente WhatsApp', 'Excedente mensagens', 'Excedente estimado'];
     const rows = sortedTenants.map((tenant) => [
       tenant.nome, tenant.slug, tenant.ativa ? 'Ativo' : 'Inativo',
+      tenant.activity.budgetsCreated, tenant.activity.budgetsApproved,
+      tenant.activity.budgetsApprovedValue.toFixed(2).replace('.', ','),
+      tenant.activity.clientsCreated, tenant.activity.projectsCreated,
+      tenant.activity.sacadasCreated, tenant.activity.workOrdersCreated,
+      tenant.activity.auditedDeletes, tenant.usage.whatsappReceived,
+      tenant.usage.messagesSent,
       tenant.usage.registeredUsers, tenant.usage.activeUsers, tenant.limits.users,
       tenant.usage.whatsappUsers, tenant.limits.whatsappUsers,
       tenant.usage.messagesSent, tenant.limits.messages,
@@ -164,7 +229,11 @@ export default function TenantConsumptionReportPage() {
       tenant.overage.values.total.toFixed(2).replace('.', ','),
     ]);
     rows.push([
-      'TOTAL', '', '', totals.registeredUsers, totals.activeUsers, '', totals.whatsappUsers, '',
+      'TOTAL', '', '', totals.budgetsCreated, totals.budgetsApproved,
+      totals.budgetsApprovedValue.toFixed(2).replace('.', ','), totals.clientsCreated,
+      totals.projectsCreated, totals.sacadasCreated, totals.workOrdersCreated,
+      totals.auditedDeletes, totals.whatsappReceived, totals.messagesSent,
+      totals.registeredUsers, totals.activeUsers, '', totals.whatsappUsers, '',
       totals.messagesSent, '', totals.consultflexBasicSuccess, totals.consultflexCompleteSuccess,
       totals.extraUsers, totals.extraWhatsappUsers, totals.extraMessages, totals.overageTotal.toFixed(2).replace('.', ','),
     ]);
@@ -203,10 +272,20 @@ export default function TenantConsumptionReportPage() {
 
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1300px] border-collapse text-sm">
+        <table className="w-full min-w-[2200px] border-collapse text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3 text-left"><SortButton label="Cliente" field="nome" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Orçamentos" field="budgetsCreated" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Aprovados" field="budgetsApproved" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Valor aprovado" field="budgetsApprovedValue" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Clientes" field="clientsCreated" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Projetos" field="projectsCreated" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Sacadas" field="sacadasCreated" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="OS" field="workOrdersCreated" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Exclusões" field="auditedDeletes" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="WPP recebidas" field="whatsappReceived" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="WPP enviadas" field="whatsappSent" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="Usuários" field="registeredUsers" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="Ativos" field="activeUsers" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="WhatsApp" field="whatsappUsers" align="right" /></th>
@@ -222,6 +301,16 @@ export default function TenantConsumptionReportPage() {
           <tbody className="divide-y divide-slate-100">
             {sortedTenants.map((tenant) => <tr key={tenant.vidracariaId} className="hover:bg-slate-50/70">
               <td className="px-4 py-3"><p className="font-bold text-slate-800">{tenant.nome}</p><p className="text-[10px] text-slate-400">{tenant.slug}</p></td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.budgetsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.budgetsApproved)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{currencyFormat.format(tenant.activity.budgetsApprovedValue)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.clientsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.projectsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.sacadasCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.workOrdersCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.auditedDeletes)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.whatsappReceived)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.messagesSent)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.registeredUsers)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.users)}</span></td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.activeUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.whatsappUsers)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.whatsappUsers)}</span></td>
@@ -235,6 +324,16 @@ export default function TenantConsumptionReportPage() {
             </tr>)}
             {report && <tr className="bg-emerald-50 font-black text-slate-800">
               <td className="px-4 py-3">TOTAL ({sortedTenants.length} clientes)</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.budgetsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.budgetsApproved)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{currencyFormat.format(totals.budgetsApprovedValue)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.clientsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.projectsCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.sacadasCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.workOrdersCreated)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.auditedDeletes)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.whatsappReceived)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.messagesSent)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.registeredUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.activeUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.whatsappUsers)}</td>
@@ -246,7 +345,7 @@ export default function TenantConsumptionReportPage() {
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.extraMessages)}</td>
               <td className="px-4 py-3 text-right tabular-nums">{currencyFormat.format(totals.overageTotal)}</td>
             </tr>}
-            {!loading && report?.tenants.length === 0 && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-slate-400">Nenhum cliente encontrado no período.</td></tr>}
+            {!loading && report?.tenants.length === 0 && <tr><td colSpan={21} className="px-4 py-12 text-center text-sm text-slate-400">Nenhum cliente encontrado no período.</td></tr>}
           </tbody>
         </table>
       </div>

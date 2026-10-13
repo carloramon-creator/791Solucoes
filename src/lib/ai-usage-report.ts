@@ -5,17 +5,26 @@ export const funcoesConsumoIA: Record<string, string> = {
   'financeiro.custos': 'Análise de custos / DRE',
 };
 
-export type TenantConsumoIA = {
+export type ResumoConsumoIA = {
   tenant_id: string;
-  nome: string;
   chamadas: number;
+  operacoes: number;
+  tentativas_extras: number;
   chamadas_com_consumo: number;
+  chamadas_com_custo: number;
   erros: number;
   pendentes: number;
   tokens_entrada: number;
   tokens_saida: number;
   tokens_total: number;
+  custo_estimado_usd: number | null;
+  custo_medio_chamada_usd: number | null;
+  custo_medio_operacao_usd: number | null;
+  operacoes_com_custo: number;
+  custo_tentativas_usd: number | null;
 };
+
+export type TenantConsumoIA = ResumoConsumoIA & { nome: string };
 
 export type EventoConsumoIA = {
   id: string;
@@ -36,6 +45,11 @@ export type EventoConsumoIA = {
   http_status: number | null;
   erro_codigo: string | null;
   created_at: string;
+  custo_estimado_usd: number | null;
+  tarifa_entrada_usd_milhao: number | null;
+  tarifa_cache_usd_milhao: number | null;
+  tarifa_saida_usd_milhao: number | null;
+  operacao_id: string;
 };
 
 export type RelatorioConsumoIA = {
@@ -43,7 +57,14 @@ export type RelatorioConsumoIA = {
   pagina: number;
   tenants: TenantConsumoIA[];
   eventos: EventoConsumoIA[];
+  funcoes: (ResumoConsumoIA & { funcao: string })[];
+  mensal: (ResumoConsumoIA & { mes: string })[];
 };
+
+const moedaUSD = new Intl.NumberFormat('pt-BR', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 8,
+});
+export const formatarCustoIA = (value: number | null) => value === null ? 'Não calculado' : moedaUSD.format(value);
 
 export function parametrosConsumoIA(params: URLSearchParams) {
   const inicio = params.get('inicio') || '';

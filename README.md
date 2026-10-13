@@ -47,10 +47,29 @@ Custos/DRE esta previsto como funcao, mas ainda nao possui chamadas no Glass.
 Dados sao gravados pelo servidor do 791glass em `ai_usage_events`, no
 banco da Holding. Nao armazena chaves, prompts, respostas ou dados de
 clientes. Tokens nao informados aparecem como desconhecidos; nao ha
-estimativa monetaria nem reconstrucao de consumo anterior a implantacao.
+reconstrucao de consumo anterior a implantacao.
+Custos estimados em US$ aparecem por chamada, tenant, funcao e mes,
+com media por chamada e por operacao e custo das tentativas extras.
+Uma operacao agrupa tentativas da mesma analise; validacoes sao separadas.
+Media por operacao usa somente operacoes inteiramente precificadas.
+Meses respeitam Brasilia e o periodo filtrado, sem extrapolar meses parciais.
+Tarifas sao salvas no evento no inicio da chamada e nao mudam com novas
+versoes de preco. Entrada em cache e cobrada separadamente, sem duplicacao.
+Sem tarifa ou contagens suficientes, custo permanece nulo e e identificado
+como nao calculado. A soma mostra apenas custos conhecidos, nao o saldo
+oficial da OpenAI, impostos ou a cobranca do cartao.
+Tarifa inicial GPT-4o mini e snapshot 2024-07-18 (por milhao de tokens):
+entrada US$0.15, cache US$0.075, saida US$0.60, conferida em 13/10/2026:
+https://developers.openai.com/api/docs/models/gpt-4o-mini
+Outros modelos/providers ficam sem custo ate terem tarifa cadastrada.
+Novas tarifas usam novas linhas com `vigente_desde` em `ai_model_prices`;
+nao atualizar linhas antigas nem reprecificar eventos historicos.
 Tabela e RPC sao restritas ao service role; a API exige autenticacao
 administrativa seguindo o guard existente da Holding.
 Migration: `supabase/migrations/20261013_ai_usage_events.sql` (aplicar
 individualmente, sem push de migrations nao relacionadas).
+Migration de custos: `supabase/migrations/20261013_ai_usage_costs.sql`,
+aplicada depois da migration de eventos.
 Testes: `node --test scripts/tests/ai-usage.test.mjs`.
 SQL transacional de validacao: `scripts/tests/ai-usage.rollback.sql`.
+Custos: `scripts/tests/ai-usage-costs.rollback.sql` (tambem com rollback).

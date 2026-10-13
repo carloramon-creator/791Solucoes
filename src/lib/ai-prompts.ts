@@ -5,7 +5,7 @@ import { supabaseServer } from '@/lib/supabase-server';
 export const CREDIT_AI_PROMPT_KEY = 'credito_analise';
 export const COST_AI_PROMPT_KEY = 'custos_analise';
 export const STOCK_AI_PROMPT_KEY = 'estoque_analise';
-const SELECT_FIELDS_WITH_USAGE = 'chave, titulo, descricao, uso_em, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at';
+const SELECT_FIELDS_WITH_USAGE = 'chave, titulo, descricao, uso_em, modelo, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at';
 const SELECT_FIELDS_LEGACY = 'chave, titulo, descricao, system_prompt, user_prompt_template, ativo, versao, updated_by, updated_at';
 
 export const DEFAULT_CREDIT_AI_SYSTEM_PROMPT = [
@@ -63,6 +63,7 @@ export type AiPromptConfig = {
   titulo: string;
   descricao: string | null;
   uso_em: string[];
+  modelo: string | null;
   system_prompt: string;
   user_prompt_template: string;
   ativo: boolean;
@@ -71,7 +72,7 @@ export type AiPromptConfig = {
   updated_at: string | null;
 };
 
-export type AiPromptInput = Pick<AiPromptConfig, 'titulo' | 'descricao' | 'uso_em' | 'system_prompt' | 'user_prompt_template' | 'ativo'>;
+export type AiPromptInput = Pick<AiPromptConfig, 'titulo' | 'descricao' | 'uso_em' | 'modelo' | 'system_prompt' | 'user_prompt_template' | 'ativo'>;
 
 const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_by' | 'updated_at'>> = {
   [CREDIT_AI_PROMPT_KEY]: {
@@ -79,6 +80,7 @@ const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_b
     titulo: 'Análise de crédito',
     descricao: 'Prompt usado na análise financeira de crédito',
     uso_em: ['orcamentos.credito'],
+    modelo: null,
     system_prompt: DEFAULT_CREDIT_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_CREDIT_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -88,6 +90,7 @@ const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_b
     titulo: 'Análise de custos',
     descricao: 'Prompt usado para avaliação e otimização de custos',
     uso_em: ['financeiro.custos'],
+    modelo: null,
     system_prompt: DEFAULT_COST_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_COST_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -97,6 +100,7 @@ const DEFAULT_PROMPTS: Record<string, Omit<AiPromptConfig, 'versao' | 'updated_b
     titulo: 'Análise de estoque',
     descricao: 'Prompt usado para leitura de risco e reposição de estoque',
     uso_em: ['estoque.analise'],
+    modelo: null,
     system_prompt: DEFAULT_STOCK_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_STOCK_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -114,9 +118,14 @@ function normalizeUsoEm(value: unknown): string[] {
   );
 }
 
+export function normalizeModelo(value: unknown): string | null {
+  const modelo = String(value ?? '').trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/.test(modelo) ? modelo : null;
+}
+
 function isMissingUsoEmColumn(error: any): boolean {
   const text = String(error?.message || error?.details || '').toLowerCase();
-  return text.includes('uso_em') && (text.includes('does not exist') || text.includes('column'));
+  return (text.includes('uso_em') || text.includes('modelo')) && (text.includes('does not exist') || text.includes('column'));
 }
 
 function defaultForKey(chave: string): AiPromptConfig {
@@ -127,6 +136,7 @@ function defaultForKey(chave: string): AiPromptConfig {
     titulo: cleanKey.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()),
     descricao: 'Prompt personalizado da Holding',
     uso_em: [],
+    modelo: null,
     system_prompt: DEFAULT_CREDIT_AI_SYSTEM_PROMPT,
     user_prompt_template: DEFAULT_CREDIT_AI_USER_PROMPT_TEMPLATE,
     ativo: true,
@@ -148,6 +158,7 @@ const normalizeRow = (row: any): AiPromptConfig => {
   titulo: String(row?.titulo || base.titulo).trim(),
   descricao: row?.descricao === null || row?.descricao === undefined ? base.descricao : String(row.descricao),
   uso_em: normalizeUsoEm(row?.uso_em).length > 0 ? normalizeUsoEm(row?.uso_em) : base.uso_em,
+  modelo: normalizeModelo(row?.modelo),
   system_prompt: String(row?.system_prompt || base.system_prompt).trim() || base.system_prompt,
   user_prompt_template: String(row?.user_prompt_template || base.user_prompt_template).trim() || base.user_prompt_template,
   ativo: row?.ativo === undefined ? true : Boolean(row.ativo),
@@ -246,6 +257,7 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
     titulo: String(input.titulo || defaults.titulo).trim(),
     descricao: input.descricao === null ? null : String(input.descricao || '').trim() || null,
     uso_em: normalizeUsoEm(input.uso_em).length > 0 ? normalizeUsoEm(input.uso_em) : defaults.uso_em,
+    modelo: normalizeModelo(input.modelo),
     system_prompt: String(input.system_prompt || defaults.system_prompt).trim(),
     user_prompt_template: String(input.user_prompt_template || defaults.user_prompt_template).trim(),
     ativo: Boolean(input.ativo),
@@ -265,7 +277,7 @@ export async function saveAiPromptConfig(chave: string, input: AiPromptInput, up
   }
 
   if (withUsage.error && isMissingUsoEmColumn(withUsage.error)) {
-    const { uso_em, ...legacyPayload } = payload;
+    const { uso_em, modelo, ...legacyPayload } = payload;
     const legacy = await supabaseServer
       .from('ai_prompt_configs')
       .upsert(legacyPayload, { onConflict: 'chave' })

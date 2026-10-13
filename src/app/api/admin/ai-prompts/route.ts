@@ -4,6 +4,7 @@ import {
   CREDIT_AI_PROMPT_KEY,
   getAiPromptConfig,
   getAiPromptDefaultConfig,
+  normalizeModelo,
   listAiPromptConfigs,
   saveAiPromptConfig,
 } from '@/lib/ai-prompts';
@@ -63,6 +64,10 @@ export async function PUT(req: Request) {
   const descricaoRaw = body?.descricao;
   const descricao = descricaoRaw === null ? null : String(descricaoRaw || '').trim() || null;
   const usoEm = normalizeUsoEm(body?.uso_em);
+  const modeloRaw = String(body?.modelo ?? '').trim();
+  if (modeloRaw && !normalizeModelo(modeloRaw)) {
+    return NextResponse.json({ error: 'Modelo de IA inválido. Use apenas letras, números, ponto, hífen, dois-pontos e barra.' }, { status: 400 });
+  }
   const systemPrompt = String(body?.system_prompt || '').trim();
   const userPromptTemplate = String(body?.user_prompt_template || '').trim();
   const ativo = Boolean(body?.ativo);
@@ -78,6 +83,7 @@ export async function PUT(req: Request) {
       titulo: titulo || defaults.titulo,
       descricao,
       uso_em: usoEm.length > 0 ? usoEm : defaults.uso_em,
+      modelo: normalizeModelo(modeloRaw),
       system_prompt: systemPrompt,
       user_prompt_template: userPromptTemplate || defaults.user_prompt_template,
       ativo,

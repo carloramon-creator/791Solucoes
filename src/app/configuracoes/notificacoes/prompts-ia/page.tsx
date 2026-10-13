@@ -11,6 +11,7 @@ type PromptConfig = {
   titulo: string;
   descricao: string | null;
   uso_em: string[];
+  modelo: string | null;
   system_prompt: string;
   user_prompt_template: string;
   ativo: boolean;
@@ -43,6 +44,7 @@ const DEFAULTS: PromptConfig = {
   titulo: 'Análise de crédito',
   descricao: 'Prompt usado na análise financeira de crédito',
   uso_em: ['orcamentos.credito'],
+  modelo: null,
   system_prompt: '',
   user_prompt_template: '',
   ativo: true,
@@ -115,6 +117,7 @@ export default function PromptsIaPage() {
     titulo: config?.titulo || fallback.titulo,
     descricao: config?.descricao ?? fallback.descricao,
     uso_em: Array.isArray(config?.uso_em) ? config.uso_em.map((item: any) => String(item || '').trim()).filter(Boolean) : fallback.uso_em,
+    modelo: config?.modelo ?? null,
     system_prompt: config?.system_prompt || fallback.system_prompt || '',
     user_prompt_template: config?.user_prompt_template || fallback.user_prompt_template || '',
     ativo: config?.ativo ?? true,
@@ -199,6 +202,7 @@ export default function PromptsIaPage() {
           titulo: form.titulo,
           descricao: form.descricao,
           uso_em: form.uso_em,
+          modelo: form.modelo,
           system_prompt: form.system_prompt,
           user_prompt_template: form.user_prompt_template,
           ativo: form.ativo,
@@ -271,6 +275,7 @@ export default function PromptsIaPage() {
           titulo: cleanTitle || cleanKey.replace(/_/g, ' '),
           descricao: form.descricao,
           uso_em: form.uso_em,
+          modelo: form.modelo,
           system_prompt: defaults.system_prompt || form.system_prompt,
           user_prompt_template: defaults.user_prompt_template || form.user_prompt_template,
           ativo: true,
@@ -434,6 +439,16 @@ export default function PromptsIaPage() {
                   onChange={(e) => setForm((prev) => ({ ...prev, descricao: e.target.value }))}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Modelo de IA (opcional)</label>
+                <input
+                  value={form.modelo || ''}
+                  onChange={(e) => setForm((prev) => ({ ...prev, modelo: e.target.value }))}
+                  placeholder="ex: gpt-4.1-mini. Vazio usa o modelo padrão do servidor"
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b]"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Use o nome exato do modelo do mesmo provedor já configurado no servidor.</p>
               </div>
               <div className="md:col-span-2">
                 <label className="text-[9px] uppercase tracking-[0.2em] text-slate-400 font-bold">Onde será utilizado</label>

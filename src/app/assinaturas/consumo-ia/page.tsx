@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { formatarCustoIA, funcoesConsumoIA, type RelatorioConsumoIA } from '@/lib/ai-usage-report';
@@ -11,6 +11,7 @@ const hoje = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Pau
 const quantidade = (value: number | null) => value === null ? 'Não informado' : numero.format(value);
 const status = { em_andamento: 'Em andamento', concluida: 'Concluída', erro: 'Erro' };
 const campo = 'mt-1 block h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700';
+const campoData = `${campo} min-w-36 appearance-none py-0 leading-10`;
 const botao = 'rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 disabled:opacity-40';
 
 export default function ConsumoIAPage() {
@@ -20,6 +21,7 @@ export default function ConsumoIAPage() {
   const [funcao, setFuncao] = useState('');
   const [report, setReport] = useState<RelatorioConsumoIA | null>(null);
   const [opcoesTenants, setOpcoesTenants] = useState<RelatorioConsumoIA['tenants']>([]);
+  const [mensalAberto, setMensalAberto] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const auth = useMemo(() => createSupabaseBrowser(), []);
@@ -37,6 +39,7 @@ export default function ConsumoIAPage() {
       if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar o relatório.');
       const result: RelatorioConsumoIA = payload;
       setReport(result);
+      setMensalAberto('');
       setFiltrosAplicados(filtros || { inicio, fim, tenant, funcao });
       if (!(filtros?.tenant || tenant)) setOpcoesTenants(result.tenants);
     } catch (caught) {
@@ -62,66 +65,58 @@ export default function ConsumoIAPage() {
       <Link className={botao} href="/assinaturas/relatorio-consumo">Voltar ao relatório de consumo</Link>
     </header>
     <form onSubmit={event => { event.preventDefault(); void carregar(); }} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
-      <label className="text-xs font-bold">Data inicial<input disabled={loading} required type="date" value={inicio} onChange={e => setInicio(e.target.value)} className={campo} /></label>
-      <label className="text-xs font-bold">Data final<input disabled={loading} required type="date" value={fim} onChange={e => setFim(e.target.value)} className={campo} /></label>
-      <label className="text-xs font-bold">Tenant<select disabled={loading} value={tenant} onChange={e => setTenant(e.target.value)} className={campo}><option value="">Todos</option>{opcoesTenants.map(t => <option key={t.tenant_id} value={t.tenant_id}>{t.nome}</option>)}</select></label>
-      <label className="text-xs font-bold">Função<select disabled={loading} value={funcao} onChange={e => setFuncao(e.target.value)} className={campo}><option value="">Todas</option>{Object.entries(funcoesConsumoIA).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+      <label className="flex flex-col text-xs font-bold">Data inicial<input disabled={loading} required type="date" value={inicio} onChange={e => setInicio(e.target.value)} className={campoData} /></label>
+      <label className="flex flex-col text-xs font-bold">Data final<input disabled={loading} required type="date" value={fim} onChange={e => setFim(e.target.value)} className={campoData} /></label>
+      <label className="flex flex-col text-xs font-bold">Tenant<select disabled={loading} value={tenant} onChange={e => setTenant(e.target.value)} className={campo}><option value="">Todos</option>{opcoesTenants.map(t => <option key={t.tenant_id} value={t.tenant_id}>{t.nome}</option>)}</select></label>
+      <label className="flex flex-col text-xs font-bold">Função<select disabled={loading} value={funcao} onChange={e => setFuncao(e.target.value)} className={campo}><option value="">Todas</option>{Object.entries(funcoesConsumoIA).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       <button disabled={loading} className={botao}>{loading ? 'Carregando...' : 'Gerar relatório'}</button>
     </form>
     {error && <p role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     {!report && !loading && !error && <p className="text-sm text-slate-500">Selecione o período e clique em Gerar relatório.</p>}
     {report && totals && <>
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <p className="font-bold">{numero.format(report.total)} chamadas · {numero.format(totals.entrada)} tokens de entrada · {numero.format(totals.saida)} de saída · {numero.format(totals.total)} total</p>
-        <p className="mt-2 text-lg font-black text-emerald-700">Custo estimado no período: {formatarCustoIA(totals.comCusto ? totals.custo : null)}</p>
-        <p className="mt-1 text-xs text-slate-500">Somente consumo informado pelo provedor. {totals.desconhecido} chamadas sem tokens totais; {totals.semCusto} sem custo calculado. Custos estimados, não cobrança oficial nem saldo da OpenAI. Sem tarifa ou dados suficientes, o custo fica desconhecido e não entra na soma.</p>
-        <p className="mt-1 text-xs text-slate-500">Uma operação reúne as tentativas da mesma análise; validações de crédito são operações separadas. A média por operação inclui repetições e somente operações com todas as chamadas precificadas. Histórico anterior ao registro não está incluído.</p>
+      <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+        <p className="text-lg font-black text-emerald-700">Consumo geral da Holding: {formatarCustoIA(totals.comCusto ? totals.custo : null)}</p>
+        <p className="mt-1 text-sm text-emerald-900">{numero.format(report.total)} chamadas · {numero.format(totals.total)} tokens ({numero.format(totals.entrada)} entrada / {numero.format(totals.saida)} saída)</p>
+        <p className="mt-1 text-xs text-slate-500">Estimativa pelos tokens informados pelo provedor; não é o saldo oficial da OpenAI.{totals.semCusto ? ` ${totals.semCusto} chamada(s) sem custo calculado.` : ''}</p>
       </section>
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <table className="w-full whitespace-nowrap text-left text-sm">
-          <thead className="bg-slate-50"><tr>{['Tenant', 'Chamadas', 'Operações', 'Entrada', 'Saída', 'Total', 'Custo estimado US$', 'Média / operação US$', 'Média / chamada US$', 'Tentativas extras', 'Custo extras US$', 'Sem custo', 'Sem consumo informado', 'Erros', 'Em andamento'].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead>
-          <tbody>{report.tenants.map(t => <tr key={t.tenant_id} className="border-t border-slate-100">
-            <td className="p-3" title={t.tenant_id}>{t.nome}</td>
-            {[t.chamadas, t.operacoes, t.tokens_entrada, t.tokens_saida, t.tokens_total].map((n, i) => <td className="p-3 tabular-nums" key={i}>{numero.format(n)}</td>)}
-            <td className="p-3 font-bold">{formatarCustoIA(t.custo_estimado_usd)}</td><td className="p-3">{formatarCustoIA(t.custo_medio_operacao_usd)}</td><td className="p-3">{formatarCustoIA(t.custo_medio_chamada_usd)}</td>
-            <td className="p-3">{t.tentativas_extras}</td><td className="p-3">{formatarCustoIA(t.custo_tentativas_usd)}</td>
-            {[t.chamadas - t.chamadas_com_custo, t.chamadas - t.chamadas_com_consumo, t.erros, t.pendentes].map((n, i) => <td className="p-3 tabular-nums" key={i}>{numero.format(n)}</td>)}
-          </tr>)}</tbody>
-        </table>
-      </section>
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <h2 className="p-4 font-bold">Custo por função e tenant</h2>
-        <table className="w-full whitespace-nowrap text-left text-sm">
-          <thead className="bg-slate-50"><tr>{['Tenant', 'Função', 'Operações', 'Chamadas', 'Custo estimado US$', 'Média / operação US$', 'Tentativas extras', 'Sem custo'].map(h => <th key={h} className="p-3">{h}</th>)}</tr></thead>
-          <tbody>{report.funcoes.map(f => <tr key={`${f.tenant_id}-${f.funcao}`} className="border-t border-slate-100">
-            <td className="p-3">{nomes.get(f.tenant_id) || f.tenant_id}</td><td className="p-3">{funcoesConsumoIA[f.funcao]}</td><td className="p-3">{f.operacoes}</td><td className="p-3">{f.chamadas}</td>
-            <td className="p-3">{formatarCustoIA(f.custo_estimado_usd)}</td><td className="p-3">{formatarCustoIA(f.custo_medio_operacao_usd)}</td><td className="p-3">{f.tentativas_extras}</td><td className="p-3">{f.chamadas - f.chamadas_com_custo}</td>
-          </tr>)}</tbody>
-        </table>
-      </section>
-      <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <h2 className="p-4 font-bold">Evolução mensal por tenant</h2>
-        <p className="px-4 pb-3 text-xs text-slate-500">Meses em horário de Brasília, limitados ao período selecionado. Meses parciais não são projetados para o mês inteiro.</p>
-        <table className="w-full whitespace-nowrap text-left text-sm">
-          <thead className="bg-slate-50"><tr>{['Mês', 'Tenant', 'Operações', 'Chamadas', 'Tokens', 'Custo estimado US$', 'Média / operação US$', 'Sem custo'].map(h => <th key={h} className="p-3">{h}</th>)}</tr></thead>
-          <tbody>{report.mensal.map(m => <tr key={`${m.mes}-${m.tenant_id}`} className="border-t border-slate-100">
-            <td className="p-3">{m.mes.slice(5)}/{m.mes.slice(0, 4)}</td><td className="p-3">{nomes.get(m.tenant_id) || m.tenant_id}</td><td className="p-3">{m.operacoes}</td><td className="p-3">{m.chamadas}</td><td className="p-3">{numero.format(m.tokens_total)}</td>
-            <td className="p-3">{formatarCustoIA(m.custo_estimado_usd)}</td><td className="p-3">{formatarCustoIA(m.custo_medio_operacao_usd)}</td><td className="p-3">{m.chamadas - m.chamadas_com_custo}</td>
-          </tr>)}</tbody>
+        <h2 className="p-4 font-bold">Tenants</h2>
+        <table className="w-full whitespace-nowrap text-left text-xs">
+          <thead className="bg-slate-50"><tr>{['Tenant', 'Chamadas', 'Tokens', 'Custo US$', ''].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead>
+          <tbody>{report.tenants.map(t => {
+            const aberto = mensalAberto === t.tenant_id;
+            const meses = report.mensal.filter(m => m.tenant_id === t.tenant_id);
+            return <Fragment key={t.tenant_id}>
+              <tr className="border-t border-slate-100">
+                <td className="p-3 font-semibold" title={t.tenant_id}>{t.nome}</td>
+                <td className="p-3 tabular-nums">{numero.format(t.chamadas)}</td>
+                <td className="p-3 tabular-nums">{numero.format(t.tokens_total)}</td>
+                <td className="p-3 tabular-nums">{formatarCustoIA(t.custo_estimado_usd)}</td>
+                <td className="p-3 text-right"><button type="button" aria-expanded={aberto} className="rounded-md border border-slate-200 px-3 py-1 font-bold text-slate-600" onClick={() => setMensalAberto(aberto ? '' : t.tenant_id)}>{aberto ? 'Fechar evolução' : 'Evolução mensal'}</button></td>
+              </tr>
+              {aberto && <tr className="bg-slate-50"><td colSpan={5} className="p-3">
+                <table className="w-full text-left text-xs">
+                  <thead><tr>{['Mês', 'Chamadas', 'Tokens', 'Custo US$'].map(h => <th className="px-3 py-1 text-slate-500" key={h}>{h}</th>)}</tr></thead>
+                  <tbody>{meses.map(m => <tr key={m.mes} className="border-t border-slate-200">
+                    <td className="px-3 py-1">{m.mes.slice(5, 7)}/{m.mes.slice(0, 4)}</td><td className="px-3 py-1 tabular-nums">{numero.format(m.chamadas)}</td>
+                    <td className="px-3 py-1 tabular-nums">{numero.format(m.tokens_total)}</td><td className="px-3 py-1 tabular-nums">{formatarCustoIA(m.custo_estimado_usd)}</td>
+                  </tr>)}</tbody>
+                </table>
+              </td></tr>}
+            </Fragment>;
+          })}</tbody>
         </table>
       </section>
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <h2 className="p-4 font-bold">Histórico de chamadas</h2>
         <table className="w-full whitespace-nowrap text-left text-xs">
-          <thead className="bg-slate-50"><tr>{['Data / hora', 'Tenant', 'O que consumiu', 'Modelo', 'Tentativa', 'Entrada', 'Cache', 'Saída', 'Total', 'Custo estimado US$', 'Tarifa / 1M tokens (entrada / cache / saída)', 'Status', 'Referência / prompt'].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead>
+          <thead className="bg-slate-50"><tr>{['Data / hora', 'Tenant', 'O que consumiu', 'Modelo', 'Tokens', 'Custo US$', 'Status'].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead>
           <tbody>{report.eventos.map(e => <tr key={e.id} className="border-t border-slate-100">
             <td className="p-3">{dataHora.format(new Date(e.created_at))}</td><td className="p-3">{nomes.get(e.tenant_id) || e.tenant_id}</td>
-            <td className="p-3">{funcoesConsumoIA[e.funcao] || e.funcao}</td><td className="p-3">{e.provider} / {e.model}</td><td className="p-3">{e.tentativa}</td>
-            <td className="p-3">{quantidade(e.tokens_entrada)}</td><td className="p-3">{quantidade(e.tokens_cache)}</td><td className="p-3">{quantidade(e.tokens_saida)}</td><td className="p-3">{quantidade(e.tokens_total)}</td>
-            <td className="p-3 font-bold">{formatarCustoIA(e.custo_estimado_usd)}</td>
-            <td className="p-3">{formatarCustoIA(e.tarifa_entrada_usd_milhao)} / {formatarCustoIA(e.tarifa_cache_usd_milhao)} / {formatarCustoIA(e.tarifa_saida_usd_milhao)}</td>
+            <td className="p-3">{funcoesConsumoIA[e.funcao] || e.funcao}{e.tentativa > 1 ? ` (tentativa ${e.tentativa})` : ''}</td><td className="p-3">{e.model}</td>
+            <td className="p-3 tabular-nums" title={`Entrada ${quantidade(e.tokens_entrada)} · Saída ${quantidade(e.tokens_saida)} · Cache ${quantidade(e.tokens_cache)}`}>{quantidade(e.tokens_total)}</td>
+            <td className="p-3 tabular-nums">{formatarCustoIA(e.custo_estimado_usd)}</td>
             <td className="p-3">{status[e.status]}{e.erro_codigo ? ` (${e.erro_codigo})` : ''}</td>
-            <td className="p-3"><span className="block">{e.referencia_id || '—'}</span>{e.prompt_chave && <span>{e.prompt_chave} v{e.prompt_versao}</span>}</td>
           </tr>)}</tbody>
         </table>
         {!report.total && <p className="p-8 text-center text-sm text-slate-500">Nenhuma chamada registrada no período. O histórico começa com a implantação deste registro.</p>}

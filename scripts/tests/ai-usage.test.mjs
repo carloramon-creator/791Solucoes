@@ -114,8 +114,12 @@ test('report renders precise USD, tenant/function/month summaries and unknown co
   const { default: Page } = load('src/app/assinaturas/consumo-ia/page.tsx', {
     'react/jsx-runtime': jsxRuntime,
     react: {
+      Fragment: React.Fragment,
       useMemo: fn => fn(),
-      useState: initial => [stateIndex++ === 4 ? report : typeof initial === 'function' ? initial() : initial, () => {}],
+      useState: initial => {
+        const i = stateIndex++;
+        return [i === 4 ? report : i === 6 ? tenant : typeof initial === 'function' ? initial() : initial, () => {}];
+      },
     },
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) },
     '@/lib/supabase-browser': { createSupabaseBrowser: () => ({}) },
@@ -123,12 +127,13 @@ test('report renders precise USD, tenant/function/month summaries and unknown co
   });
   const html = renderToStaticMarkup(React.createElement(Page));
   assert.match(html, /0,00000555/);
-  assert.match(html, /Custo por função e tenant/);
-  assert.match(html, /Evolução mensal por tenant/);
+  assert.match(html, /Consumo geral da Holding/);
+  assert.match(html, /Fechar evolução/);
   assert.match(html, /10\/2026/);
+  assert.match(html, /gpt-4o-mini/);
+  assert.doesNotMatch(html, /Média \/ operação|Tentativas extras|Custo por função e tenant/);
   assert.match(html, /09:14:46/);
   assert.match(html, /Tenant fixture/);
-  assert.match(html, /Não calculado/);
-  assert.match(html, /1 sem custo calculado/);
+  assert.match(html, /1 chamada\(s\) sem custo calculado/);
   assert.doesNotMatch(html, /Saldo disponível|Sem estimativa de cobrança/);
 });

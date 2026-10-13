@@ -258,7 +258,10 @@ export default function TenantConsumptionReportPage() {
         <Link href="/assinaturas" aria-label="Voltar às assinaturas" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"><ArrowLeft size={17} /></Link>
         <div><h1 className="text-xl font-black uppercase text-slate-800">Relatório de Consumo</h1><p className="text-xs text-slate-500">Consolidado de todos os clientes do 791Glass</p></div>
       </div>
-      <button type="button" onClick={exportCsv} disabled={!report} className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 text-xs font-black uppercase text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"><Download size={15} /> Exportar Excel</button>
+      <div className="flex gap-2">
+        <Link href="/assinaturas/consumo-ia" className="inline-flex h-10 items-center rounded-lg border border-blue-200 bg-white px-4 text-xs font-black uppercase text-blue-700">Consumo de IA</Link>
+        <button type="button" onClick={exportCsv} disabled={!report} className="inline-flex h-10 items-center gap-2 rounded-lg border border-emerald-200 bg-white px-4 text-xs font-black uppercase text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"><Download size={15} /> Exportar Excel</button>
+      </div>
     </div>
 
     <section className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

@@ -873,6 +873,9 @@ export default function AssinaturasPage() {
           >
             <FileSpreadsheet size={16} /> Relatório de Consumo
           </button>
+          <button type="button" onClick={() => router.push('/assinaturas/consumo-ia')} className="bg-white border border-blue-200 text-blue-700 px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-50">
+            Consumo de IA
+          </button>
           <button
             onClick={async () => {
               setShowGlassUsersModal(true);

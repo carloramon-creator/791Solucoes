@@ -35,3 +35,22 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 # 791Solucoes
+## Consumo de IA por tenant
+
+Em Assinaturas, **Consumo de IA** abre `/assinaturas/consumo-ia`.
+Filtros por periodo (dias de Brasilia, ate 366 dias), tenant e funcao.
+O resumo soma todo o periodo; detalhes tem paginas de 50 chamadas,
+com data/hora, modelo, tentativa, status e tokens de entrada/saida/total.
+Validacao de credito OpenAI tambem consome tokens e aparece separadamente.
+Custos/DRE esta previsto como funcao, mas ainda nao possui chamadas no Glass.
+
+Dados sao gravados pelo servidor do 791glass em `ai_usage_events`, no
+banco da Holding. Nao armazena chaves, prompts, respostas ou dados de
+clientes. Tokens nao informados aparecem como desconhecidos; nao ha
+estimativa monetaria nem reconstrucao de consumo anterior a implantacao.
+Tabela e RPC sao restritas ao service role; a API exige autenticacao
+administrativa seguindo o guard existente da Holding.
+Migration: `supabase/migrations/20261013_ai_usage_events.sql` (aplicar
+individualmente, sem push de migrations nao relacionadas).
+Testes: `node --test scripts/tests/ai-usage.test.mjs`.
+SQL transacional de validacao: `scripts/tests/ai-usage.rollback.sql`.

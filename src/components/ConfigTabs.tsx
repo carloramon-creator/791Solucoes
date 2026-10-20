@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShieldCheck, Wallet, Receipt, Bell, Tag } from 'lucide-react';
+import { ShieldCheck, Wallet, Receipt, Bell, Tag, Scale } from 'lucide-react';
 
 export function ConfigTabs() {
   const pathname = usePathname();
@@ -12,6 +12,7 @@ export function ConfigTabs() {
     { name: 'Contas Bancárias', href: '/configuracoes/contas', icon: Wallet },
     { name: 'Notas Fiscais', href: '/configuracoes/nfs', icon: Receipt },
     { name: 'Categorias', href: '/configuracoes/categorias', icon: Tag },
+    { name: 'Regras ST (Glass)', href: '/configuracoes/regras-st', icon: Scale },
     { name: 'Notificações', href: '/configuracoes/notificacoes', icon: Bell },
   ];
 

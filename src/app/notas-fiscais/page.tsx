@@ -37,15 +37,32 @@ export default function NotasFiscaisPage() {
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'all' | 'authorized' | 'rejected'>('all');
+  const [filter, setFilter] = useState<'all' | 'authorized' | 'rejected' | 'cancelled'>('all');
   const [error, setError] = useState<string | null>(null);
+  const [sync, setSync] = useState<{ rodando: boolean; erro: string | null; executado_em: string | null; canceladas: string[] }>({
+    rodando: false, erro: null, executado_em: null, canceladas: [],
+  });
 
   useEffect(() => {
-    fetchInvoices();
+    fetchInvoices().then(() => sincronizarPrefeitura(false));
   }, []);
 
-  async function fetchInvoices() {
-    setLoading(true);
+  // Confere na prefeitura se alguma nota autorizada foi cancelada lá.
+  async function sincronizarPrefeitura(forcar: boolean) {
+    setSync(s => ({ ...s, rodando: true }));
+    try {
+      const res = await holdingAuthFetch(`/api/system/invoices/sincronizar${forcar ? '?forcar=1' : ''}`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      setSync({ rodando: false, erro: data.erro, executado_em: data.executado_em, canceladas: data.canceladas || [] });
+      if (data.canceladas?.length) await fetchInvoices(true);
+    } catch (err) {
+      setSync(s => ({ ...s, rodando: false, erro: (err as Error).message || 'Falha ao consultar a prefeitura.' }));
+    }
+  }
+
+  async function fetchInvoices(silencioso = false) {
+    if (!silencioso) setLoading(true);
     setError(null);
     try {
       const res = await holdingAuthFetch('/api/system/invoices');
@@ -109,13 +126,31 @@ export default function NotasFiscaisPage() {
             </button>
           </Link>
           <button 
-            onClick={fetchInvoices}
+            onClick={() => fetchInvoices().then(() => sincronizarPrefeitura(true))}
             className="bg-[#3b597b] text-white px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#2e4763] transition-all uppercase tracking-widest shadow-lg shadow-blue-900/10"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Atualizar
+            <RefreshCw size={14} className={loading || sync.rodando ? "animate-spin" : ""} /> Atualizar
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">{error}</div>
+      )}
+      {sync.erro ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+          <strong>Situação na prefeitura não conferida:</strong> {sync.erro}
+        </div>
+      ) : sync.rodando ? (
+        <div className="text-xs text-slate-500 uppercase tracking-widest flex items-center gap-2">
+          <Loader2 size={12} className="animate-spin" /> Conferindo situação das notas na prefeitura...
+        </div>
+      ) : sync.executado_em && (
+        <div className="text-xs text-slate-500 uppercase tracking-widest">
+          Situação conferida na prefeitura às {new Date(sync.executado_em).toLocaleTimeString('pt-BR')}
+          {sync.canceladas.length > 0 && ` — canceladas lá: nº ${sync.canceladas.join(', ')}`}
+        </div>
+      )}
 
       {/* Tabela de Notas */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
@@ -133,6 +168,10 @@ export default function NotasFiscaisPage() {
                 onClick={() => setFilter('rejected')}
                 className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'rejected' ? 'bg-red-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
              >Rejeitadas</button>
+             <button 
+                onClick={() => setFilter('cancelled')}
+                className={`text-[10px] px-4 py-1.5 rounded-full uppercase tracking-widest font-bold transition-all ${filter === 'cancelled' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >Canceladas</button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-2.5 text-slate-400" size={14} />
@@ -192,13 +231,15 @@ export default function NotasFiscaisPage() {
                       <span className={`text-[12px] uppercase tracking-tighter px-3 py-1.5 rounded-full flex items-center gap-1.5 w-fit ${
                         inv.status === 'authorized' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
                         inv.status === 'rejected' ? 'bg-red-50 text-red-600 border border-red-100' : 
+                        inv.status === 'cancelled' ? 'bg-slate-100 text-slate-600 border border-slate-300 line-through decoration-slate-400' : 
                         'bg-amber-50 text-amber-600 border border-amber-100'
                       }`}>
                         {inv.status === 'authorized' ? <CheckCircle2 size={12} /> : 
-                         inv.status === 'rejected' ? <AlertCircle size={12} /> : 
+                         inv.status === 'rejected' || inv.status === 'cancelled' ? <AlertCircle size={12} /> : 
                          <Clock size={12} />}
                         {inv.status === 'authorized' ? 'Autorizada' : 
                          inv.status === 'rejected' ? 'Rejeitada' : 
+                         inv.status === 'cancelled' ? 'Cancelada' : 
                          'Em Processamento'}
                       </span>
                     </td>
@@ -207,7 +248,7 @@ export default function NotasFiscaisPage() {
                     </td>
                     <td className="px-8 py-5 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {inv.status === 'authorized' && (
+                        {(inv.status === 'authorized' || inv.status === 'cancelled') && (
                           <Link 
                             href={`/notas-fiscais/${inv.id}/pdf`}
                             className="p-2 bg-slate-100 text-purple-600 rounded-lg hover:bg-slate-200 transition-all shadow-sm"

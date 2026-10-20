@@ -8,6 +8,10 @@ interface IpmCredentials {
     isTest?: boolean;
 }
 
+export type ConsultaIpm =
+    | { ok: true; httpStatus: number; situacao: string; codigo: string | null; xml: string }
+    | { ok: false; httpStatus: number; erro: string };
+
 export class IpmProvider implements NfseProvider {
     private baseUrl: string = 'https://nfse-{cidade}.atende.net/atende.php?pg=rest&service=WNERestServiceNFSe&cidade=padrao';
 
@@ -67,6 +71,33 @@ export class IpmProvider implements NfseProvider {
             console.error('[IpmProvider] Erro na emissão:', error);
             throw new Error(`Erro na comunicação com a prefeitura: ${error.message}`);
         }
+    }
+
+    /** Consulta a NFS-e na prefeitura pelo código de autenticidade (mesmo endpoint/autenticação da emissão). */
+    public async consultar(codigoAutenticidade: string, credentials: IpmCredentials): Promise<ConsultaIpm> {
+        const xml = `<?xml version="1.0" encoding="ISO-8859-1"?>\n<nfse>\n<pesquisa>\n<codigo_autenticidade>${codigoAutenticidade.replace(/\D/g, '')}</codigo_autenticidade>\n</pesquisa>\n</nfse>`;
+        const formData = new FormData();
+        formData.append('f1', new Blob([xml], { type: 'application/xml' }), 'consulta.xml');
+
+        const cidadeSlug = credentials.municipal_code === '8303' ? 'saojose' : credentials.municipal_code;
+        const authHeader = 'Basic ' + Buffer.from(`${this.formatCnpj(credentials.username)}:${credentials.password}`).toString('base64');
+        const response = await fetch(this.baseUrl.replace('{cidade}', cidadeSlug), {
+            method: 'POST',
+            headers: { Authorization: authHeader },
+            body: formData,
+        });
+
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const inicio = new TextDecoder('latin1').decode(bytes.slice(0, 100));
+        const texto = new TextDecoder(/iso-8859-1/i.test(inicio) ? 'latin1' : 'utf-8').decode(bytes);
+        const situacao = texto.match(/<situacao_descricao_nfse>([^<]*)<\/situacao_descricao_nfse>/)?.[1]?.trim() || null;
+        const codigo = texto.match(/<situacao_codigo_nfse>([^<]*)<\/situacao_codigo_nfse>/)?.[1]?.trim() || null;
+
+        if (!response.ok || !situacao) {
+            const msg = texto.match(/"msg"\s*:\s*"([^"]+)"/)?.[1] || texto.match(/<mensagem>([\s\S]*?)<\/mensagem>/)?.[1] || texto.slice(0, 200);
+            return { ok: false, httpStatus: response.status, erro: msg.trim() || `HTTP ${response.status}` };
+        }
+        return { ok: true, httpStatus: response.status, situacao, codigo, xml: texto };
     }
 
     private formatCnpj(cnpj: string): string {

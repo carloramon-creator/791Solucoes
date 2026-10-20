@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, Pencil, Plus, Scale, Trash2, X } from 'lucide-react';
 import { ConfigTabs } from '@/components/ConfigTabs';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
@@ -49,6 +49,26 @@ const formatarNcm = (v: string) => (v.length > 4 ? `${v.slice(0, 4)}.${v.slice(4
 const VAZIO: Formulario = { ncm_prefixo: '', cest: '', uf: '', sujeito_st: '', mva_original: '', fonte_legal: '', vigencia_inicio: hoje(), vigencia_fim: '', observacao: '' };
 const input = 'w-full h-10 px-3 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20';
 const label = 'text-[10px] font-black text-slate-500 uppercase tracking-widest';
+
+// Mostra URLs da fonte legal como links que abrem em nova aba.
+function FonteLegal({ texto }: { texto: string }) {
+  const partes = texto.split(/(https?:\/\/[^\s;,]+)/g);
+  return (
+    <>
+      {partes.map((p, i) => {
+        if (!/^https?:\/\//.test(p)) return <Fragment key={i}>{p}</Fragment>;
+        let rotulo = p;
+        try { rotulo = new URL(p).pathname.split('/').pop() || p; } catch { /* mantém a URL */ }
+        return (
+          <a key={i} href={p} target="_blank" rel="noopener noreferrer" title={p}
+            className="text-[#3b597b] underline underline-offset-2 hover:text-[#2a4260] break-all">
+            {rotulo} ↗
+          </a>
+        );
+      })}
+    </>
+  );
+}
 
 const emUso = (r: Regra, dia: string) => r.verificada && r.vigencia_inicio <= dia && (!r.vigencia_fim || r.vigencia_fim >= dia);
 
@@ -268,7 +288,7 @@ export default function RegrasSTPage() {
                     <td className="p-3">{r.sujeito_st ? <b className="text-red-700">Com ST</b> : <span className="text-slate-600">Sem ST</span>}</td>
                     <td className="p-3">{r.mva_original != null ? `${r.mva_original}%` : '—'}</td>
                     <td className="p-3 whitespace-nowrap">{br(r.vigencia_inicio)} → {r.vigencia_fim ? br(r.vigencia_fim) : 'em aberto'}</td>
-                    <td className="p-3 max-w-[260px]">{r.fonte_legal}{r.observacao && <div className="text-slate-400 mt-1">{r.observacao}</div>}</td>
+                    <td className="p-3 max-w-[260px]"><FonteLegal texto={r.fonte_legal} />{r.observacao && <div className="text-slate-400 mt-1">{r.observacao}</div>}</td>
                     <td className="p-3">
                       <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${s.cor}`}>{s.texto}</span>
                       {r.verificada && <div className="text-[10px] text-slate-400 mt-1">por {r.verificada_por || '—'} em {br(r.verificada_em)}</div>}

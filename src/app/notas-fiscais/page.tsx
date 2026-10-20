@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 
 interface Invoice {
   id: string;
@@ -47,7 +48,7 @@ export default function NotasFiscaisPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/system/invoices');
+      const res = await holdingAuthFetch('/api/system/invoices');
       const data = await res.json();
       
       if (!data.success) throw new Error(data.error);

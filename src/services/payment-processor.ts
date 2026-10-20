@@ -3,6 +3,7 @@ import { InterAPIV2 } from './inter-service';
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import ipmProvider from '@/lib/nfse/providers/ipm';
+import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
 
 // Configurações globais
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -1189,6 +1190,7 @@ async function emitirNFeSaas({
       ciclo,
       asaas_payment_id: asaasPaymentId,
       xml: result.xml,
+      danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink }),
       origem: 'webhook_asaas',
       ...(invoiceMetadata || {}),
     },

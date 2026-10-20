@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
   try {
     const { data, error } = await supabaseServer
       .from('system_invoices')

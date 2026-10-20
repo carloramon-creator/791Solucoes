@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { getGlassClient } from '@/lib/glass-client';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { DPSData } from '@/lib/nfse/types';
+import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
 
 function getLocalIsoTimestamp() {
   const now = new Date();
@@ -10,6 +12,8 @@ function getLocalIsoTimestamp() {
 }
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
   try {
     const { vidracaria_id, valor, descricao } = await req.json();
 
@@ -115,7 +119,8 @@ export async function POST(req: Request) {
         error_message: result.success ? null : result.message,
         metadata: {
             vidracaria_id,
-            xml: result.xml
+            xml: result.xml,
+            danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink })
         }
       }]);
 

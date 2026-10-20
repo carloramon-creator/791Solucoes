@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { ConfigTabs } from '@/components/ConfigTabs';
 
 export default function NfseConfigPage() {
@@ -35,6 +36,8 @@ export default function NfseConfigPage() {
     ipm_password: '',
     certificate_uploaded: false,
     passphrase: '',
+    passphrase_set: false,
+    ipm_password_set: false,
     prestador_cnpj: '',
     razao_social: '',
     nome_fantasia: '',
@@ -56,7 +59,7 @@ export default function NfseConfigPage() {
     async function fetchConfig() {
       setLoading(true);
       try {
-        const res = await fetch('/api/system/nfse-config');
+        const res = await holdingAuthFetch('/api/system/nfse-config');
         if (res.ok) {
           const data = await res.json();
           if (data && Object.keys(data).length > 0) {
@@ -131,7 +134,7 @@ export default function NfseConfigPage() {
         ...(files.pfxBase64 ? { pfxBase64: files.pfxBase64 } : {})
       };
 
-      const res = await fetch('/api/system/nfse-config', {
+      const res = await holdingAuthFetch('/api/system/nfse-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -142,6 +145,8 @@ export default function NfseConfigPage() {
         throw new Error(errData.error || 'Erro ao salvar nas configurações');
       }
 
+      const saved = await res.json().catch(() => null);
+      if (saved?.config) setConfig(prev => ({ ...prev, ...saved.config, passphrase: '', ipm_password: '' }));
       alert('Configurações fiscais salvas com sucesso! ✅');
       setFiles({});
     } catch (err: any) {
@@ -401,7 +406,7 @@ export default function NfseConfigPage() {
                 <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Senha IPM</label>
                 <input 
                   type="password" 
-                  placeholder="••••••••"
+                  placeholder={config.ipm_password_set ? 'Salva — deixe vazio para manter' : '••••••••'}
                   value={config.ipm_password}
                   onChange={(e) => setConfig({...config, ipm_password: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"
@@ -459,7 +464,7 @@ export default function NfseConfigPage() {
               <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Senha do Certificado</label>
               <input 
                 type="password" 
-                placeholder="Senha de exportação"
+                placeholder={config.passphrase_set ? 'Salva — deixe vazio para manter' : 'Senha de exportação'}
                 value={config.passphrase}
                 onChange={(e) => setConfig({...config, passphrase: e.target.value})}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"

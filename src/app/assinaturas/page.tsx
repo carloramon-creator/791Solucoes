@@ -27,6 +27,7 @@ import {
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { supabase } from '@/lib/supabase';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 
 // Tipagem baseada na tabela vidracarias do Glass
 interface Vidracaria {
@@ -611,7 +612,7 @@ export default function AssinaturasPage() {
     if (!vidracariaToEmit || !emitData.valor) return;
     setIsEmitting(true);
     try {
-      const res = await fetch('/api/notas-fiscais/emitir', {
+      const res = await holdingAuthFetch('/api/notas-fiscais/emitir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

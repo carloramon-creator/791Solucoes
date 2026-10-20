@@ -104,7 +104,8 @@ export default function InvoicePdfPage() {
   const linkOficial = retorno.link || invoice.access_link || '';
   const codVerificacao = retorno.codigo_verificacao || linkOficial.split('/').pop() || 'AGUARDANDO';
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(linkOficial)}`;
-  const barcodeText = codVerificacao.padEnd(44, '0').substring(0, 44);
+  const barcodeText = retorno.chave_acesso_nacional || codVerificacao.padEnd(44, '0').substring(0, 44);
+  const cancelada = /cancel/i.test(retorno.situacao || '') || invoice.status === 'cancelled';
   const barcodeUrl = `https://bwipjs-api.metafloor.com/?bcid=code128&text=${barcodeText}&scale=3&height=12&rotate=N&includetext=false`;
   const dataEmissao = retorno.data || new Date(invoice.created_at).toLocaleDateString('pt-BR');
   const numeroNfse = retorno.numero || (invoice.invoice_number.startsWith('HOLD') ? 'PENDENTE' : invoice.invoice_number);
@@ -124,6 +125,8 @@ export default function InvoicePdfPage() {
   const t = snap?.tomador;
   const tomador = {
     nome: t?.razao_social || invoice.client_name || VAZIO,
+    fantasia: t?.nome_fantasia || null,
+    fone: t?.telefone ? maskPhone(t.telefone) : null,
     doc: maskDocument(t?.documento || invoice.client_document),
     im: t?.inscricao_municipal || VAZIO,
     email: t?.email || VAZIO,
@@ -162,8 +165,25 @@ export default function InvoicePdfPage() {
         </div>
       )}
 
+      {snap?.origem === 'oficial_prefeitura' && (
+        <div className="max-w-[820px] mx-auto mb-4 rounded-xl border border-sky-300 bg-sky-50 p-3 text-xs text-sky-800 print:hidden">
+          Dados copiados do XML oficial desta NFS-e no portal da prefeitura.
+        </div>
+      )}
+
       {/* DANFSe Container */}
-      <div id="print-area" className="w-[19.2cm] min-h-[27.5cm] mx-auto bg-white p-[0.7cm] print:p-[0.7cm] border border-black text-[7.5px] leading-tight flex flex-col gap-1 box-border shadow-2xl print:shadow-none">
+      <div id="print-area" className="relative w-[19.2cm] min-h-[27.5cm] mx-auto bg-white p-[0.7cm] print:p-[0.7cm] border border-black text-[7.5px] leading-tight flex flex-col gap-1 box-border shadow-2xl print:shadow-none">
+
+        {cancelada && (
+          <>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+              <span className="-rotate-[30deg] text-[110px] font-black tracking-widest text-red-600/20">CANCELADA</span>
+            </div>
+            <div className="border-2 border-red-600 bg-red-50 p-1 text-center text-[10px] font-black uppercase tracking-widest text-red-700">
+              NFS-e cancelada na prefeitura — sem validade fiscal
+            </div>
+          </>
+        )}
         
         {/* Topo */}
         <div className="flex border border-black">
@@ -185,7 +205,8 @@ export default function InvoicePdfPage() {
           <div className="w-[20%] p-1 flex flex-col justify-center bg-slate-50/20">
              <div className="flex justify-between border-b border-black/10"><span>Nº NFS-e</span><span className="font-bold">{numeroNfse}</span></div>
              <div className="flex justify-between border-b border-black/10"><span>SÉRIE</span><span className="font-bold">{retorno.serie || VAZIO}</span></div>
-             <div className="flex justify-between"><span>EMISSÃO</span><span className="font-bold">{dataEmissao}{retorno.hora ? ` ${retorno.hora}` : ''}</span></div>
+             <div className="flex justify-between border-b border-black/10"><span>EMISSÃO</span><span className="font-bold">{dataEmissao}{retorno.hora ? ` ${retorno.hora}` : ''}</span></div>
+             <div className="flex justify-between"><span>SITUAÇÃO</span><span className={`font-bold uppercase ${cancelada ? 'text-red-600' : ''}`}>{cancelada ? 'Cancelada' : retorno.situacao || VAZIO}</span></div>
           </div>
         </div>
 
@@ -222,7 +243,7 @@ export default function InvoicePdfPage() {
         {/* Tomador */}
         <div className="bg-slate-100 border border-black font-black uppercase p-0.5 px-2">Tomador do Serviço</div>
         <div className="grid grid-cols-6 border-x border-b border-black">
-            <div className="col-span-3 p-1 border-r border-black"><p className="text-[6px] text-slate-500 font-bold uppercase">Razão Social / Nome</p><p className="text-[9px] font-black uppercase">{tomador.nome}</p></div>
+            <div className="col-span-3 p-1 border-r border-black"><p className="text-[6px] text-slate-500 font-bold uppercase">Razão Social / Nome</p><p className="text-[9px] font-black uppercase">{tomador.nome}</p>{(tomador.fantasia || tomador.fone) && <p className="text-[7px] font-medium uppercase">{[tomador.fantasia, tomador.fone && `Fone ${tomador.fone}`].filter(Boolean).join(' · ')}</p>}</div>
             <div className="p-1 border-r border-black text-center"><p className="text-[6px] text-slate-500 font-bold uppercase">CNPJ/CPF</p><p className="font-bold">{tomador.doc}</p></div>
             <div className="p-1 border-r border-black text-center"><p className="text-[6px] text-slate-500 font-bold uppercase">E-mail</p><p className="font-bold break-all">{tomador.email}</p></div>
             <div className="p-1 text-center"><p className="text-[6px] text-slate-500 font-bold uppercase">I. Municipal</p><p className="font-bold">{tomador.im}</p></div>

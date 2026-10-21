@@ -44,6 +44,28 @@ nacional nesta etapa. A ativacao antes de 01/11/2026 depende de homologacao
 real com A1 e de tratar separadamente as notas historicas IPM. Passar no XSD
 e nos testes locais nao comprova autorizacao pelo fisco.
 
+### Cancelamento de NFS-e (evento nacional e101101)
+
+Decisao manual do administrador, apos avaliar pedido de estorno ou cancelamento
+de assinatura. Nao aciona estorno no Asaas. Em Notas Fiscais, o botao de
+cancelar (notas autorizadas) pede motivo (1 erro na emissao, 2 servico nao
+prestado, 9 outros) e justificativa de 15 a 255 caracteres, que vai ao fisco.
+`POST /api/system/invoices/{id}/cancelar` monta `pedRegEvento` 1.01
+(`Id = PRE + chave + 101101`), assina com o A1, envia GZip/Base64 com mTLS para
+`{Sefin}/nfse/{chave}/eventos` e so marca `cancelled` se o evento devolvido
+for desta chave. Grava em `metadata.cancelamento` quem, quando, motivo,
+justificativa e XML do evento; recusa do fisco fica em
+`metadata.cancelamento_ultima_falha` e a nota continua autorizada. Erro E0840
+(evento ja vinculado) marca a nota como cancelada.
+
+Notas IPM (sem chave nacional) nao sao enviadas: a tela orienta cancelar no
+portal da prefeitura (ate 7 dias da emissao) e sincronizar. Fora do prazo o
+cancelamento e por processo na prefeitura
+(https://saojose.sc.gov.br/cancelamento-nota-fiscal/). No Emissor Nacional o
+prazo e parametrizado pelo municipio; se recusado, seguir o mesmo processo.
+Testes de homologacao podem ser cancelados no painel nacional
+(`POST /api/notas-fiscais/homologacao-nacional/cancelar?id=DPS...`).
+
 Fontes oficiais:
 - https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/apis-prod-restrita-e-producao
 - https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita

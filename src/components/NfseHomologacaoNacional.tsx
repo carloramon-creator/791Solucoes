@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
+import CancelarNfseModal from '@/components/CancelarNfseModal';
 
 const campos = [
   ['vidracaria_id', 'ID do tenant (791glass)', 'text'],
@@ -24,6 +25,14 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
   const [resultado, setResultado] = useState('');
+  const [cancelarId, setCancelarId] = useState<string | null>(null);
+
+  function idDps() {
+    if (!/^\d{7}$/.test(form.municipioEmissao || '') || !/^\d{1,5}$/.test(form.serie || '') || !/^[1-9]\d{0,14}$/.test(form.numero || '')) {
+      throw new Error('Informe município de emissão, série e número da DPS para localizar o teste.');
+    }
+    return `DPS${form.municipioEmissao}2${cnpj.replace(/\D/g, '')}${form.serie.padStart(5, '0')}${form.numero.padStart(15, '0')}`;
+  }
 
   async function testar(enviar: boolean) {
     if (enviar && !window.confirm('Enviar uma DPS à produção restrita nacional? É um teste sem validade fiscal. Não reenvie uma operação de resultado incerto.')) return;
@@ -51,10 +60,7 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
   async function consultarSalvo() {
     setBusy(true); setErro(''); setResultado('');
     try {
-      if (!/^\d{7}$/.test(form.municipioEmissao || '') || !/^\d{1,5}$/.test(form.serie || '') || !/^[1-9]\d{0,14}$/.test(form.numero || '')) {
-        throw new Error('Informe município de emissão, série e número da DPS para recuperar o teste.');
-      }
-      const id = `DPS${form.municipioEmissao}2${cnpj.replace(/\D/g, '')}${form.serie.padStart(5, '0')}${form.numero.padStart(15, '0')}`;
+      const id = idDps();
       const response = await holdingAuthFetch(`/api/notas-fiscais/homologacao-nacional?id=${id}`);
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Falha ao recuperar teste.');
@@ -90,9 +96,19 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
       <button type="button" disabled={busy || !confirmado} onClick={() => testar(false)} className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-50">Pré-visualizar DPS (não envia)</button>
       <button type="button" disabled={busy || !confirmado} onClick={() => testar(true)} className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Enviar teste nacional</button>
       <button type="button" disabled={busy} onClick={consultarSalvo} className="rounded-lg border px-4 py-2 text-sm font-bold disabled:opacity-50">Consultar resultado salvo</button>
+      <button type="button" disabled={busy} onClick={() => {
+        try { setErro(''); setCancelarId(idDps()); } catch (err) { setErro(err instanceof Error ? err.message : 'Dados inválidos.'); }
+      }} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-bold text-red-700 disabled:opacity-50">Cancelar teste autorizado</button>
     </div>
     {busy && <p className="text-sm">Processando…</p>}
     {erro && <p role="alert" className="text-sm text-red-700">{erro}</p>}
+    {cancelarId && <CancelarNfseModal
+      titulo={`teste ${cancelarId}`}
+      endpoint={`/api/notas-fiscais/homologacao-nacional/cancelar?id=${cancelarId}`}
+      emitidaEm={null} nacional
+      onClose={() => setCancelarId(null)}
+      onCancelada={() => { setCancelarId(null); setResultado('Teste cancelado no Emissor Nacional (produção restrita). Use "Consultar resultado salvo" para ver o evento.'); }}
+    />}
     {resultado && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-4 text-xs">{resultado}</pre>}
   </section>;
 }

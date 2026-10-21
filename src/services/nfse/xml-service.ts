@@ -1,4 +1,5 @@
 import { XMLBuilder } from 'fast-xml-parser';
+import { validarPedidoCancelamento, type MotivoCancelamento } from './cancelamento';
 
 export interface DPSData {
     numero: string;
@@ -129,6 +130,46 @@ export class XmlService {
 
         return this.builder.build(dpsObject);
     }
+
+    /** Pedido de registro do evento e101101 (leiaute pedRegEvento 1.01). */
+    public generatePedidoCancelamento(data: PedidoCancelamentoData): string {
+        if (!/^\d{50}$/.test(data.chaveAcesso)) throw new Error('Chave de acesso nacional inválida (50 dígitos).');
+        if (!/^\d{14}$/.test(data.cnpjAutor)) throw new Error('CNPJ do autor do cancelamento inválido.');
+        if (data.ambiente !== 1 && data.ambiente !== 2) throw new Error('Ambiente nacional inválido.');
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:00$/.test(data.dataEvento) || !Number.isFinite(Date.parse(data.dataEvento))) {
+            throw new Error('Data do evento deve conter segundos e fuso horário numérico, sem milissegundos.');
+        }
+        const erro = validarPedidoCancelamento(data.motivo, data.justificativa);
+        if (erro) throw new Error(erro);
+        return this.builder.build({
+            pedRegEvento: {
+                "@_xmlns": "http://www.sped.fazenda.gov.br/nfse",
+                "@_versao": "1.01",
+                infPedReg: {
+                    "@_Id": `PRE${data.chaveAcesso}101101`,
+                    tpAmb: data.ambiente,
+                    verAplic: "791holding_1.0",
+                    dhEvento: data.dataEvento,
+                    CNPJAutor: data.cnpjAutor,
+                    chNFSe: data.chaveAcesso,
+                    e101101: {
+                        xDesc: 'Cancelamento de NFS-e',
+                        cMotivo: data.motivo,
+                        xMotivo: data.justificativa.trim(),
+                    },
+                },
+            },
+        });
+    }
+}
+
+export interface PedidoCancelamentoData {
+    chaveAcesso: string;
+    cnpjAutor: string;
+    ambiente: 1 | 2;
+    dataEvento: string;
+    motivo: MotivoCancelamento;
+    justificativa: string;
 }
 
 const xmlService = new XmlService();

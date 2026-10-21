@@ -12,11 +12,14 @@ import {
   Filter,
   Loader2,
   RefreshCw,
-  Settings
+  Settings,
+  Ban
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
+import CancelarNfseModal from '@/components/CancelarNfseModal';
+import { extrairDadosNfseNacional } from '@/services/nfse/cancelamento';
 
 interface Invoice {
   id: string;
@@ -29,7 +32,9 @@ interface Invoice {
   error_message?: string;
   metadata?: {
     xml?: string;
+    nfse_oficial_xml?: string;
     vidracaria_id?: string;
+    cancelamento?: { motivo_descricao?: string; justificativa?: string; solicitado_por?: string; solicitado_em?: string };
   };
 }
 
@@ -39,6 +44,7 @@ export default function NotasFiscaisPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'authorized' | 'rejected' | 'cancelled'>('all');
   const [error, setError] = useState<string | null>(null);
+  const [cancelando, setCancelando] = useState<Invoice | null>(null);
   const [sync, setSync] = useState<{ rodando: boolean; erro: string | null; executado_em: string | null; canceladas: string[] }>({
     rodando: false, erro: null, executado_em: null, canceladas: [],
   });
@@ -242,6 +248,11 @@ export default function NotasFiscaisPage() {
                          inv.status === 'cancelled' ? 'Cancelada' : 
                          'Em Processamento'}
                       </span>
+                      {inv.status === 'cancelled' && inv.metadata?.cancelamento && (
+                        <span className="block mt-1 text-[10px] text-slate-500 max-w-[220px] truncate" title={inv.metadata.cancelamento.justificativa}>
+                          {inv.metadata.cancelamento.motivo_descricao} — {inv.metadata.cancelamento.solicitado_por}
+                        </span>
+                      )}
                     </td>
                     <td className="px-8 py-5 text-right pr-8 text-sm text-slate-700">
                       {formatCurrency(inv.value)}
@@ -277,6 +288,15 @@ export default function NotasFiscaisPage() {
                             <Download size={14} />
                           </button>
                         )}
+                        {inv.status === 'authorized' && (
+                          <button
+                            onClick={() => setCancelando(inv)}
+                            className="p-2 bg-slate-100 text-red-600 rounded-lg hover:bg-red-50 transition-all shadow-sm"
+                            title="Cancelar NFS-e"
+                          >
+                            <Ban size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -287,6 +307,19 @@ export default function NotasFiscaisPage() {
         </div>
       </div>
 
+      {cancelando && (() => {
+        const nacional = extrairDadosNfseNacional(cancelando.metadata?.nfse_oficial_xml || cancelando.metadata?.xml);
+        return (
+          <CancelarNfseModal
+            titulo={`NFS-e nº ${cancelando.invoice_number} — ${cancelando.client_name}`}
+            endpoint={`/api/system/invoices/${cancelando.id}/cancelar`}
+            emitidaEm={nacional?.emitidaEm || cancelando.created_at}
+            nacional={Boolean(nacional)}
+            onClose={() => setCancelando(null)}
+            onCancelada={() => { setCancelando(null); fetchInvoices(true); }}
+          />
+        );
+      })()}
     </div>
   );
 }

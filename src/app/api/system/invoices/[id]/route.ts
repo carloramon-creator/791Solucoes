@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { lerDocumentoOficial } from '@/services/nfse/documento-oficial';
 
 export async function GET(
   request: Request,
@@ -21,7 +22,15 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Nota não encontrada' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, invoice: data });
+    if (data.metadata?.nfse_oficial_xml && !data.metadata.documento_oficial) {
+      try {
+        data.metadata.documento_oficial = lerDocumentoOficial(data.metadata.nfse_oficial_xml);
+      } catch (err) {
+        console.error('[NFS-e] XML armazenado incompleto:', err instanceof Error ? err.message : err);
+        return NextResponse.json({ success: true, invoice: data, aviso: 'XML oficial incompleto. Consulte o original no portal fiscal.' }, { headers: { 'Cache-Control': 'private, no-store' } });
+      }
+    }
+    return NextResponse.json({ success: true, invoice: data }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -1,84 +1,60 @@
 import axios from 'axios';
-import https from 'https';
-import zlib from 'zlib';
-import { promisify } from 'util';
-import { DPSData } from '../xml-service';
+import https from 'node:https';
+import { gzipSync, gunzipSync } from 'node:zlib';
+import { XMLParser } from 'fast-xml-parser';
+import type { DPSData } from '../xml-service';
+import xmlService from '../xml-service';
 import signatureService from '../signature-service';
-import { NfseProvider, EmitResult } from './types';
+import type { NfseProvider, EmitResult } from './types';
 
-const gzip = promisify(zlib.gzip);
+export const SEFIN_HOMOLOGACAO = 'https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional';
 
 export class NationalProvider implements NfseProvider {
-    public async emit(data: DPSData, pfxBase64: string, passphrase: string, credentials?: any): Promise<EmitResult> {
-        console.log(`[NationalProvider] Iniciando emissão para nota ${data.numero}`);
-
+    public async emit(data: DPSData, pfxBase64: string, passphrase: string): Promise<EmitResult> {
+        const xml = xmlService.generateDPS(data);
+        const id = xml.match(/Id="(DPS\d{42})"/)?.[1];
+        if (!id) throw new Error('Identificador nacional da DPS inválido.');
+        const { privateKey, certificate } = signatureService.extractFromPfx(pfxBase64, passphrase);
+        const signedXml = signatureService.signXML(xml, privateKey, certificate, id);
+        const httpsAgent = new https.Agent({ cert: certificate, key: privateKey, rejectUnauthorized: true });
         try {
-            // 1. Extrair certificados
-            const { privateKey, certificate } = signatureService.extractFromPfx(pfxBase64, passphrase);
-
-            // 2. Gerar XML do DPS (padrão nacional já no xml-service)
-            // Importar dinamicamente para evitar ciclos ou usar o import estático se possível.
-            // O código original usava require, manterei para garantir compatibilidade.
-            const xmlService = require('../xml-service').default;
-            const xml = xmlService.generateDPS(data);
-
-            // 3. Assinar XML
-            const signedXml = signatureService.signXML(xml, privateKey, certificate, `DPS${data.numero}`);
-
-            // 4. Compactar e Codificar (GZip + Base64) conforme padrão Nacional/ADN
-            const compressedXml = await gzip(Buffer.from(signedXml, 'utf-8'));
-            const base64Xml = compressedXml.toString('base64');
-
-            // 5. Configurar Cliente HTTP com mTLS
-            // OextractFromPfx deve retornar PEMs válidos.
-            const httpsAgent = new https.Agent({
-                cert: certificate,
-                key: privateKey,
-                passphrase: passphrase, // Caso a chave esteja encriptada
-                rejectUnauthorized: false // Ambiente de homologação
-            });
-
-            // 6. Enviar para API Nacional (Homologação)
-            // URL identificada para ambiente de produção restrita (homologação)
-            const url = "https://adn.producaorestrita.nfse.gov.br/contribuintes/v1/nfse";
-
-            // Payload JSON com propriedade 'dps'
-            const payload = {
-                dps: base64Xml
-            };
-
-            const response = await axios.post(url, payload, {
-                httpsAgent,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            console.log(`[NationalProvider] Resposta: ${response.status} - ${JSON.stringify(response.data)}`);
-
-            return {
-                success: true,
-                invoiceId: response.data?.id || data.numero,
-                status: 'authorized',
-                message: 'Emitido via Provedor Nacional (REST)'
-            };
-
-        } catch (error: any) {
-            let cleanMessage = error.message;
-            if (error.response?.data) {
-                if (error.response.data.mensagem) {
-                    cleanMessage = error.response.data.mensagem;
-                } else if (error.response.data.errors) {
-                    cleanMessage = JSON.stringify(error.response.data.errors);
-                } else {
-                    cleanMessage = JSON.stringify(error.response.data);
-                }
+            const response = await axios.post<{
+                chaveAcesso?: string; nfseXmlGZipB64?: string;
+                erros?: { Codigo?: string; Descricao?: string; Complemento?: string }[];
+            }>(`${SEFIN_HOMOLOGACAO}/nfse`, {
+                dpsXmlGZipB64: gzipSync(Buffer.from(signedXml, 'utf8')).toString('base64'),
+            }, { httpsAgent, timeout: 30_000, maxRedirects: 0, maxContentLength: 4_000_000 });
+            if (response.data.erros?.length) throw new Error(JSON.stringify(response.data.erros));
+            const encoded = response.data.nfseXmlGZipB64;
+            const chave = response.data.chaveAcesso;
+            if (!encoded || !/^\d{50}$/.test(chave || '')) {
+                throw new Error('Resposta sem XML autorizado ou chave nacional. Não tente novamente sem consultar a DPS no portal.');
             }
-
-            console.error(`[NationalProvider] Erro detalhado:`, cleanMessage);
-            throw new Error(`Erro Provedor Nacional: ${cleanMessage}`);
+            const officialXml = gunzipSync(Buffer.from(encoded, 'base64'), { maxOutputLength: 2_000_000 }).toString('utf8');
+            const doc = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false }).parse(officialXml);
+            const nfse = doc.NFSe?.infNFSe;
+            if (!/^\d{1,13}$/.test(nfse?.nNFSe || '') || nfse['@_Id'] !== `NFS${chave}`
+                || nfse.DPS?.infDPS?.['@_Id'] !== id || nfse.DPS?.infDPS?.tpAmb !== '2'
+                || nfse.DPS?.infDPS?.prest?.CNPJ !== data.prestador.cnpj) {
+                throw new Error('XML de retorno não corresponde à DPS/emitente de homologação. Confira no portal antes de repetir.');
+            }
+            return {
+                success: true, status: 'authorized', invoiceId: nfse.nNFSe,
+                message: 'NFS-e de homologação autorizada pelo Emissor Nacional — sem validade fiscal.',
+                xml: officialXml,
+                accessLink: `https://www.producaorestrita.nfse.gov.br/ConsultaPublica/?tpc=1&chave=${chave}`,
+            };
+        } catch (err) {
+            if (axios.isAxiosError(err)) {
+                const resposta = err.response?.data;
+                throw new Error(`Homologação nacional: ${resposta ? JSON.stringify(resposta) : err.message}. Consulte a DPS ${id} antes de reenviar.`);
+            }
+            throw err;
+        } finally {
+            httpsAgent.destroy();
         }
     }
 }
 
-export default new NationalProvider();
+const nationalProvider = new NationalProvider();
+export default nationalProvider;

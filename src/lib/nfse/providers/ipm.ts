@@ -85,6 +85,7 @@ export class IpmProvider implements NfseProvider {
             method: 'POST',
             headers: { Authorization: authHeader },
             body: formData,
+            signal: AbortSignal.timeout(20_000),
         });
 
         const bytes = new Uint8Array(await response.arrayBuffer());

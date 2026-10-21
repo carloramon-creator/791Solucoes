@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { ConfigTabs } from '@/components/ConfigTabs';
+import NfseHomologacaoNacional from '@/components/NfseHomologacaoNacional';
 
 export default function NfseConfigPage() {
   const [loading, setLoading] = useState(true);
@@ -182,6 +183,7 @@ export default function NfseConfigPage() {
       </div>
 
       <ConfigTabs />
+      <NfseHomologacaoNacional cnpj={config.prestador_cnpj} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         

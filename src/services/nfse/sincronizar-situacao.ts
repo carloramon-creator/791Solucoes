@@ -1,6 +1,7 @@
 import { supabaseServer } from '@/lib/supabase-server';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { lerRetornoIpm } from './danfse-snapshot';
+import { lerDocumentoOficial } from './documento-oficial';
 
 // Confere na prefeitura a situação das NFS-e autorizadas e marca como canceladas
 // as que foram canceladas lá (ex.: cancelamento feito direto no portal).
@@ -68,11 +69,20 @@ async function executar(): Promise<ResultadoSincronizacao> {
       consultado_em: new Date().toISOString(),
     };
     const cancelada = /cancel/i.test(consulta.situacao);
+    let documento;
+    try {
+      documento = lerDocumentoOficial(consulta.xml);
+    } catch (err) {
+      resultado.erro = `A consulta da nota ${inv.invoice_number} não retornou o documento completo: ${err instanceof Error ? err.message : String(err)}`;
+    }
     const { error: erroUpdate } = await supabaseServer
       .from('system_invoices')
       .update({
         ...(cancelada ? { status: 'cancelled' } : {}),
-        metadata: { ...inv.metadata, situacao_prefeitura, ...(cancelada ? { nfse_oficial_xml: consulta.xml } : {}) },
+        metadata: {
+          ...inv.metadata, situacao_prefeitura,
+          ...(documento ? { nfse_oficial_xml: consulta.xml, documento_oficial: documento } : {}),
+        },
       })
       .eq('id', inv.id)
       .eq('status', 'authorized');
@@ -81,6 +91,7 @@ async function executar(): Promise<ResultadoSincronizacao> {
       break;
     }
     if (cancelada) resultado.canceladas.push(inv.invoice_number);
+    if (resultado.erro) break;
   }
 
   return resultado;

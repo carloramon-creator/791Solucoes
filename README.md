@@ -2,6 +2,59 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## NFS-e da holding para os tenants
+
+As visualizacoes da Holding e do Glass usam os campos textuais do XML oficial,
+sem recalcular valores nem presumir retencoes, regime ou IBS/CBS. A impressao
+e identificada como representacao do sistema; o link do documento original e
+o download do XML ficam separados. Se um dado estiver apenas no PDF oficial,
+ele nao e inventado na representacao. Sem XML completo, a nota nao e montada
+a partir do cadastro ou dos dados enviados.
+
+Na Holding, "Consultar documento oficial" consulta a IPM e preserva o XML em
+`system_invoices.metadata.nfse_oficial_xml`, com a projecao de campos em
+`documento_oficial`. A sincronizacao de situacao tambem preserva esses dados
+quando a prefeitura retorna o documento completo; mesmo uma resposta resumida
+continua atualizando cancelamentos e informa a indisponibilidade do XML completo.
+O Glass le os dados salvos pela Holding, mantendo o isolamento do tenant.
+
+### Homologacao nacional, sem mudanca automatica de producao
+
+Em Configuracoes > NFS-e, o painel "Emissor Nacional" permite pre-visualizar
+a DPS sem enviar, e enviar um teste somente apos confirmacao explicita.
+A API exige administrador da Holding. O escopo e ME/EPP no Simples, ISS dentro
+do regime unico, operacao tributavel sem retencao, em 2026. Outros regimes,
+retencoes e a tributacao de 2027 exigem implementacao/parametrizacao posterior.
+Nao se deduz CRT, percentual do Simples, NBS ou codigo nacional a partir do
+codigo municipal antigo; confirmar com contador e parametros municipais.
+
+DPS 1.01 segue o pacote de producao restrita publicado em 20/10/2026, com
+`finNFSe`, identificador completo, assinatura, GZip/Base64, mTLS com validacao
+de TLS e POST para Sefin Nacional (nao para o ADN). Resposta HTTP 200 so e
+tratada como autorizacao se contiver chave e XML da mesma DPS, emitente e
+ambiente. Os testes nao entram em `system_invoices` nem no financeiro.
+Tentativas ficam em `system_settings` com prefixo `nfse_homologacao_DPS...`,
+reservadas antes do envio para impedir duplicacao concorrente. Uma falha de
+rede pode esconder autorizacao: consultar no portal antes de tentar novamente,
+sem mudar numero apenas para repetir a mesma operacao. O resultado salvo
+pode ser recuperado pelo painel com municipio, serie e numero.
+
+O fluxo IPM atual, inclusive emissao automatica, NAO foi migrado para producao
+nacional nesta etapa. A ativacao antes de 01/11/2026 depende de homologacao
+real com A1 e de tratar separadamente as notas historicas IPM. Passar no XSD
+e nos testes locais nao comprova autorizacao pelo fisco.
+
+Fontes oficiais:
+- https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/apis-prod-restrita-e-producao
+- https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita
+- https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita/esquemas_prod_restrita_20261020.zip
+
+Testes: `node --test scripts/tests/nfse-nacional.test.mjs`.
+Para validar tambem o XSD, baixe e extraia o pacote oficial sem altera-lo e
+execute `NFSE_XSD_DIR=/caminho/extraido node --test scripts/tests/nfse-nacional.test.mjs`.
+Esse teste usa certificado ficticio gerado localmente, verifica a assinatura
+e executa `xmllint`; nao usa certificado real nem envia notas.
+
 First, run the development server:
 
 ```bash

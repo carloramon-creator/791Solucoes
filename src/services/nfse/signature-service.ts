@@ -1,5 +1,4 @@
 import { SignedXml } from 'xml-crypto';
-import { DOMParser } from '@xmldom/xmldom';
 import * as forge from 'node-forge';
 
 export class SignatureService {
@@ -37,8 +36,6 @@ export class SignatureService {
      * Sinais um XML usando um certificado digital (PEM format) e chave privada.
      */
     public signXML(xml: string, privateKey: string, publicCert: string, elementId: string): string {
-        const doc = new DOMParser().parseFromString(xml, 'text/xml');
-        // @ts-ignore
         const sig = new SignedXml({
             privateKey: Buffer.from(privateKey),
             publicCert: Buffer.from(publicCert),

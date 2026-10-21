@@ -5,6 +5,7 @@ export interface EmitResult {
     invoiceId?: string;
     pdfUrl?: string;
     xmlUrl?: string;
+    xml?: string;
     accessLink?: string; // Link de acesso à NFS-e (usado pelo IPM)
     status: 'authorized' | 'pending' | 'rejected';
     message?: string;

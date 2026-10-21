@@ -10,6 +10,10 @@ import type { NfseProvider, EmitResult } from './types';
 export const SEFIN_HOMOLOGACAO = 'https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional';
 export const SEFIN_PRODUCAO = 'https://sefin.nfse.gov.br/SefinNacional';
 
+/** O Sefin rejeita (E1229) XML sem declaração de codificação UTF-8; ela fica fora do elemento assinado. */
+export const xmlParaEnvio = (xml: string) => Buffer.from(
+    xml.startsWith('<?xml') ? xml : `<?xml version="1.0" encoding="UTF-8"?>${xml}`, 'utf8');
+
 export interface CancelResult {
     eventoXml: string;
     idEvento: string;
@@ -45,7 +49,7 @@ export class NationalProvider implements NfseProvider {
                 chaveAcesso?: string; nfseXmlGZipB64?: string;
                 erros?: { Codigo?: string; Descricao?: string; Complemento?: string }[];
             }>(`${SEFIN_HOMOLOGACAO}/nfse`, {
-                dpsXmlGZipB64: gzipSync(Buffer.from(signedXml, 'utf8')).toString('base64'),
+                dpsXmlGZipB64: gzipSync(xmlParaEnvio(signedXml)).toString('base64'),
             }, { httpsAgent, timeout: 30_000, maxRedirects: 0, maxContentLength: 4_000_000 });
             if (response.data.erros?.length) throw new Error(JSON.stringify(response.data.erros));
             const encoded = response.data.nfseXmlGZipB64;
@@ -89,7 +93,7 @@ export class NationalProvider implements NfseProvider {
             let response;
             try {
                 response = await axios.post<{ eventoXmlGZipB64?: string }>(`${base}/nfse/${pedido.chaveAcesso}/eventos`, {
-                    pedidoRegistroEventoXmlGZipB64: gzipSync(Buffer.from(signedXml, 'utf8')).toString('base64'),
+                    pedidoRegistroEventoXmlGZipB64: gzipSync(xmlParaEnvio(signedXml)).toString('base64'),
                 }, { httpsAgent, timeout: 30_000, maxRedirects: 0, maxContentLength: 4_000_000 });
             } catch (err) {
                 if (!axios.isAxiosError(err)) throw err;

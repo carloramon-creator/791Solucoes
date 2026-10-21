@@ -97,7 +97,7 @@ test('provider envia o evento GZip/Base64 ao Sefin com mTLS e valida o evento de
   assert.equal(res.processadoEm, '2026-10-21T15:00:05-03:00');
   assert.equal(enviado.url, `https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional/nfse/${CHAVE}/eventos`);
   assert.deepEqual(Object.keys(enviado.payload), ['pedidoRegistroEventoXmlGZipB64']);
-  assert.equal(gunzipSync(Buffer.from(enviado.payload.pedidoRegistroEventoXmlGZipB64, 'base64')).toString(), xmlService.generatePedidoCancelamento(pedido));
+  assert.equal(gunzipSync(Buffer.from(enviado.payload.pedidoRegistroEventoXmlGZipB64, 'base64')).toString(), `<?xml version="1.0" encoding="UTF-8"?>${xmlService.generatePedidoCancelamento(pedido)}`);
   assert.equal(enviado.options.httpsAgent.options.rejectUnauthorized, true);
   assert.equal(enviado.options.maxRedirects, 0);
 

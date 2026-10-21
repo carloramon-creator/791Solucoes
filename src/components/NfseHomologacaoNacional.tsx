@@ -13,7 +13,7 @@ const campos = [
   ['municipioPrestacao', 'Município da prestação — IBGE (7 dígitos)', 'text'],
   ['codigoTributacaoNacional', 'Tributação nacional (6 dígitos; confirmar no catálogo)', 'text'],
   ['codigoTributacaoMunicipal', 'Tributação municipal (3 dígitos, se exigida)', 'text'],
-  ['codigoNbs', 'NBS (9 dígitos, se exigida)', 'text'],
+  ['codigoNbs', 'NBS (9 dígitos, obrigatória com IBS/CBS)', 'text'],
   ['valor', 'Valor do serviço (R$)', 'number'],
   ['percentualTributosSimples', 'Tributos aproximados do Simples (%) — contador', 'number'],
   ['descricao', 'Descrição do serviço', 'text'],

@@ -77,7 +77,7 @@ export class XmlService {
             throw new Error('Informe o percentual aproximado de tributos do Simples, confirmado com o contador.');
         }
         if (nacional.codigoTributacaoMunicipal) validar(nacional.codigoTributacaoMunicipal, /^\d{3}$/, 'Código de tributação municipal');
-        if (nacional.codigoNbs) validar(nacional.codigoNbs, /^\d{9}$/, 'Código NBS');
+        validar(nacional.codigoNbs || '', /^\d{9}$/, 'Código NBS (obrigatório com IBS/CBS, regra E0322)');
         if (Boolean(data.tomador.cnpj) === Boolean(data.tomador.cpf)) throw new Error('Informe apenas CNPJ ou CPF do tomador.');
         if (data.tomador.cnpj) validar(data.tomador.cnpj, /^\d{14}$/, 'CNPJ do tomador');
         if (data.tomador.cpf) validar(data.tomador.cpf, /^\d{11}$/, 'CPF do tomador');
@@ -123,6 +123,14 @@ export class XmlService {
                             tribMun: { tribISSQN: 1, tpRetISSQN: 1 },
                             totTrib: { pTotTribSN: nacional.percentualTributosSimples.toFixed(2) },
                         },
+                    },
+                    // Obrigatório para competência a partir de 01/10/2026 (E0855). 100301: demais serviços
+                    // onerosos, local do domicílio do adquirente (Anexo C IndOp). CST 000/000001: tributação integral.
+                    IBSCBS: {
+                        indFinal: data.tomador.cpf ? 1 : 0,
+                        cIndOp: '100301',
+                        indDest: 0,
+                        valores: { trib: { CST: '000', cClassTrib: '000001' } },
                     },
                 }
             }

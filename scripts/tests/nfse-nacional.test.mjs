@@ -31,7 +31,7 @@ const dados = {
   servico: { codigoItemListaServico: '010501', valorServicos: 5.09, discriminacao: 'Assinatura <teste>' },
   nacional: {
     municipioEmissao: '4216602', municipioPrestacao: '4216602', competencia: '2026-10-21',
-    codigoTributacaoNacional: '010501', percentualTributosSimples: 6, regimeConfirmado: 'simples-me-epp',
+    codigoTributacaoNacional: '010501', codigoNbs: '111032200', percentualTributosSimples: 6, regimeConfirmado: 'simples-me-epp',
   },
 };
 
@@ -45,12 +45,15 @@ test('DPS 1.01 tem identificador completo, sequência, tomador e valores correto
   assert.match(xml, /<pTotTribSN>6.00<\/pTotTribSN>/);
   assert.match(xml, /EMPRESA &amp; TESTE/);
   assert.match(xml, /Assinatura &lt;teste&gt;/);
-  assert.ok(!xml.includes('IBSCBS'));
+  const compacto = xml.replace(/>\s+</g, '><');
+  assert.match(compacto, /<cTribNac>010501<\/cTribNac><cNBS>111032200<\/cNBS><xDescServ>/);
+  assert.match(compacto, /<\/valores><IBSCBS><indFinal>0<\/indFinal><cIndOp>100301<\/cIndOp><indDest>0<\/indDest><valores><trib><CST>000<\/CST><cClassTrib>000001<\/cClassTrib><\/trib><\/valores><\/IBSCBS><\/infDPS>/);
 });
 
 test('DPS recusa parâmetros ausentes, número textual, código antigo e ano não suportado', () => {
   for (const invalid of [
     { ...dados, nacional: undefined },
+    { ...dados, nacional: { ...dados.nacional, codigoNbs: undefined } },
     { ...dados, numero: 'HOLD-123' },
     { ...dados, serie: '90000' },
     { ...dados, tomador: { ...dados.tomador, cpf: '12345678909' } },
@@ -107,7 +110,7 @@ test('nacional envia GZip ao Sefin restrito com TLS válido e só autoriza com X
   assert.equal(enviada.options.httpsAgent.options.rejectUnauthorized, true);
   assert.equal(enviada.options.maxRedirects, 0);
   assert.deepEqual(Object.keys(enviada.payload), ['dpsXmlGZipB64']);
-  assert.equal(gunzipSync(Buffer.from(enviada.payload.dpsXmlGZipB64, 'base64')).toString(), xmlModule.default.generateDPS(dados));
+  assert.equal(gunzipSync(Buffer.from(enviada.payload.dpsXmlGZipB64, 'base64')).toString(), `<?xml version="1.0" encoding="UTF-8"?>${xmlModule.default.generateDPS(dados)}`);
 });
 
 test('HTTP 200 sem autorização ou com XML de outra DPS nunca vira sucesso', async () => {

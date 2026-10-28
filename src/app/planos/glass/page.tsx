@@ -585,3 +585,6 @@ export default function PlanosGlassPage() {
           </div>
         </div>
       </div>
+   </div>
+  );
+}

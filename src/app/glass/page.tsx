@@ -119,12 +119,15 @@ export default function GlassClientsPage() {
     const defaultWpp = systemPlan?.system_limits?.wppMessages ? Number(systemPlan.system_limits.wppMessages) : 1000;
     const defaultWppUsers = systemPlan?.system_limits?.wppDevices ? Number(systemPlan.system_limits.wppDevices) : 1;
     
+    const defaultMktMessages = systemPlan?.system_limits?.mktMessages ? Number(systemPlan.system_limits.mktMessages) : 200;
+    const defaultMktPrice = systemPlan?.system_limits?.extraMktMessagePrice ? Number(systemPlan.system_limits.extraMktMessagePrice) : 0.25;
     
     setModalUsers(vid.limite_usuarios ?? defaultUsers);
     setModalWpp(vid.limite_mensagens_whatsapp ?? defaultWpp);
     setModalWppUsers(vid.limite_usuarios_whats ?? defaultWppUsers);
-    setModalMktFranquia(vid.limite_mensagens_marketing ?? 200);          // ← NOVO
-    setModalMktExcedente(vid.valor_msg_marketing_excedente ?? 0.25);     // ← NOVO
+     setModalMktFranquia(vid.limite_mensagens_marketing ?? defaultMktMessages);
+    setModalMktExcedente(vid.valor_msg_marketing_excedente ?? defaultMktPrice);
+    
   };
 
   const handleSaveModal = async () => {

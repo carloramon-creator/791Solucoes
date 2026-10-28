@@ -56,7 +56,9 @@ export default function PlanosGlassPage() {
     wppMessages: '',
     extraMessagePrice: '',
     consultflexBasicPrice: '',
-    consultflexCompletePrice: ''
+    consultflexCompletePrice: '',
+    mktMessages: '', 
+    extraMktMessagePrice: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
     usersIncluded: number;
@@ -102,7 +104,9 @@ export default function PlanosGlassPage() {
         extraDevicePrice: parseCurrency(limits.extraDevicePrice),
         extraMessagePrice: parseCurrency(limits.extraMessagePrice),
         consultflexBasicPrice: parseCurrency(limits.consultflexBasicPrice),
-        consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice)
+        consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice),
+        mktMessages: Number(limits.mktMessages || 0),  
+        extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
       },
       included_modules: selectedBasicModules
     };
@@ -250,7 +254,9 @@ export default function PlanosGlassPage() {
               wppMessages: String(wppMessages || ''),
               extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100)),
               consultflexBasicPrice: formatCurrency(String(Number(planData.system_limits.consultflexBasicPrice || 0) * 100)),
-              consultflexCompletePrice: formatCurrency(String(Number(planData.system_limits.consultflexCompletePrice || 0) * 100))
+              consultflexCompletePrice: formatCurrency(String(Number(planData.system_limits.consultflexCompletePrice || 0) * 100)),
+              mktMessages: String(Number(planData.system_limits.mktMessages || 0)), 
+              extraMktMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMktMessagePrice || 0) * 100))
             });
           }
         }
@@ -491,7 +497,7 @@ export default function PlanosGlassPage() {
           </div>
         </div>
 
-        {/* Box 5: WhatsApp */}
+                {/* Box 5: WhatsApp */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
             <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Integração WhatsApp</h2>
@@ -522,6 +528,7 @@ export default function PlanosGlassPage() {
                 </div>
               </div>
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
               <div>
                 <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de mensagens</label>
@@ -547,10 +554,34 @@ export default function PlanosGlassPage() {
                 </div>
               </div>
             </div>
+
+            {/* Marketing */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-purple-200 pt-4 mt-2 bg-purple-50/30 -mx-6 px-6 pb-4 rounded-b-xl">
+              <div>
+                <label className="block text-[12px] font-semibold text-purple-700 mb-1.5 uppercase tracking-tight">Franquia de Marketing</label>
+                <input 
+                  type="number" 
+                  placeholder="Ex: 200"
+                  value={limits.mktMessages}
+                  onChange={(e) => setLimits(prev => ({ ...prev, mktMessages: e.target.value }))}
+                  className="w-full bg-white border border-purple-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-purple-700 mb-1.5 uppercase tracking-tight">Valor por msg marketing excedente (R$)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-purple-400 font-bold text-xs">R$</span>
+                  <input 
+                    type="text" 
+                    placeholder="0,00"
+                    value={limits.extraMktMessagePrice}
+                    onChange={(e) => setLimits(prev => ({ ...prev, extraMktMessagePrice: formatCurrency(e.target.value) }))}
+                    className="w-full bg-white border border-purple-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
-
       </div>
-    </div>
-  );
-}

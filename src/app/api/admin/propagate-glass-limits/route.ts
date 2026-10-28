@@ -9,6 +9,8 @@ type Body = {
     usersIncluded: number;
     wppDevices: number;
     wppMessages: number;
+    mktMessages: number;
+    extraMktMessagePrice: number;
   };
   loadedLimits?: {
     usersIncluded: number;
@@ -33,6 +35,8 @@ export async function POST(request: NextRequest) {
     const nextUsersIncluded = Number(body?.nextLimits?.usersIncluded ?? 0);
     const nextWppDevices = Number(body?.nextLimits?.wppDevices ?? 0);
     const nextWppMessages = Number(body?.nextLimits?.wppMessages ?? 0);
+    const nextMktMessages = Number(body?.nextLimits?.mktMessages ?? 0);
+    const nextExtraMktPrice = Number(body?.nextLimits?.extraMktMessagePrice ?? 0);
 
     if (mode === 'default' && !body?.loadedLimits) {
       return NextResponse.json(
@@ -45,8 +49,7 @@ export async function POST(request: NextRequest) {
 
     const { data: tenants, error: tenantsError } = await glass
       .from('vidracarias')
-      .select('id, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp');
-
+      .select('id, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_marketing_excedente');
     if (tenantsError) {
       return NextResponse.json({ error: tenantsError.message }, { status: 500 });
     }
@@ -73,6 +76,14 @@ export async function POST(request: NextRequest) {
         updatePayload.limite_mensagens_whatsapp = nextWppMessages;
       }
 
+      if (mode === 'all' || tenant.limite_mensagens_marketing == null) {
+        updatePayload.limite_mensagens_marketing = nextMktMessages;
+      }
+
+      if (mode === 'all' || tenant.valor_msg_marketing_excedente == null) {
+        updatePayload.valor_msg_marketing_excedente = nextExtraMktPrice;
+      }
+      
       if (Object.keys(updatePayload).length === 0) continue;
 
       const { data: updatedRows, error: syncError } = await glass

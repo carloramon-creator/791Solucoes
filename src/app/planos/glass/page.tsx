@@ -135,6 +135,8 @@ export default function PlanosGlassPage() {
               usersIncluded: nextUsersIncluded,
               wppDevices: nextWppDevices,
               wppMessages: nextWppMessages,
+              mktMessages: Number(limits.mktMessages || 0),
+              extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
             },
           }),
         });
@@ -568,7 +570,7 @@ export default function PlanosGlassPage() {
                 />
               </div>
               <div>
-                <label className="block text-[12px] font-semibold text-purple-700 mb-1.5 uppercase tracking-tight">Valor por msg marketing excedente (R$)</label>
+                <label className="block text-[12px] font-semibold text-purple-700 mb-1.5 uppercase tracking-tight">Valor por msg marketing extra (R$)</label>
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-purple-400 font-bold text-xs">R$</span>
                   <input 

@@ -13,6 +13,8 @@ interface Vidracaria {
   limite_usuarios?: number;
   limite_mensagens_whatsapp?: number;
   limite_usuarios_whats?: number;
+  limite_mensagens_marketing?: number;        // ← NOVO
+  valor_msg_marketing_excedente?: number;      // ← NOVO
   created_at?: string;
 }
 
@@ -40,6 +42,8 @@ export default function GlassClientsPage() {
   const [modalWppUsers, setModalWppUsers] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [modalMktFranquia, setModalMktFranquia] = useState<number>(200);
+  const [modalMktExcedente, setModalMktExcedente] = useState<number>(0.25);
 
   useEffect(() => {
     async function fetchData() {
@@ -115,9 +119,12 @@ export default function GlassClientsPage() {
     const defaultWpp = systemPlan?.system_limits?.wppMessages ? Number(systemPlan.system_limits.wppMessages) : 1000;
     const defaultWppUsers = systemPlan?.system_limits?.wppDevices ? Number(systemPlan.system_limits.wppDevices) : 1;
     
+    
     setModalUsers(vid.limite_usuarios ?? defaultUsers);
     setModalWpp(vid.limite_mensagens_whatsapp ?? defaultWpp);
     setModalWppUsers(vid.limite_usuarios_whats ?? defaultWppUsers);
+    setModalMktFranquia(vid.limite_mensagens_marketing ?? 200);          // ← NOVO
+    setModalMktExcedente(vid.valor_msg_marketing_excedente ?? 0.25);     // ← NOVO
   };
 
   const handleSaveModal = async () => {
@@ -132,7 +139,9 @@ export default function GlassClientsPage() {
           modulos_ativos: modalModules,
           limite_usuarios: modalUsers,
           limite_mensagens_whatsapp: modalWpp,
-          limite_usuarios_whats: modalWppUsers
+          limite_usuarios_whats: modalWppUsers,
+          limite_mensagens_marketing: modalMktFranquia,          // ← NOVO
+          valor_msg_marketing_excedente: modalMktExcedente,      // ← NOVO
         })
         .eq('id', selectedVidracaria.id);
 
@@ -141,7 +150,7 @@ export default function GlassClientsPage() {
       // Atualiza a lista local na tela para não precisar recarregar a página
       setVidracarias(prev => prev.map(v => 
         v.id === selectedVidracaria.id 
-          ? { ...v, modulos_ativos: modalModules, limite_usuarios: modalUsers, limite_mensagens_whatsapp: modalWpp, limite_usuarios_whats: modalWppUsers }
+          ? { ...v, modulos_ativos: modalModules, limite_usuarios: modalUsers, limite_mensagens_whatsapp: modalWpp, limite_usuarios_whats: modalWppUsers, limite_mensagens_marketing: modalMktFranquia,valor_msg_marketing_excedente: modalMktExcedente,}
           : v
       ));
 
@@ -353,7 +362,7 @@ export default function GlassClientsPage() {
                   />
                 </div>
 
-                {/* WhatsApp */}
+                                {/* WhatsApp */}
                 <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 flex flex-col gap-4">
                   <h3 className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
                     <MessageCircle size={14} /> Integração WhatsApp
@@ -380,6 +389,40 @@ export default function GlassClientsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ← COLA AQUI — Marketing WhatsApp */}
+                <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100 flex flex-col gap-4">
+                  <h3 className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageCircle size={14} /> Marketing WhatsApp
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div className="flex items-center gap-3">
+                      <label className="text-[12px] font-bold text-slate-700 uppercase tracking-wide">
+                        Franquia de Msgs
+                      </label>
+                      <input 
+                        type="number" 
+                        value={modalMktFranquia}
+                        onChange={(e) => setModalMktFranquia(Number(e.target.value))}
+                        className="w-24 bg-white border border-purple-200 text-slate-900 text-sm font-bold rounded-md px-3 py-1.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" 
+                      />
+                    </div>
+                    <div className="w-px h-8 bg-purple-200 hidden sm:block"></div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-[12px] font-bold text-slate-700 uppercase tracking-wide">
+                        Valor Excedente (R$)
+                      </label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={modalMktExcedente}
+                        onChange={(e) => setModalMktExcedente(Number(e.target.value))}
+                        className="w-24 bg-white border border-purple-200 text-slate-900 text-sm font-bold rounded-md px-3 py-1.5 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
               <div>

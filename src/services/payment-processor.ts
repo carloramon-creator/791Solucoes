@@ -57,7 +57,7 @@ export class PaymentProcessor {
   }) {
     const parts = payload.externalReference.split('|');
     const [saasType, tenantId, , couponId] = parts;
-    const asaasPaymentId = payload?.metadata?.id || payload?.metadata?.payment?.id || null;
+    const asaasPaymentId = String(payload?.metadata?.id || payload?.metadata?.payment?.id || '').trim() || null;
     
     console.log(`[PAYMENT PROCESSOR] Pagamento confirmado para ${saasType}: ${tenantId}${couponId ? ` (cupom: ${couponId})` : ''}`);
 
@@ -254,6 +254,10 @@ export class PaymentProcessor {
 
       // Emitir NF-e automaticamente após confirmar o pagamento
       try {
+        if (!asaasPaymentId) {
+          throw new Error('Pagamento confirmado sem ID do Asaas; emissão fiscal bloqueada para evitar duplicidade.');
+        }
+
         await emitirNFeSaas({
           holdingSupabase,
           glassSupabase,
@@ -989,7 +993,7 @@ async function persistInvoiceFailure({
   step: string;
 }) {
   try {
-    await holdingSupabase.from('system_invoices').insert({
+    const { error } = await holdingSupabase.from('system_invoices').insert({
       invoice_number: `HOLD-ERR-${Date.now()}`,
       status: 'rejected',
       client_name: tenantId,
@@ -1006,9 +1010,60 @@ async function persistInvoiceFailure({
         step,
       },
     });
+
+    if (error) {
+      console.error('[PAYMENT PROCESSOR] Erro ao salvar falha de NF-e em system_invoices:', error.message);
+    }
   } catch (persistErr: any) {
     console.error('[PAYMENT PROCESSOR] Erro ao salvar falha de NF-e em system_invoices:', persistErr.message);
   }
+}
+
+async function reserveNfsePayment({
+  holdingSupabase,
+  asaasPaymentId,
+  tenantId,
+  value,
+  cycle,
+}: {
+  holdingSupabase: SupabaseClient;
+  asaasPaymentId: string;
+  tenantId: string;
+  value: number;
+  cycle: string;
+}): Promise<boolean> {
+  const { error: reserveError } = await holdingSupabase
+    .from('nfse_payment_emissions')
+    .insert({
+      asaas_payment_id: asaasPaymentId,
+      tenant_id: tenantId,
+      value,
+      cycle,
+      state: 'processing',
+    });
+
+  if (!reserveError) return true;
+  if (reserveError.code !== '23505') {
+    throw new Error(`Não foi possível reservar a emissão fiscal: ${reserveError.message}`);
+  }
+
+  const { data: existing, error: lookupError } = await holdingSupabase
+    .from('nfse_payment_emissions')
+    .select('state')
+    .eq('asaas_payment_id', asaasPaymentId)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Não foi possível consultar a reserva fiscal existente: ${lookupError.message}`);
+  }
+  if (!existing) {
+    throw new Error('A reserva fiscal já existe, mas não foi possível localizá-la; emissão bloqueada por segurança.');
+  }
+
+  console.warn(
+    `[NF-e SAAS] Pagamento ${asaasPaymentId} já possui emissão/reserva (${existing.state}); repetição bloqueada.`
+  );
+  return false;
 }
 
 export async function emitirNFeExcedentePago({
@@ -1074,23 +1129,14 @@ async function emitirNFeSaas({
   vidracariaId: string;
   valor: number;
   ciclo: string;
-  asaasPaymentId?: string | null;
+  asaasPaymentId: string;
   mesRef?: string;
   discriminacao?: string;
   invoiceMetadata?: Record<string, any>;
 }) {
-  // Evita NF-e duplicada para o mesmo pagamento do Asaas (idempotência de webhook)
-  if (asaasPaymentId) {
-    const { data: existingByPaymentId } = await holdingSupabase
-      .from('system_invoices')
-      .select('id')
-      .eq('metadata->>asaas_payment_id', asaasPaymentId)
-      .maybeSingle();
-
-    if (existingByPaymentId) {
-      console.log(`[NF-e SAAS] Pagamento ${asaasPaymentId} já processado — pulando.`);
-      return;
-    }
+  const paymentId = String(asaasPaymentId || '').trim();
+  if (!paymentId) {
+    throw new Error('ID do pagamento Asaas obrigatório para emitir NFS-e com proteção contra duplicidade.');
   }
 
   const mesRef = mesRefParam || new Date().toISOString().slice(0, 7);
@@ -1164,19 +1210,69 @@ async function emitirNFeSaas({
     },
   };
 
-  const result = await ipmProvider.emit(
-    dpsData as any,
-    config.pfxBase64,
-    config.passphrase,
-    {
-      username: config.ipm_username,
-      password: config.ipm_password,
-      municipal_code: config.municipal_code,
-      isTest: config.environment === 'homologacao',
-    }
-  );
+  const reserved = await reserveNfsePayment({
+    holdingSupabase,
+    asaasPaymentId: paymentId,
+    tenantId: vidracariaId,
+    value: valor,
+    cycle: ciclo,
+  });
+  if (!reserved) return;
 
-  await holdingSupabase.from('system_invoices').insert({
+  let result: Awaited<ReturnType<typeof ipmProvider.emit>>;
+  try {
+    result = await ipmProvider.emit(
+      dpsData as any,
+      config.pfxBase64,
+      config.passphrase,
+      {
+        username: config.ipm_username,
+        password: config.ipm_password,
+        municipal_code: config.municipal_code,
+        isTest: config.environment === 'homologacao',
+      }
+    );
+  } catch (emissionError) {
+    const message = emissionError instanceof Error ? emissionError.message : String(emissionError);
+    const { error: updateError } = await holdingSupabase
+      .from('nfse_payment_emissions')
+      .update({
+        state: 'uncertain',
+        provider_message: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('asaas_payment_id', paymentId);
+
+    if (updateError) {
+      console.error(
+        `[NF-e SAAS] Falha ao marcar pagamento ${paymentId} como incerto; a reserva permanece bloqueada:`,
+        updateError.message
+      );
+    }
+    throw emissionError;
+  }
+
+  const { error: reservationUpdateError } = await holdingSupabase
+    .from('nfse_payment_emissions')
+    .update({
+      state: result.success ? result.status : 'rejected',
+      provider_status: result.status,
+      provider_message: result.message,
+      invoice_number: result.invoiceId || null,
+      access_link: result.accessLink || null,
+      provider_response: result.xml ? { xml: result.xml } : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('asaas_payment_id', paymentId);
+
+  if (reservationUpdateError) {
+    console.error(
+      `[NF-e SAAS] Resultado do provedor recebido, mas não foi possível atualizar a reserva ${paymentId}:`,
+      reservationUpdateError.message
+    );
+  }
+
+  const { error: invoiceError } = await holdingSupabase.from('system_invoices').insert({
     invoice_number: result.invoiceId || dpsData.numero,
     status: result.status,
     client_name: vidracaria.nome,
@@ -1188,7 +1284,7 @@ async function emitirNFeSaas({
       vidracaria_id: vidracariaId,
       mes_ref: mesRef,
       ciclo,
-      asaas_payment_id: asaasPaymentId,
+      asaas_payment_id: paymentId,
       xml: result.xml,
       danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink }),
       origem: 'webhook_asaas',
@@ -1196,9 +1292,26 @@ async function emitirNFeSaas({
     },
   });
 
-  if (result.success) {
-    console.log(`[NF-e SAAS] NF-e emitida com sucesso para ${vidracaria.nome} (${vidracariaId})`);
+  if (invoiceError) {
+    console.error(
+      `[NF-e SAAS] Resultado do provedor ${result.status} para pagamento ${paymentId}, mas falhou o histórico system_invoices:`,
+      invoiceError.message
+    );
+  }
+
+  if (reservationUpdateError && invoiceError) {
+    throw new Error(
+      `O provedor retornou ${result.status}, mas não foi possível persistir o resultado nem no controle de idempotência nem no histórico. A reserva original continua bloqueando reenvio.`
+    );
+  }
+
+  if (result.status === 'authorized') {
+    console.log(`[NFS-e SAAS] Nota autorizada para ${vidracaria.nome} (${vidracariaId})`);
+  } else if (result.status === 'pending') {
+    console.warn(
+      `[NFS-e SAAS] Pagamento ${paymentId} ficou pendente de confirmação da prefeitura; novo envio automático está bloqueado.`
+    );
   } else {
-    console.error(`[NF-e SAAS] Prefeitura retornou erro para ${vidracariaId}:`, result.message);
+    console.error(`[NFS-e SAAS] Prefeitura retornou status ${result.status} para ${vidracariaId}:`, result.message);
   }
 }

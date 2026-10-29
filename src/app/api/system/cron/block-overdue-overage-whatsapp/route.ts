@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
     for (const row of rows || []) {
       const status = String(row.status || '').toLowerCase();
-      if (status === 'paid') continue;
+      if (status !== 'pending') continue;
 
       const metadata = (row.metadata && typeof row.metadata === 'object') ? row.metadata as any : {};
       if (String(metadata.whatsapp_block_status || '') === 'blocked') continue;

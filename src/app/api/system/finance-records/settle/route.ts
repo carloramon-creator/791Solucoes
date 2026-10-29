@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 type DifferenceHandling = 'adjust' | 'keep_open';
 
@@ -16,6 +17,11 @@ function toMetadataObject(value: unknown): Record<string, any> {
 }
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req, 'Acesso negado.');
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
+
   try {
     const body = await req.json();
     const recordId = String(body?.recordId || '').trim();

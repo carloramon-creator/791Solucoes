@@ -28,6 +28,7 @@ import { supabaseGlass } from '@/lib/supabase-glass';
 import { supabase } from '@/lib/supabase';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
+import OverageSettleModal from '@/components/OverageSettleModal';
 
 // Tipagem baseada na tabela vidracarias do Glass
 interface Vidracaria {
@@ -193,7 +194,16 @@ interface TenantInvoiceHistoryItem {
   paymentUrl: string | null;
   fiscalUrl: string | null;
   reportUrl: string | null;
+  recordId?: string;
+  settleable?: boolean;
 }
+
+const invoiceStatusBadge = (status: string) => {
+  const normalized = String(status).toLowerCase();
+  if (['paid', 'authorized'].includes(normalized)) return { label: 'PAGO', className: 'bg-emerald-100 text-emerald-700' };
+  if (normalized === 'cancelled') return { label: 'ABONADO', className: 'bg-slate-100 text-slate-500' };
+  return { label: 'PENDENTE', className: 'bg-amber-100 text-amber-700' };
+};
 
 interface OverageDetailItem {
   id: string;
@@ -264,6 +274,7 @@ export default function AssinaturasPage() {
   const [invoiceHistoryLoading, setInvoiceHistoryLoading] = useState(false);
   const [invoiceHistoryError, setInvoiceHistoryError] = useState('');
   const [overageDetailsInvoice, setOverageDetailsInvoice] = useState<TenantInvoiceHistoryItem | null>(null);
+  const [settleInvoice, setSettleInvoice] = useState<TenantInvoiceHistoryItem | null>(null);
   const [overageDetails, setOverageDetails] = useState<OverageDetailItem[]>([]);
   const [overageDetailsLoading, setOverageDetailsLoading] = useState(false);
   const [overageDetailsError, setOverageDetailsError] = useState('');
@@ -1561,9 +1572,9 @@ export default function AssinaturasPage() {
                         <td className="px-5 py-3 whitespace-nowrap">{new Date(invoice.createdAt).toLocaleDateString('pt-BR')}</td>
                         <td className="px-5 py-3"><span className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase ${invoice.type === 'Excedente' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`}>{invoice.type}</span></td>
                         <td className="px-5 py-3"><div className="font-black text-[#3b597b]">{invoice.reference}</div><div className="mt-0.5 text-[11px] text-slate-500">{invoice.description}</div></td>
-                        <td className="px-5 py-3 text-center"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold ${['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'PAGO' : 'PENDENTE'}</span></td>
+                        <td className="px-5 py-3 text-center"><span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold ${invoiceStatusBadge(invoice.status).className}`}>{invoiceStatusBadge(invoice.status).label}</span></td>
                         <td className="px-5 py-3 text-right font-bold whitespace-nowrap">{formatCurrency(invoice.value)}</td>
-                        <td className="px-5 py-3 text-center">{invoice.paymentUrl ? <a href={invoice.paymentUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'Ver' : 'Pagar'}</a> : '—'}</td>
+                        <td className="px-5 py-3 text-center"><div className="inline-flex items-center gap-1.5">{invoice.paymentUrl ? <a href={invoice.paymentUrl} target="_blank" rel="noreferrer" className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">{['paid', 'authorized'].includes(String(invoice.status).toLowerCase()) ? 'Ver' : 'Pagar'}</a> : !invoice.settleable && '—'}{invoice.settleable && invoice.recordId && <button onClick={() => setSettleInvoice(invoice)} title="Dar baixa: recebido por fora ou abonar" className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-slate-700 hover:bg-slate-100">Baixar</button>}</div></td>
                         <td className="px-5 py-3 text-center">{invoice.type === 'Excedente' && invoice.reportUrl ? <button onClick={() => openOverageDetails(invoice)} aria-label="Detalhar fatura do excedente" title="Detalhar fatura do excedente" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-700 hover:bg-amber-100"><FileText size={14} /> Detalhar</button> : <span className="text-slate-300">-</span>}</td>
                         <td className="px-5 py-3 text-center">{invoice.fiscalUrl && <a href={invoice.fiscalUrl} target="_blank" rel="noreferrer" title="Ver nota fiscal" aria-label="Ver nota fiscal" className="inline-flex rounded-lg border border-purple-200 bg-purple-50 p-2 text-purple-600"><FileCheck size={14} /></a>}</td>
                       </tr>
@@ -1574,6 +1585,21 @@ export default function AssinaturasPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {settleInvoice?.recordId && invoiceHistoryTenant && (
+        <OverageSettleModal
+          recordId={settleInvoice.recordId}
+          titulo={`${settleInvoice.reference} - ${settleInvoice.description}`}
+          tenantName={invoiceHistoryTenant.nome}
+          valor={settleInvoice.value}
+          onClose={() => setSettleInvoice(null)}
+          onDone={async (warnings) => {
+            setSettleInvoice(null);
+            if (warnings.length > 0) alert(`Baixa registrada, com avisos:\n- ${warnings.join('\n- ')}`);
+            await openInvoiceHistory(invoiceHistoryTenant);
+          }}
+        />
       )}
 
       {overageDetailsInvoice && (

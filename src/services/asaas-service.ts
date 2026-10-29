@@ -127,6 +127,18 @@ export class AsaasClient {
         return response.data;
     }
 
+    /** Remove (cancela) uma cobrança ainda não paga. */
+    async deletePayment(paymentId: string) {
+        const response = await this.client.delete(`/payments/${paymentId}`);
+        return response.data;
+    }
+
+    /** Confirma recebimento em dinheiro/fora do Asaas para uma cobrança em aberto. */
+    async receivePaymentInCash(paymentId: string, data: { paymentDate: string; value: number; notifyCustomer?: boolean }) {
+        const response = await this.client.post(`/payments/${paymentId}/receiveInCash`, data);
+        return response.data;
+    }
+
     async getPayment(paymentId: string) {
         const response = await this.client.get(`/payments/${paymentId}`);
         return response.data;

@@ -55,7 +55,9 @@ export async function GET(req: Request) {
         description: row.description || 'Cobrança 791glass',
         status: row.status,
         value: Number(row.value || 0),
-        paymentUrl: row.payment_link || metadata.invoice_url || null,
+        recordId: row.id,
+        settleable: isOverage && row.status === 'pending',
+        paymentUrl: row.status === 'cancelled' ? null : row.payment_link || metadata.invoice_url || null,
         fiscalUrl: null,
         reportUrl: isOverage ? `/api/admin/tenant-invoices/${row.id}/consultflex-report` : null,
       };

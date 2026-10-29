@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
+import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
+import OverageSettleModal from "@/components/OverageSettleModal";
 import {
   Calendar,
   CheckCircle2,
@@ -20,7 +22,11 @@ import {
 } from "lucide-react";
 
 type FinanceType = "revenue" | "expense";
-type FinanceStatus = "paid" | "pending";
+type FinanceStatus = "paid" | "pending" | "cancelled";
+
+const statusLabel = (status: FinanceStatus) => status === "paid" ? "Pago" : status === "cancelled" ? "Abonado" : "Pendente";
+const statusBadgeClass = (status: FinanceStatus) => status === "paid" ? "bg-emerald-50 text-emerald-700" : status === "cancelled" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700";
+const isOverageRecord = (record: { metadata?: Record<string, unknown> | null }) => String(record.metadata?.kind || "") === "overage";
 type Section = "records" | "payable" | "receivable" | "fluxo";
 type DifferenceHandling = "adjust" | "keep_open";
 type PeriodFilter = "dia" | "semana" | "quinzena" | "mes" | "trimestre" | "semestre" | "ano";
@@ -233,6 +239,7 @@ export default function FinancePage() {
 
   const [isSettleModalOpen, setIsSettleModalOpen] = useState(false);
   const [settleRecord, setSettleRecord] = useState<FinanceRecord | null>(null);
+  const [overageSettleRecord, setOverageSettleRecord] = useState<FinanceRecord | null>(null);
   const [undoingStatement, setUndoingStatement] = useState(false);
 
   const [form, setForm] = useState({
@@ -470,7 +477,7 @@ export default function FinancePage() {
     const kind = activeSection === "receivable" ? "receivable" : "payable";
 
     return normalizedRecords
-      .filter((record) => record.status !== "paid")
+      .filter((record) => record.status === "pending")
       .filter((record) => kind === "payable" ? record.type === "expense" : record.type === "revenue")
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [normalizedRecords, activeSection]);
@@ -668,6 +675,10 @@ export default function FinancePage() {
   }, [editingRecord, records]);
 
   const openSettleModal = (record: FinanceRecord) => {
+    if (isOverageRecord(record)) {
+      setOverageSettleRecord(record);
+      return;
+    }
     setSettleRecord(record);
     setSettleForm({
       paidAmount: String(Number(record.value || 0)),
@@ -869,7 +880,7 @@ export default function FinancePage() {
 
     setSettling(true);
     try {
-      const response = await fetch("/api/system/finance-records/settle", {
+      const response = await holdingAuthFetch("/api/system/finance-records/settle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -926,7 +937,7 @@ export default function FinancePage() {
         columns: ["Data", "Status", "Lançamento", "Documento", "Conta", "Método", "Valor"],
         rows: filteredRecords.map((record) => [
           formatDate(record.created_at),
-          record.status === "paid" ? "Pago" : "Pendente",
+          statusLabel(record.status),
           getDisplayDescription(record),
           String(record.documento || "--"),
           record.source_label || "Sem conta",
@@ -1162,8 +1173,8 @@ export default function FinancePage() {
                   <tr key={record.id} className="hover:bg-slate-50">
                     <td className="px-6 py-3 text-xs">
                       <p className="text-slate-700">{formatDate(record.created_at)}</p>
-                      <span className={`inline-flex mt-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${record.status === "paid" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                        {record.status === "paid" ? "Pago" : "Pendente"}
+                      <span className={`inline-flex mt-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${statusBadgeClass(record.status)}`}>
+                        {statusLabel(record.status)}
                       </span>
                     </td>
                     <td className="px-6 py-3">
@@ -1182,7 +1193,7 @@ export default function FinancePage() {
                           title={record.status === "paid" && !canManagePaidRecords ? "Sem permissao para editar lancamento pago" : "Editar lançamento"}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                         ><Pencil size={13} /></button>
-                        {record.status !== "paid" && (
+                        {record.status === "pending" && (
                           <button onClick={() => openSettleModal(record)} aria-label="Baixar lançamento" title="Baixar lançamento" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><CheckCircle2 size={13} /></button>
                         )}
                         <button
@@ -1461,6 +1472,21 @@ export default function FinancePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {overageSettleRecord && (
+        <OverageSettleModal
+          recordId={overageSettleRecord.id}
+          titulo={getDisplayDescription(overageSettleRecord)}
+          tenantName={overageSettleRecord.tenant_name}
+          valor={Number(overageSettleRecord.value || 0)}
+          onClose={() => setOverageSettleRecord(null)}
+          onDone={async (warnings) => {
+            setOverageSettleRecord(null);
+            if (warnings.length > 0) alert(`Baixa registrada, com avisos:\n- ${warnings.join("\n- ")}`);
+            await loadData();
+          }}
+        />
       )}
 
       {isSettleModalOpen && settleRecord && (

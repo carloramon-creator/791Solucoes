@@ -14,6 +14,7 @@ interface Vidracaria {
   limite_mensagens_whatsapp?: number;
   limite_usuarios_whats?: number;
   limite_mensagens_marketing?: number;        // ← NOVO
+  valor_msg_whatsapp_excedente?: number | null;
   valor_msg_marketing_excedente?: number;      // ← NOVO
   created_at?: string;
 }
@@ -40,6 +41,7 @@ export default function GlassClientsPage() {
   const [modalUsers, setModalUsers] = useState<number>(0);
   const [modalWpp, setModalWpp] = useState<number>(0);
   const [modalWppUsers, setModalWppUsers] = useState<number>(0);
+  const [modalWppExcedente, setModalWppExcedente] = useState<number>(0.15);
   const [saving, setSaving] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [modalMktFranquia, setModalMktFranquia] = useState<number>(200);
@@ -119,12 +121,14 @@ export default function GlassClientsPage() {
     const defaultWpp = systemPlan?.system_limits?.wppMessages ? Number(systemPlan.system_limits.wppMessages) : 1000;
     const defaultWppUsers = systemPlan?.system_limits?.wppDevices ? Number(systemPlan.system_limits.wppDevices) : 1;
     
+    const defaultWppPrice = Number(systemPlan?.system_limits?.extraMessagePrice ?? systemPlan?.system_limits?.wppMessagesPrice ?? 0.15);
     const defaultMktMessages = systemPlan?.system_limits?.mktMessages ? Number(systemPlan.system_limits.mktMessages) : 200;
     const defaultMktPrice = systemPlan?.system_limits?.extraMktMessagePrice ? Number(systemPlan.system_limits.extraMktMessagePrice) : 0.25;
     
     setModalUsers(vid.limite_usuarios ?? defaultUsers);
     setModalWpp(vid.limite_mensagens_whatsapp ?? defaultWpp);
     setModalWppUsers(vid.limite_usuarios_whats ?? defaultWppUsers);
+    setModalWppExcedente(vid.valor_msg_whatsapp_excedente ?? defaultWppPrice);
      setModalMktFranquia(vid.limite_mensagens_marketing ?? defaultMktMessages);
     setModalMktExcedente(vid.valor_msg_marketing_excedente ?? defaultMktPrice);
     
@@ -143,6 +147,7 @@ export default function GlassClientsPage() {
           limite_usuarios: modalUsers,
           limite_mensagens_whatsapp: modalWpp,
           limite_usuarios_whats: modalWppUsers,
+          valor_msg_whatsapp_excedente: modalWppExcedente,
           limite_mensagens_marketing: modalMktFranquia,          // ← NOVO
           valor_msg_marketing_excedente: modalMktExcedente,      // ← NOVO
         })
@@ -153,7 +158,7 @@ export default function GlassClientsPage() {
       // Atualiza a lista local na tela para não precisar recarregar a página
       setVidracarias(prev => prev.map(v => 
         v.id === selectedVidracaria.id 
-          ? { ...v, modulos_ativos: modalModules, limite_usuarios: modalUsers, limite_mensagens_whatsapp: modalWpp, limite_usuarios_whats: modalWppUsers, limite_mensagens_marketing: modalMktFranquia,valor_msg_marketing_excedente: modalMktExcedente,}
+          ? { ...v, modulos_ativos: modalModules, limite_usuarios: modalUsers, limite_mensagens_whatsapp: modalWpp, limite_usuarios_whats: modalWppUsers, valor_msg_whatsapp_excedente: modalWppExcedente, limite_mensagens_marketing: modalMktFranquia,valor_msg_marketing_excedente: modalMktExcedente,}
           : v
       ));
 
@@ -382,11 +387,22 @@ export default function GlassClientsPage() {
                     </div>
                     <div className="w-px h-8 bg-emerald-200 hidden sm:block"></div>
                     <div className="flex items-center gap-3">
-                      <label className="text-[12px] font-bold text-slate-700 uppercase tracking-wide">Limite de Msgs</label>
+                      <label className="text-[12px] font-bold text-slate-700 uppercase tracking-wide">Franquia SAC</label>
                       <input 
                         type="number" 
                         value={modalWpp}
                         onChange={(e) => setModalWpp(Number(e.target.value))}
+                        className="w-24 bg-white border border-emerald-200 text-slate-900 text-sm font-bold rounded-md px-3 py-1.5 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" 
+                      />
+                    </div>
+                    <div className="w-px h-8 bg-emerald-200 hidden sm:block"></div>
+                    <div className="flex items-center gap-3">
+                      <label className="text-[12px] font-bold text-slate-700 uppercase tracking-wide">Valor Excedente SAC (R$)</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={modalWppExcedente}
+                        onChange={(e) => setModalWppExcedente(Number(e.target.value))}
                         className="w-24 bg-white border border-emerald-200 text-slate-900 text-sm font-bold rounded-md px-3 py-1.5 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500" 
                       />
                     </div>

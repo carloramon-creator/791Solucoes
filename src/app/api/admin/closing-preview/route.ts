@@ -53,11 +53,13 @@ export async function GET(req: Request) {
           users?: number;
           whatsappUsers?: number;
           messages?: number;
+          marketingMessages?: number;
         };
         values?: {
           users?: number;
           whatsappUsers?: number;
           messages?: number;
+          marketingMessages?: number;
           consultflexTotal?: number;
           total?: number;
         };
@@ -109,11 +111,13 @@ export async function GET(req: Request) {
               users: Number(details?.extras?.users || 0),
               whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
               messages: Number(details?.extras?.messages || 0),
+              marketingMessages: Number(details?.extras?.marketingMessages || 0),
             },
             values: {
               users: Number(details?.values?.users || 0),
               whatsappUsers: Number(details?.values?.whatsappUsers || 0),
               messages: Number(details?.values?.messages || 0),
+              marketingMessages: Number(details?.values?.marketingMessages || 0),
               consultflexTotal: Number(details?.values?.consultflexTotal || 0),
               total,
             },
@@ -137,11 +141,13 @@ export async function GET(req: Request) {
               users: Number(details?.extras?.users || 0),
               whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
               messages: Number(details?.extras?.messages || 0),
+              marketingMessages: Number(details?.extras?.marketingMessages || 0),
             },
             values: {
               users: Number(details?.values?.users || 0),
               whatsappUsers: Number(details?.values?.whatsappUsers || 0),
               messages: Number(details?.values?.messages || 0),
+              marketingMessages: Number(details?.values?.marketingMessages || 0),
               consultflexTotal: Number(details?.values?.consultflexTotal || 0),
               total,
             },

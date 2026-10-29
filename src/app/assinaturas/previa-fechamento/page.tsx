@@ -19,6 +19,7 @@ interface ClosingPreviewTenant {
     users?: number;
     whatsappUsers?: number;
     messages?: number;
+    marketingMessages?: number;
     consultflexTotal?: number;
     total?: number;
   };
@@ -169,7 +170,8 @@ export default function PreviaFechamentoPage() {
                 const extrasTotal =
                   Number(item.values?.users || 0)
                   + Number(item.values?.whatsappUsers || 0)
-                  + Number(item.values?.messages || 0);
+                  + Number(item.values?.messages || 0)
+                  + Number(item.values?.marketingMessages || 0);
 
                 return (
                   <tr key={item.tenantId} className="hover:bg-slate-50/70">

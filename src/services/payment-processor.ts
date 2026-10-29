@@ -359,6 +359,20 @@ function getPreviousMonthWindow(now = new Date()) {
   };
 }
 
+function roundMoney(value: number) {
+  return Math.round((Number(value) || 0) * 100) / 100;
+}
+
+/** Janela do mês de referência no fuso de Brasília (UTC-3), a mesma usada pelo 791glass. */
+function getBrtWindowFromRefMonth(refMonth: string) {
+  const [year, month] = refMonth.split('-').map(Number);
+  const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
+  return {
+    inicio: `${refMonth}-01T00:00:00-03:00`,
+    fim: `${next}-01T00:00:00-03:00`,
+  };
+}
+
 function getOverageDueDateFromRefMonth(refMonth: string) {
   const [yearStr, monthStr] = refMonth.split('-');
   const year = Number(yearStr);
@@ -662,11 +676,13 @@ export async function scheduleMonthlyOverageChargeForTenant({
           users: Number(existingExtras?.users || 0),
           whatsappUsers: Number(existingExtras?.whatsappUsers || existingExtras?.whatsapp_users || 0),
           messages: Number(existingExtras?.messages || 0),
+          marketingMessages: Number(existingExtras?.marketingMessages || 0),
         },
         values: {
           users: Number(existingValues?.users || 0),
           whatsappUsers: Number(existingValues?.whatsappUsers || existingValues?.whatsapp_users || 0),
           messages: Number(existingValues?.messages || 0),
+          marketingMessages: Number(existingValues?.marketingMessages || 0),
           consultflexBasic: Number(existingValues?.consultflexBasic || existingValues?.consultflex_basic || 0),
           consultflexComplete: Number(existingValues?.consultflexComplete || existingValues?.consultflex_complete || 0),
           consultflexTotal: Number(existingValues?.consultflexTotal || existingValues?.consultflex_total || 0),
@@ -682,11 +698,11 @@ export async function scheduleMonthlyOverageChargeForTenant({
     { data: planConfig, error: planErr },
     { count: registeredUsers, error: usersErr },
     { data: sectorsData, error: sectorsErr },
-    { count: messagesSent, error: messagesErr },
+    { data: whatsappUsoRows, error: messagesErr },
   ] = await Promise.all([
     glassSupabase
       .from('vidracarias')
-      .select('id, nome, email, cnpj, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp')
+      .select('id, nome, email, cnpj, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_whatsapp_excedente, valor_msg_marketing_excedente')
       .eq('id', tenantId)
       .single(),
     holdingSupabase
@@ -702,13 +718,15 @@ export async function scheduleMonthlyOverageChargeForTenant({
       .from('whatsapp_sectors')
       .select('id')
       .eq('vidracaria_id', tenantId),
-    glassSupabase
-      .from('whatsapp_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('vidracaria_id', tenantId)
-      .in('sender_type', ['user', 'system'])
-      .gte('created_at', startIso)
-      .lt('created_at', endIso),
+    (() => {
+      // Ledger do glass: SAC (utilidade + mensagens normais) e Marketing, sem as falhas da Meta.
+      const janela = getBrtWindowFromRefMonth(refMonth);
+      return glassSupabase.rpc('whatsapp_uso_mensal', {
+        p_vidracaria: tenantId,
+        p_inicio: janela.inicio,
+        p_fim: janela.fim,
+      });
+    })(),
   ]);
 
   const firstError = tenantErr || planErr || usersErr || sectorsErr || messagesErr;
@@ -732,10 +750,25 @@ export async function scheduleMonthlyOverageChargeForTenant({
     whatsappUsers = new Set((sectorUsers || []).map((row: any) => row.user_id).filter(Boolean)).size;
   }
 
+  const planLimits = ((planConfig as any)?.system_limits || {}) as Record<string, unknown>;
+  const firstNumber = (...values: unknown[]) => {
+    for (const value of values) {
+      if (value === null || value === undefined || value === '') continue;
+      const n = Number(value);
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+    return 0;
+  };
+  type WhatsappUsoRow = { sac?: number | null; marketing?: number | null };
+  const whatsappUso = (Array.isArray(whatsappUsoRows) ? whatsappUsoRows[0] : whatsappUsoRows) as WhatsappUsoRow | null;
+  const sacSent = Number(whatsappUso?.sac || 0);
+  const marketingSent = Number(whatsappUso?.marketing || 0);
+
   const limits = {
     users: Number(tenant?.limite_usuarios || 0),
     whatsappUsers: Number(tenant?.limite_usuarios_whats || 0),
-    messages: Number(tenant?.limite_mensagens_whatsapp || 0),
+    messages: firstNumber(tenant?.limite_mensagens_whatsapp, planLimits.wppMessages, 1000),
+    marketingMessages: firstNumber(tenant?.limite_mensagens_marketing, planLimits.mktMessages, 0),
   };
 
   const consultflexUsage = await getConsultflexUsageForTenant({
@@ -759,7 +792,8 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const prices = {
     extraUserPrice: Number((planConfig as any)?.system_limits?.extraUserPrice || 0),
     extraDevicePrice: Number((planConfig as any)?.system_limits?.extraDevicePrice || 0),
-    extraMessagePrice: Number((planConfig as any)?.system_limits?.extraMessagePrice || (planConfig as any)?.system_limits?.wppMessagesPrice || 0),
+    extraMessagePrice: firstNumber(tenant?.valor_msg_whatsapp_excedente, planLimits.extraMessagePrice, planLimits.wppMessagesPrice),
+    extraMktMessagePrice: firstNumber(tenant?.valor_msg_marketing_excedente, planLimits.extraMktMessagePrice),
     consultflexBasicPrice: Number((planConfig as any)?.system_limits?.consultflexBasicPrice || (planConfig as any)?.system_limits?.consultBasicPrice || 0),
     consultflexCompletePrice: Number((planConfig as any)?.system_limits?.consultflexCompletePrice || (planConfig as any)?.system_limits?.consultCompletePrice || 0),
   };
@@ -767,13 +801,15 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const extras = {
     users: Math.max(0, Number(registeredUsers || 0) - limits.users),
     whatsappUsers: Math.max(0, whatsappUsers - limits.whatsappUsers),
-    messages: Math.max(0, Number(messagesSent || 0) - limits.messages),
+    messages: Math.max(0, sacSent - limits.messages),
+    marketingMessages: Math.max(0, marketingSent - limits.marketingMessages),
   };
 
   const values = {
     users: extras.users * prices.extraUserPrice,
     whatsappUsers: extras.whatsappUsers * prices.extraDevicePrice,
-    messages: extras.messages * prices.extraMessagePrice,
+    messages: roundMoney(extras.messages * prices.extraMessagePrice),
+    marketingMessages: roundMoney(extras.marketingMessages * prices.extraMktMessagePrice),
     consultflexBasic: consultflexUsage.basic * prices.consultflexBasicPrice,
     consultflexComplete: consultflexUsage.complete * prices.consultflexCompletePrice,
   };
@@ -788,7 +824,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   const consultflexCalculatedTotal = values.consultflexBasic + values.consultflexComplete;
   const consultflexTotal = consultflexCalculatedTotal;
-  const totalOverage = values.users + values.whatsappUsers + values.messages + consultflexTotal;
+  const totalOverage = roundMoney(values.users + values.whatsappUsers + values.messages + values.marketingMessages + consultflexTotal);
 
   const closingDetails = {
     refMonth,
@@ -808,11 +844,13 @@ export async function scheduleMonthlyOverageChargeForTenant({
       users: extras.users,
       whatsappUsers: extras.whatsappUsers,
       messages: extras.messages,
+      marketingMessages: extras.marketingMessages,
     },
     values: {
       users: values.users,
       whatsappUsers: values.whatsappUsers,
       messages: values.messages,
+      marketingMessages: values.marketingMessages,
       consultflexBasic: values.consultflexBasic,
       consultflexComplete: values.consultflexComplete,
       consultflexTotal,
@@ -838,7 +876,8 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const itemLabels: string[] = [];
   if (extras.users > 0) itemLabels.push(`Usuários extras (${extras.users})`);
   if (extras.whatsappUsers > 0) itemLabels.push(`Usuários WhatsApp extras (${extras.whatsappUsers})`);
-  if (extras.messages > 0) itemLabels.push(`Mensagens extras (${extras.messages})`);
+  if (extras.messages > 0) itemLabels.push(`Mensagens SAC extras (${extras.messages})`);
+  if (extras.marketingMessages > 0) itemLabels.push(`Mensagens Marketing extras (${extras.marketingMessages})`);
   if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
   if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa (${consultflexUsage.complete})`);
 

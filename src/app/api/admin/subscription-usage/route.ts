@@ -180,6 +180,7 @@ export async function GET(req: Request) {
       { data: auditedDeletes, error: auditedDeletesError },
       { data: planConfig, error: planConfigError },
       { data: invoices, error: invoicesError },
+      { data: whatsappUso, error: whatsappUsoError },
     ] = await Promise.all([
       glass
         .from('vidracarias')
@@ -199,7 +200,7 @@ export async function GET(req: Request) {
         .select('vidracaria_id, sender_type, created_at')
         .gte('created_at', messagesPeriodStart)
         .lte('created_at', rangeEnd.toISOString())
-        .in('sender_type', ['contact', 'user', 'system']),
+        .eq('sender_type', 'contact'),
       glass
         .from('orcamentos')
         .select('vidracaria_id, status, valor_total, created_at')
@@ -243,6 +244,12 @@ export async function GET(req: Request) {
         .gte('created_at', messagesPeriodStart)
         .lte('created_at', rangeEnd.toISOString())
         .in('status', ['pago', 'authorized']),
+      // Enviadas vêm do ledger do glass, já separadas em SAC e Marketing.
+      glass.rpc('whatsapp_uso_mensal', {
+        p_vidracaria: null,
+        p_inicio: messagesPeriodStart,
+        p_fim: rangeEnd.toISOString(),
+      }),
     ]);
 
     const firstError =
@@ -258,7 +265,8 @@ export async function GET(req: Request) {
       workOrdersError ||
       auditedDeletesError ||
       planConfigError ||
-      invoicesError;
+      invoicesError ||
+      whatsappUsoError;
 
     if (firstError) {
       return NextResponse.json({ error: firstError.message }, { status: 500 });
@@ -358,15 +366,19 @@ export async function GET(req: Request) {
     });
 
     const messagesByTenant = new Map<string, number>();
+    const marketingMessagesByTenant = new Map<string, number>();
+    ((whatsappUso || []) as Array<{ vidracaria_id?: string; sac?: number; marketing?: number }>).forEach((row) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      if (!tenantId) return;
+      messagesByTenant.set(tenantId, Number(row?.sac || 0));
+      marketingMessagesByTenant.set(tenantId, Number(row?.marketing || 0));
+    });
+
     const whatsappReceivedByTenant = new Map<string, number>();
     (messages || []).forEach((msg: any) => {
       const tenantId = String(msg?.vidracaria_id || '');
       if (!tenantId) return;
-      if (msg.sender_type === 'contact') {
-        whatsappReceivedByTenant.set(tenantId, (whatsappReceivedByTenant.get(tenantId) || 0) + 1);
-      } else {
-        messagesByTenant.set(tenantId, (messagesByTenant.get(tenantId) || 0) + 1);
-      }
+      whatsappReceivedByTenant.set(tenantId, (whatsappReceivedByTenant.get(tenantId) || 0) + 1);
     });
 
     const activityByTenant = new Map<string, {
@@ -547,6 +559,8 @@ export async function GET(req: Request) {
     const extraUserPrice = toNumber(systemLimits.extraUserPrice, 0);
     const extraDevicePrice = toNumber(systemLimits.extraDevicePrice, 0);
     const extraMessagePrice = toNumber(systemLimits.extraMessagePrice, toNumber(systemLimits.wppMessagesPrice, 0));
+    const defaultMarketingLimit = toNumber(systemLimits.mktMessages, 0);
+    const extraMktMessagePrice = toNumber(systemLimits.extraMktMessagePrice, 0);
     const consultflexBasicPrice = toNumber(systemLimits.consultflexBasicPrice, toNumber(systemLimits.consultBasicPrice, 0));
     const consultflexCompletePrice = toNumber(systemLimits.consultflexCompletePrice, toNumber(systemLimits.consultCompletePrice, 0));
 
@@ -558,6 +572,7 @@ export async function GET(req: Request) {
       const whatsappUsers = whatsappUsersByTenant.get(tenantId)?.size || 0;
       const sectorsCount = sectorsByTenant.get(tenantId) || 0;
       const messagesSent = messagesByTenant.get(tenantId) || 0;
+      const marketingMessagesSent = marketingMessagesByTenant.get(tenantId) || 0;
       const whatsappReceived = whatsappReceivedByTenant.get(tenantId) || 0;
       const activity = activityByTenant.get(tenantId) || {
         budgetsCreated: 0,
@@ -585,18 +600,29 @@ export async function GET(req: Request) {
       const messagesLimit = tenant.limite_mensagens_whatsapp == null
         ? defaultMessagesLimit
         : toNumber(tenant.limite_mensagens_whatsapp, defaultMessagesLimit);
+      const marketingMessagesLimit = tenant.limite_mensagens_marketing == null
+        ? defaultMarketingLimit
+        : toNumber(tenant.limite_mensagens_marketing, defaultMarketingLimit);
+      const tenantMessagePrice = tenant.valor_msg_whatsapp_excedente == null
+        ? extraMessagePrice
+        : toNumber(tenant.valor_msg_whatsapp_excedente, extraMessagePrice);
+      const tenantMktMessagePrice = tenant.valor_msg_marketing_excedente == null
+        ? extraMktMessagePrice
+        : toNumber(tenant.valor_msg_marketing_excedente, extraMktMessagePrice);
 
       const extraUsers = Math.max(0, registeredUsers - usersLimit);
       const extraWhatsappUsers = Math.max(0, whatsappUsers - whatsappUsersLimit);
       const extraMessages = Math.max(0, messagesSent - messagesLimit);
+      const extraMarketingMessages = Math.max(0, marketingMessagesSent - marketingMessagesLimit);
 
       const usersOverage = extraUsers * extraUserPrice;
       const whatsappUsersOverage = extraWhatsappUsers * extraDevicePrice;
-      const messagesOverage = extraMessages * extraMessagePrice;
+      const messagesOverage = extraMessages * tenantMessagePrice;
+      const marketingMessagesOverage = extraMarketingMessages * tenantMktMessagePrice;
       const consultflexBasicOverage = consultflexUsage.basicSuccess * consultflexBasicPrice;
       const consultflexCompleteOverage = consultflexUsage.completeSuccess * consultflexCompletePrice;
       const consultflexOverage = consultflexBasicOverage + consultflexCompleteOverage;
-      const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage + consultflexOverage;
+      const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage + marketingMessagesOverage + consultflexOverage;
 
       return {
         ...tenant,
@@ -607,6 +633,7 @@ export async function GET(req: Request) {
           whatsappUsers,
           sectors: sectorsCount,
           messagesSent,
+          marketingMessagesSent,
           whatsappReceived,
           consultflexBasicSuccess: consultflexUsage.basicSuccess,
           consultflexCompleteSuccess: consultflexUsage.completeSuccess,
@@ -624,22 +651,26 @@ export async function GET(req: Request) {
           users: usersLimit,
           whatsappUsers: whatsappUsersLimit,
           messages: messagesLimit,
+          marketingMessages: marketingMessagesLimit,
         },
         status: {
           users: getStatusTone(registeredUsers, usersLimit),
           whatsappUsers: getStatusTone(whatsappUsers, whatsappUsersLimit),
           messages: getStatusTone(messagesSent, messagesLimit),
+          marketingMessages: getStatusTone(marketingMessagesSent, marketingMessagesLimit),
         },
         overage: {
           extraUsers,
           extraWhatsappUsers,
           extraMessages,
+          extraMarketingMessages,
           consultflexBasicSuccess: consultflexUsage.basicSuccess,
           consultflexCompleteSuccess: consultflexUsage.completeSuccess,
           prices: {
             extraUserPrice,
             extraDevicePrice,
-            extraMessagePrice,
+            extraMessagePrice: tenantMessagePrice,
+            extraMktMessagePrice: tenantMktMessagePrice,
             consultflexBasicPrice,
             consultflexCompletePrice,
           },
@@ -647,6 +678,7 @@ export async function GET(req: Request) {
             users: usersOverage,
             whatsappUsers: whatsappUsersOverage,
             messages: messagesOverage,
+            marketingMessages: marketingMessagesOverage,
             consultflexBasic: consultflexBasicOverage,
             consultflexComplete: consultflexCompleteOverage,
             consultflexTotal: consultflexOverage,
@@ -664,6 +696,7 @@ export async function GET(req: Request) {
         acc.whatsappUsers += tenant.usage.whatsappUsers;
         acc.sectors += tenant.usage.sectors;
         acc.messagesSent += tenant.usage.messagesSent;
+        acc.marketingMessagesSent += tenant.usage.marketingMessagesSent;
         acc.whatsappReceived += tenant.usage.whatsappReceived;
         acc.consultflexBasicSuccess += tenant.usage.consultflexBasicSuccess;
         acc.consultflexCompleteSuccess += tenant.usage.consultflexCompleteSuccess;
@@ -681,6 +714,7 @@ export async function GET(req: Request) {
         if (tenant.status.users === 'exceeded') acc.usersExceeded += 1;
         if (tenant.status.whatsappUsers === 'exceeded') acc.whatsappUsersExceeded += 1;
         if (tenant.status.messages === 'exceeded') acc.messagesExceeded += 1;
+        if (tenant.status.marketingMessages === 'exceeded') acc.marketingMessagesExceeded += 1;
         return acc;
       },
       {
@@ -690,6 +724,7 @@ export async function GET(req: Request) {
         whatsappUsers: 0,
         sectors: 0,
         messagesSent: 0,
+        marketingMessagesSent: 0,
         whatsappReceived: 0,
         budgetsCreated: 0,
         budgetsApproved: 0,
@@ -706,6 +741,7 @@ export async function GET(req: Request) {
         usersExceeded: 0,
         whatsappUsersExceeded: 0,
         messagesExceeded: 0,
+        marketingMessagesExceeded: 0,
       }
     );
 

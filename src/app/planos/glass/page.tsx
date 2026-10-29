@@ -137,6 +137,7 @@ export default function PlanosGlassPage() {
               wppMessages: nextWppMessages,
               mktMessages: Number(limits.mktMessages || 0),
               extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
+              extraMessagePrice: parseCurrency(limits.extraMessagePrice),
             },
           }),
         });

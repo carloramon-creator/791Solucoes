@@ -11,6 +11,7 @@ type Body = {
     wppMessages: number;
     mktMessages: number;
     extraMktMessagePrice: number;
+    extraMessagePrice?: number;
   };
   loadedLimits?: {
     usersIncluded: number;
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
     const nextWppMessages = Number(body?.nextLimits?.wppMessages ?? 0);
     const nextMktMessages = Number(body?.nextLimits?.mktMessages ?? 0);
     const nextExtraMktPrice = Number(body?.nextLimits?.extraMktMessagePrice ?? 0);
+    const nextExtraMessagePrice = body?.nextLimits?.extraMessagePrice;
 
     if (mode === 'default' && !body?.loadedLimits) {
       return NextResponse.json(
@@ -82,6 +84,11 @@ export async function POST(request: NextRequest) {
 
       if (mode === 'all' || tenant.valor_msg_marketing_excedente == null) {
         updatePayload.valor_msg_marketing_excedente = nextExtraMktPrice;
+      }
+
+      // Preço SAC vazio no tenant já segue o plano; só o modo "todos" sobrescreve preços personalizados.
+      if (mode === 'all' && Number.isFinite(Number(nextExtraMessagePrice))) {
+        updatePayload.valor_msg_whatsapp_excedente = Number(nextExtraMessagePrice);
       }
       
       if (Object.keys(updatePayload).length === 0) continue;

@@ -65,6 +65,7 @@ interface UsageTenantRow {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    marketingMessagesSent?: number;
     consultflexBasicSuccess: number;
     consultflexCompleteSuccess: number;
     consultflexSuccessTotal: number;
@@ -76,22 +77,26 @@ interface UsageTenantRow {
     users: number;
     whatsappUsers: number;
     messages: number;
+    marketingMessages?: number;
   };
   status: {
     users: 'ok' | 'warning' | 'exceeded';
     whatsappUsers: 'ok' | 'warning' | 'exceeded';
     messages: 'ok' | 'warning' | 'exceeded';
+    marketingMessages?: 'ok' | 'warning' | 'exceeded';
   };
   overage: {
     extraUsers: number;
     extraWhatsappUsers: number;
     extraMessages: number;
+    extraMarketingMessages?: number;
     consultflexBasicSuccess: number;
     consultflexCompleteSuccess: number;
     values: {
       users: number;
       whatsappUsers: number;
       messages: number;
+      marketingMessages?: number;
       consultflexBasic: number;
       consultflexComplete: number;
       consultflexTotal: number;
@@ -109,6 +114,7 @@ interface UsageResponse {
     whatsappUsers: number;
     sectors: number;
     messagesSent: number;
+    marketingMessagesSent?: number;
     consultflexBasicSuccess: number;
     consultflexCompleteSuccess: number;
     consultflexSuccess: number;
@@ -141,6 +147,7 @@ interface ClosingPreviewTenant {
     users?: number;
     whatsappUsers?: number;
     messages?: number;
+    marketingMessages?: number;
     consultflexTotal?: number;
     total?: number;
   };
@@ -925,7 +932,7 @@ export default function AssinaturasPage() {
         <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Mensagens no Ciclo</p>
           <p className="mt-2 text-2xl font-black text-blue-700">{usageTotals?.messagesSent ?? 0}</p>
-          <p className="text-[11px] text-blue-600 font-medium">Contagem desde o início do mês</p>
+          <p className="text-[11px] text-blue-600 font-medium">SAC • Marketing: {usageTotals?.marketingMessagesSent ?? 0}</p>
         </div>
         <div className="bg-white border border-blue-200 rounded-xl p-4 shadow-sm">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">ConsultFlex Básica</p>
@@ -1236,7 +1243,7 @@ export default function AssinaturasPage() {
                            </div>
                            
                            {/* Linha 2: Consumo */}
-                           {usage && (usage.overage.extraUsers > 0 || usage.overage.extraWhatsappUsers > 0 || usage.overage.extraMessages > 0 || usage.overage.values.consultflexTotal > 0) ? (
+                           {usage && (usage.overage.extraUsers > 0 || usage.overage.extraWhatsappUsers > 0 || usage.overage.extraMessages > 0 || Number(usage.overage.extraMarketingMessages || 0) > 0 || usage.overage.values.consultflexTotal > 0) ? (
                              <div className="flex flex-wrap items-center gap-2">
                                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Consumo:</span>
                                {usage.overage.extraUsers > 0 && <button
@@ -1257,7 +1264,17 @@ export default function AssinaturasPage() {
                                  }}
                                  className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
                                >
-                                 MSG +{usage.overage.extraMessages}
+                                 SAC +{usage.overage.extraMessages}
+                               </button>}
+                               {Number(usage.overage.extraMarketingMessages || 0) > 0 && <button
+                                 type="button"
+                                 onClick={() => {
+                                   setSelectedUsage(usage);
+                                   setSelectedUsageTenant(tenant);
+                                 }}
+                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.marketingMessages || 'exceeded')}`}
+                               >
+                                 MKT +{usage.overage.extraMarketingMessages}
                                </button>}
                                {usage.overage.values.consultflexTotal > 0 && <button
                                  type="button"
@@ -1423,7 +1440,7 @@ export default function AssinaturasPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.users)}`}>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><Users size={12} /> Sistema</p>
                   <p className="mt-2 text-xl font-black">{selectedUsage.usage.registeredUsers}/{selectedUsage.limits.users}</p>
@@ -1435,9 +1452,14 @@ export default function AssinaturasPage() {
                   <p className="text-[11px] font-medium">Setores: {selectedUsage.usage.sectors}</p>
                 </div>
                 <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.messages)}`}>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><MessageSquare size={12} /> Mensagens</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><MessageSquare size={12} /> Mensagens SAC</p>
                   <p className="mt-2 text-xl font-black">{selectedUsage.usage.messagesSent}/{selectedUsage.limits.messages}</p>
                   <p className="text-[11px] font-medium">No ciclo atual</p>
+                </div>
+                <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.marketingMessages || 'ok')}`}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><MessageSquare size={12} /> Marketing</p>
+                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.marketingMessagesSent ?? 0}/{selectedUsage.limits.marketingMessages ?? 0}</p>
+                  <p className="text-[11px] font-medium">Mensagens em massa</p>
                 </div>
               </div>
 
@@ -1453,8 +1475,12 @@ export default function AssinaturasPage() {
                     <strong>{formatCurrency(selectedUsage.overage.values.whatsappUsers)}</strong>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Mensagens extras ({selectedUsage.overage.extraMessages})</span>
+                    <span>Mensagens SAC extras ({selectedUsage.overage.extraMessages})</span>
                     <strong>{formatCurrency(selectedUsage.overage.values.messages)}</strong>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Mensagens Marketing extras ({selectedUsage.overage.extraMarketingMessages ?? 0})</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.marketingMessages ?? 0)}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>ConsultFlex Básica ({selectedUsage.overage.consultflexBasicSuccess})</span>
@@ -1665,7 +1691,8 @@ export default function AssinaturasPage() {
                         const extrasTotal =
                           Number(item.values?.users || 0)
                           + Number(item.values?.whatsappUsers || 0)
-                          + Number(item.values?.messages || 0);
+                          + Number(item.values?.messages || 0)
+                          + Number(item.values?.marketingMessages || 0);
                         return (
                           <tr key={item.tenantId} className="hover:bg-slate-50/70">
                             <td className="px-3 py-2">

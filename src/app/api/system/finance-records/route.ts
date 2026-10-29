@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { userCanAccessResource } from '@/lib/holding-permissions';
+import { getGlassClient } from '@/lib/glass-client';
+import { releaseOverageBlock } from '@/lib/overage-block';
 
 const FINANCE_MANAGE_PAID_RECORDS_PERMISSION = 'action.finance.manage_paid_records';
 
@@ -68,6 +70,17 @@ export async function POST(req: Request) {
   }
 }
 
+/** Excedente baixado ou excluído por aqui não pode continuar bloqueando o tenant no glass. */
+async function releaseOverageBlockFor(record: { id: string; metadata?: unknown }, status: 'paid' | 'cancelled') {
+  const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata as Record<string, unknown> : {};
+  if (metadata.kind !== 'overage') return;
+  try {
+    await releaseOverageBlock({ glassSupabase: await getGlassClient(), recordId: record.id, status });
+  } catch (err) {
+    console.error('[FINANCE RECORDS] Falha ao liberar bloqueio do excedente:', err instanceof Error ? err.message : err);
+  }
+}
+
 export async function PUT(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem editar lancamentos financeiros.');
   if (!auth.ok) {
@@ -82,7 +95,7 @@ export async function PUT(req: Request) {
 
     const { data: current, error: currentError } = await supabaseServer
       .from('system_finance_records')
-      .select('id, status')
+      .select('id, status, metadata')
       .eq('id', id)
       .single();
 
@@ -105,6 +118,11 @@ export async function PUT(req: Request) {
       .single();
 
     if (error) throw error;
+
+    const newStatus = String(updates?.status || '');
+    if (current.status === 'pending' && (newStatus === 'paid' || newStatus === 'cancelled')) {
+      await releaseOverageBlockFor(current, newStatus);
+    }
     return NextResponse.json({ success: true, record: data });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -125,7 +143,7 @@ export async function DELETE(req: Request) {
 
     const { data: current, error: currentError } = await supabaseServer
       .from('system_finance_records')
-      .select('id, status')
+      .select('id, status, metadata')
       .eq('id', id)
       .single();
 
@@ -146,6 +164,10 @@ export async function DELETE(req: Request) {
       .eq('id', id);
 
     if (error) throw error;
+
+    if (current.status === 'pending') {
+      await releaseOverageBlockFor(current, 'cancelled');
+    }
     return NextResponse.json({ success: true });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

@@ -1,4 +1,5 @@
 import { AsaasClient } from './asaas-service';
+import { registerOverageBlockRule } from '@/lib/overage-block';
 import { InterAPIV2 } from './inter-service';
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -989,6 +990,13 @@ export async function scheduleMonthlyOverageChargeForTenant({
         },
       })
       .eq('id', overageRecord.id);
+
+    // Sem boleto não há o que cobrar; só cobrança emitida pode bloquear WhatsApp/ConsultFlex no vencimento.
+    try {
+      await registerOverageBlockRule({ glassSupabase, recordId: overageRecord.id, metadata: baseMetadata, value: totalOverage });
+    } catch (ruleErr) {
+      console.error('[OVERAGE] Falha ao registrar regra de bloqueio:', ruleErr instanceof Error ? ruleErr.message : ruleErr);
+    }
   } catch (chargeErr: any) {
     chargeStatus = 'charge_error';
     await holdingSupabase

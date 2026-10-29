@@ -3,7 +3,7 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { getGlassClient } from '@/lib/glass-client';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { userCanAccessResource } from '@/lib/holding-permissions';
-import { restoreWhatsappModulesIfNeeded } from '@/lib/overage-whatsapp';
+import { releaseOverageBlock } from '@/lib/overage-block';
 import { AsaasClient } from '@/services/asaas-service';
 import { emitirNFeExcedentePago } from '@/services/payment-processor';
 
@@ -35,7 +35,7 @@ function todayBrt() {
  * Baixa manual de cobrança de excedente do 791glass, para qualquer tenant.
  * - received: recebido por fora (Pix/transferência). Baixa o boleto no Asaas como recebido em dinheiro e emite a NFS-e.
  * - waived: abono. Cancela o boleto no Asaas, sem receita e sem NFS-e.
- * Nos dois casos o WhatsApp bloqueado por essa cobrança é reativado.
+ * Nos dois casos o bloqueio (WhatsApp/ConsultFlex) desta cobrança é liberado.
  */
 export async function POST(req: Request) {
   const auth = await authenticateHoldingAdmin(req, 'Acesso negado.');
@@ -184,15 +184,11 @@ export async function POST(req: Request) {
 
   const warnings: string[] = [];
   let glass: Awaited<ReturnType<typeof getGlassClient>> | null = null;
-  const wasBlocked = originalMetadata.whatsapp_block_status === 'blocked'
-    || (Array.isArray(originalMetadata.whatsapp_removed_modules) && originalMetadata.whatsapp_removed_modules.length > 0);
   try {
     glass = await getGlassClient();
-    if (wasBlocked) {
-      await restoreWhatsappModulesIfNeeded({ holdingSupabase: supabaseServer, glassSupabase: glass, recordId, metadata: nextMetadata });
-    }
+    await releaseOverageBlock({ glassSupabase: glass, recordId, status: mode === 'waived' ? 'cancelled' : 'paid' });
   } catch (err) {
-    warnings.push(`WhatsApp não foi reativado automaticamente: ${err instanceof Error ? err.message : 'erro desconhecido'}.`);
+    warnings.push(`Bloqueio não foi liberado automaticamente: ${err instanceof Error ? err.message : 'erro desconhecido'}.`);
   }
 
   if (mode === 'received') {

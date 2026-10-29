@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { emitirNFeExcedentePago, PaymentProcessor } from '@/services/payment-processor';
 import { supabase } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { restoreWhatsappModulesIfNeeded } from '@/lib/overage-whatsapp';
+import { releaseOverageBlock } from '@/lib/overage-block';
 
 export async function POST(req: Request) {
   try {
@@ -80,12 +80,11 @@ export async function POST(req: Request) {
           if (error) console.error('[ASAAS WEBHOOK] Erro ao atualizar financeiro:', error.message);
 
           if (String(existingMetadata.kind || '') === 'overage') {
-            await restoreWhatsappModulesIfNeeded({
-              holdingSupabase: holdingService,
-              glassSupabase: glassService,
-              recordId,
-              metadata: mergedMetadata,
-            });
+            try {
+              await releaseOverageBlock({ glassSupabase: glassService, recordId, status: 'paid' });
+            } catch (releaseError) {
+              console.error('[ASAAS WEBHOOK] Falha ao liberar bloqueio do excedente:', releaseError instanceof Error ? releaseError.message : releaseError);
+            }
 
             try {
               await emitirNFeExcedentePago({

@@ -993,12 +993,12 @@ export default function AssinaturasPage() {
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-left border-collapse">
             <colgroup>
-              <col className="w-[25%]" />
-              <col className="w-[9%]" />
-              <col className="w-[13%]" />
+              <col className="w-[38%]" />
+              <col className="w-[10%]" />
+              <col className="w-[14%]" />
               <col className="w-[12%]" />
-              <col className="w-[22%]" />
-              <col className="w-[19%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
             </colgroup>
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
@@ -1006,8 +1006,8 @@ export default function AssinaturasPage() {
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Vencimento</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
+                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap" title="Extras do mês: usuários, mensagens e consultas">Faturas</th>
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Ações</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest w-full">Plano, Módulos & Consumo</th>
               </tr>
             </thead>
             <tbody className="">
@@ -1035,16 +1035,6 @@ export default function AssinaturasPage() {
                     sponsored: Boolean(sponsorMap[tenant.id]),
                   }).total;
 
-                  const basicIds = systemPlan?.included_modules || [];
-                  const selectedModuleNames = Array.from(new Set(
-                    (tenant.modulos_ativos || [])
-                      .map((modRef) => modules.find((mod) => mod.slug === modRef || mod.id === modRef))
-                      .filter((mod): mod is Module => Boolean(mod && !mod.parent_slug))
-                      .filter((mod) => !basicIds.includes(mod.id) && !basicIds.includes(mod.slug || ''))
-                      .map((mod) => mod.nome)
-                  ));
-
-
                   let diasRestantes: number | null = null;
                   let vencimentoStr = '';
                   if (tenant.vencimento_assinatura) {
@@ -1059,41 +1049,41 @@ export default function AssinaturasPage() {
 
                   return (
                     <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-200 group">
-                      <td className="px-3 py-2 text-slate-700">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center text-[#3b597b]">
-                            <Building2 size={20} />
+                      <td className="px-3 py-1.5 text-slate-700">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-[#3b597b]">
+                            <Building2 size={16} />
                           </div>
-                          <div className="flex flex-col">
-                            <span className="min-w-0 break-words text-sm font-medium">
+                          <div className="flex min-w-0 flex-col leading-tight">
+                            <span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium">
                               <button
                                 type="button"
                                 onClick={() => router.push(`/assinaturas/${tenant.id}`)}
-                                title="Abrir painel de controle do cliente"
-                                className="text-left hover:text-[#3b597b] hover:underline"
+                                title={`Abrir painel de controle de ${tenant.nome}`}
+                                className="truncate text-left hover:text-[#3b597b] hover:underline"
                               >
                                 {tenant.nome}
                               </button>
-                              <span className="ml-1 inline-block max-w-full break-all text-[9px] text-slate-400 bg-slate-100 px-1.5 rounded uppercase tracking-tighter">
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 text-[9px] uppercase tracking-tighter text-slate-400">
                                 /{tenant.slug}
                               </span>
                             </span>
-                            <span className="text-xs text-slate-500">{tenant.email || 'E-mail não cadastrado'}</span>
-                            <span className="text-[10px] text-slate-400">Criada em {new Date(tenant.created_at).toLocaleDateString('pt-BR')}</span>
-                            {sponsorMap[tenant.id] && (
-                              <span className="text-[10px] text-red-600 font-black uppercase mt-0.5">
-                                Patrocinado por {sponsorMap[tenant.id]}
-                              </span>
-                            )}
+                            <span className="truncate whitespace-nowrap text-[11px] text-slate-500">
+                              {tenant.email || 'E-mail não cadastrado'}
+                              <span className="text-slate-400"> · Criada em {new Date(tenant.created_at).toLocaleDateString('pt-BR')}</span>
+                              {sponsorMap[tenant.id] && (
+                                <span className="font-black uppercase text-red-600"> · Patrocinado por {sponsorMap[tenant.id]}</span>
+                              )}
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-2 py-1.5">
                         <div className="flex justify-center">{getStatusBadge(tenant, diasRestantes)}</div>
                       </td>
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-2 py-1.5 text-center">
                         {tenant.vencimento_assinatura ? (
-                          <div className="mx-auto flex min-w-[100px] flex-col items-center justify-center rounded border border-slate-100 bg-slate-50 px-2 py-1 text-center">
+                          <div className="mx-auto flex min-w-[100px] flex-col items-center justify-center rounded border border-slate-100 bg-slate-50 px-2 py-0.5 text-center leading-tight">
                             <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
                             <span className={`mt-0.5 text-[9px] font-bold ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
                               {diasRestantes! < 0
@@ -1107,8 +1097,8 @@ export default function AssinaturasPage() {
                           <span className="text-[9px] italic text-slate-400">Sem vencimento</span>
                         )}
                       </td>
-                      <td className="px-4 py-2 text-center whitespace-nowrap">
-                        <div className="flex flex-col items-center gap-1">
+                      <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                        <div className="flex flex-col items-center leading-tight">
                           <span className="text-sm font-bold text-slate-700">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorTotal)}
                           </span>
@@ -1117,8 +1107,31 @@ export default function AssinaturasPage() {
                           </span>
                         </div>
                       </td>
-                        <td className="px-2 py-2 text-center">
-                          <div className="flex flex-wrap justify-center gap-1">
+                      <td className="px-2 py-1.5 text-center">
+                        {(() => {
+                          const v = usage?.overage.values;
+                          const extras = Number(v?.total || 0);
+                          const detail = v ? [
+                            v.users ? `Usuários ${formatCurrency(v.users)}` : '',
+                            v.whatsappUsers ? `Aparelhos WhatsApp ${formatCurrency(v.whatsappUsers)}` : '',
+                            v.messages ? `Mensagens SAC ${formatCurrency(v.messages)}` : '',
+                            v.marketingMessages ? `Mensagens marketing ${formatCurrency(v.marketingMessages)}` : '',
+                            v.consultflexTotal ? `ConsultFlex ${formatCurrency(v.consultflexTotal)}` : '',
+                          ].filter(Boolean).join(' · ') : '';
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => void openInvoiceHistory(tenant)}
+                              title={`Abrir faturas de ${tenant.nome}${detail ? `\nExtras do mês: ${detail}` : ''}`}
+                              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-black transition hover:underline ${extras > 0 ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'border-transparent text-slate-400 hover:text-indigo-700'}`}
+                            >
+                              <FileText size={12} /> {formatCurrency(extras)}
+                            </button>
+                          );
+                        })()}
+                      </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <div className="flex justify-center gap-0.5">
                           <button 
                             onClick={() => {
                               setVidracariaToEmit(tenant);
@@ -1177,10 +1190,10 @@ export default function AssinaturasPage() {
                             });
                             setIsEmitModalOpen(true);
                           }}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-purple-50 hover:text-purple-600"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-purple-50 hover:text-purple-600"
                           title="Emitir Nota Fiscal"
                         >
-                          <FileCheck size={18} />
+                          <FileCheck size={16} />
                         </button>
                          <button
                            onClick={() => {
@@ -1188,99 +1201,23 @@ export default function AssinaturasPage() {
                              setTenantReport(null);
                              setTenantReportError('');
                            }}
-                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600"
+                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-emerald-50 hover:text-emerald-600"
                            title="Relatório de uso por período"
                            aria-label="Relatório de uso por período"
                          >
-                           <TrendingUp size={18} />
+                           <TrendingUp size={16} />
                          </button>
                          <button
                            onClick={() => {
                              setTenantToDelete(tenant);
                              setDeleteConfirmInput('');
                            }}
-                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
+                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
                            title="Excluir definitivamente"
                          >
-                           <Trash2 size={18} />
+                           <Trash2 size={16} />
                          </button>
                        </div>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex flex-col gap-2">
-                           {/* Linha 1: Plano e Módulos */}
-                           <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight">
-                                Plano Básico{selectedModuleNames.length > 0 ? ` + ${selectedModuleNames.length}` : ''}
-                              </span>
-                              {selectedModuleNames.length > 0 && (
-                                <span
-                                  className="inline-flex h-5 min-w-5 cursor-help items-center justify-center rounded-full border border-blue-100 bg-blue-50 px-1.5 text-[9px] font-black text-[#3b597b]"
-                                  title={`Módulos: ${selectedModuleNames.join(', ')}`}
-                                  aria-label={`Módulos selecionados: ${selectedModuleNames.join(', ')}`}
-                                >
-                                  {selectedModuleNames.length}
-                                </span>
-                              )}
-                           </div>
-                           
-                           {/* Linha 2: Consumo */}
-                           {usage && (usage.overage.extraUsers > 0 || usage.overage.extraWhatsappUsers > 0 || usage.overage.extraMessages > 0 || Number(usage.overage.extraMarketingMessages || 0) > 0 || usage.overage.values.consultflexTotal > 0) ? (
-                             <div className="flex flex-wrap items-center gap-2">
-                               <span className="text-[11px] font-bold text-slate-700 uppercase tracking-tight mr-1">Consumo:</span>
-                               {usage.overage.extraUsers > 0 && <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.users)}`}
-                               >
-                                 SIS +{usage.overage.extraUsers}
-                               </button>}
-                               {usage.overage.extraMessages > 0 && <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.messages)}`}
-                               >
-                                 SAC +{usage.overage.extraMessages}
-                               </button>}
-                               {Number(usage.overage.extraMarketingMessages || 0) > 0 && <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] transition hover:opacity-90 ${getToneClasses(usage.status.marketingMessages || 'exceeded')}`}
-                               >
-                                 MKT +{usage.overage.extraMarketingMessages}
-                               </button>}
-                               {usage.overage.values.consultflexTotal > 0 && <button
-                                 type="button"
-                                 onClick={() => {
-                                   setSelectedUsage(usage);
-                                   setSelectedUsageTenant(tenant);
-                                 }}
-                                 className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-indigo-700 transition hover:opacity-90"
-                               >
-                                 FAT {formatCurrency(usage.overage.values.consultflexTotal)}
-                               </button>}
-                             </div>
-                           ) : (
-                             <div className="text-[9px] text-slate-300 font-medium uppercase tracking-widest italic">Sem consumo registrado</div>
-                           )}
-                           <button
-                             type="button"
-                             onClick={() => void openInvoiceHistory(tenant)}
-                             className="inline-flex w-fit items-center gap-1 rounded-md border border-indigo-100 bg-indigo-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-indigo-700 transition hover:bg-indigo-100"
-                             title={`Abrir faturas SaaS de ${tenant.nome}`}
-                           >
-                             <FileText size={12} /> Faturas
-                           </button>
-                        </div>
                       </td>
                   </tr>
                 );

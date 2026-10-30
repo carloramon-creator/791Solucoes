@@ -38,7 +38,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       {
         id: 'base',
         nome: 'Plano base (Standard)',
-        price: pricing.base,
+        price: Number(plan?.base_price || 0),
+        sponsored: Boolean(sponsorName),
         active: true,
         locked: true,
         blockedByOverage: false,

@@ -25,6 +25,7 @@ type PanelModule = {
   id: string;
   nome: string;
   price: number;
+  sponsored?: boolean;
   active: boolean;
   locked: boolean;
   blockedByOverage: boolean;
@@ -286,13 +287,14 @@ export default function TenantPanelPage() {
         {[
           { label: 'Situação', value: tenant.ativa === false ? 'Bloqueada' : String(tenant.status_assinatura || 'ativa'), tone: tenant.ativa === false ? 'text-red-600' : 'text-emerald-600' },
           { label: 'Vencimento', value: dateBr(tenant.vencimento_assinatura), tone: 'text-slate-800' },
-          { label: `Assinatura (${CYCLE_LABEL[tenant.ciclo_pagamento] || 'Mensal'})`, value: currency(pricing.total), tone: 'text-slate-800' },
+          { label: `Assinatura (${CYCLE_LABEL[tenant.ciclo_pagamento] || 'Mensal'})`, value: currency(pricing.total), tone: 'text-slate-800', hint: data.sponsorName ? 'Combos (plano base patrocinado)' : 'Plano base + combos' },
           { label: `Em aberto (${groups.open.length})`, value: currency(openTotal), tone: groups.open.length ? 'text-amber-600' : 'text-slate-800' },
           { label: `Vencidas (${groups.overdue.length})`, value: currency(overdueTotal), tone: groups.overdue.length ? 'text-red-600' : 'text-slate-800' },
         ].map((card) => (
           <div key={card.label} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{card.label}</p>
             <p className={`mt-1 text-lg font-black capitalize ${card.tone}`}>{card.value}</p>
+            {'hint' in card && card.hint && <p className="text-[10px] font-semibold text-slate-400">{card.hint}</p>}
           </div>
         ))}
       </div>
@@ -320,7 +322,16 @@ export default function TenantPanelPage() {
                 <tr key={mod.id} className="hover:bg-slate-50/50">
                   <td className={`${td} font-semibold`}>{mod.nome}</td>
                   <td className={`${td} max-w-[420px] text-slate-500`}>{mod.modulos.join(', ') || '—'}</td>
-                  <td className={`${td} text-right font-semibold ${mod.active ? 'text-slate-700' : 'text-slate-300 line-through'}`}>{currency(mod.price)}</td>
+                  <td className={`${td} text-right font-semibold`}>
+                    {mod.sponsored ? (
+                      <span className="flex flex-col items-end leading-tight">
+                        <span className="text-slate-300 line-through">{currency(mod.price)}</span>
+                        <span className="text-[9px] font-black uppercase text-red-600">Pago pelo patrocinador</span>
+                      </span>
+                    ) : (
+                      <span className={mod.active ? 'text-slate-700' : 'text-slate-300 line-through'}>{currency(mod.price)}</span>
+                    )}
+                  </td>
                   <td className={td}>
                     {mod.blockedByOverage ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700"><AlertTriangle size={11} /> Bloqueado (excedente)</span>

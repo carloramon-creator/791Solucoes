@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { userCanAccessResource } from '@/lib/holding-permissions';
-import { suggestRulePattern, syncBankAccounts } from '@/lib/bank-sync';
+import { isInterImportEnabled, suggestRulePattern, syncBankAccounts } from '@/lib/bank-sync';
 
 export const maxDuration = 60;
 
@@ -74,6 +74,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     success: true,
+    interImportEnabled: isInterImportEnabled(),
     accounts: accountsRes.data || [],
     pending,
     pendingSettlement: settleRes.data || [],

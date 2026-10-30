@@ -53,6 +53,10 @@ export type AccountSyncResult = {
 
 const SAFE_ID = /^[A-Za-z0-9_\-:.]{1,120}$/;
 
+export function isInterImportEnabled() {
+  return process.env.BANK_INTER_IMPORT_ENABLED === 'true';
+}
+
 export function normalizeText(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
@@ -283,7 +287,7 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
     result.skipped = 'Extrato deste banco ainda não habilitado.';
     return result;
   }
-  if (provider === 'inter' && process.env.BANK_INTER_IMPORT_ENABLED !== 'true') {
+  if (provider === 'inter' && !isInterImportEnabled()) {
     result.skipped = 'Importação do Inter bloqueada até a validação com o banco.';
     return result;
   }

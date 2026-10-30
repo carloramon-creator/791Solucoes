@@ -8,6 +8,7 @@ A importacao do Inter permanece bloqueada enquanto o acesso e a conciliacao nao
 forem validados com a conta real. Ela exige tanto `sync_enabled` na conta como
 `BANK_INTER_IMPORT_ENABLED=true` no servidor. Nao habilite nenhum dos dois apenas
 porque o token OAuth foi emitido; o extrato e o saldo ainda precisam responder.
+O painel distingue o bloqueio no servidor da habilitacao da conta.
 
 O cliente usa mTLS e o escopo `extrato.read`. Informe a conta completa, incluindo
 o digito, tanto nas configuracoes financeiras quanto no cadastro bancario usado

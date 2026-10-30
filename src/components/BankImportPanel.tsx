@@ -94,7 +94,7 @@ type Draft = { categoryId: string; createRule: boolean; pattern: string; saving?
 
 const PROVIDER_LABEL: Record<string, string> = { asaas: "Asaas", inter: "Inter", cora: "Cora" };
 const PROVIDER_HINT: Record<string, string> = {
-  inter: "Aguardando acesso e validação real do Inter.",
+  inter: "Sincronização do Inter não habilitada para esta conta.",
   cora: "Falta ativar a Integração Direta da Cora (certificado + client id).",
 };
 
@@ -120,6 +120,7 @@ export default function BankImportPanel({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<SyncAccount[]>([]);
+  const [interImportEnabled, setInterImportEnabled] = useState<boolean | null>(null);
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [settlements, setSettlements] = useState<PendingSettlement[]>([]);
   const [reviews, setReviews] = useState<PendingReview[]>([]);
@@ -145,6 +146,7 @@ export default function BankImportPanel({
           return;
         }
         setAccounts(json.accounts || []);
+        setInterImportEnabled(typeof json.interImportEnabled === "boolean" ? json.interImportEnabled : null);
         setPending(json.pending || []);
         setSettlements(json.pendingSettlement || []);
         setReviews(json.pendingReviews);
@@ -153,6 +155,7 @@ export default function BankImportPanel({
       })
       .catch((err: unknown) => {
         if (sequence === loadSequence.current) {
+          setInterImportEnabled(null);
           setMessage(err instanceof Error ? err.message : "Falha ao carregar o extrato.");
         }
       })
@@ -335,6 +338,16 @@ export default function BankImportPanel({
                   <tbody>
                     {accounts.map((acc) => {
                       const provider = String(acc.provider || "");
+                      const interServerUnavailable = provider === "inter" && interImportEnabled !== true;
+                      const active = acc.sync_enabled && !interServerUnavailable;
+                      const inactiveHint = provider === "inter" && interImportEnabled === null
+                        ? "Não foi possível confirmar a liberação do Inter no servidor."
+                        : provider === "inter" && interImportEnabled === false
+                          ? "Importação do Inter bloqueada no servidor."
+                          : PROVIDER_HINT[provider] || "";
+                      const inactiveLabel = acc.sync_enabled && interServerUnavailable
+                        ? interImportEnabled === null ? "Estado desconhecido" : "Bloqueado"
+                        : "Não habilitado";
                       const bankBalance = acc.provider_balance === null || acc.provider_balance === undefined ? null : Number(acc.provider_balance);
                       const systemBalance = systemBalances[acc.id];
                       const diff = bankBalance === null || systemBalance === undefined ? null : Number((systemBalance - bankBalance).toFixed(2));
@@ -342,13 +355,20 @@ export default function BankImportPanel({
                         <tr key={acc.id} className="border-t border-slate-100">
                           <td className="py-1.5 pr-3 font-semibold text-slate-700">{acc.name}</td>
                           <td className="pr-3">
-                            {acc.sync_enabled
+                            {active
                               ? <span className="text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 font-bold">{PROVIDER_LABEL[provider] || provider} ativo</span>
-                              : <span className="text-slate-500 bg-slate-100 rounded-full px-2 py-0.5" title={PROVIDER_HINT[provider] || ""}>Não habilitado</span>}
+                              : <span className="text-slate-500 bg-slate-100 rounded-full px-2 py-0.5" title={inactiveHint}>{inactiveLabel}</span>}
                             {acc.last_sync_error && <span className="ml-2 text-red-600" title={acc.last_sync_error}><AlertTriangle size={12} className="inline" /> erro</span>}
                           </td>
                           <td className="pr-3">{acc.sync_enabled ? dateBr(acc.sync_start_date ? `${acc.sync_start_date}T12:00:00` : null) : "--"}</td>
-                          <td className="pr-3">{acc.sync_enabled ? dateTimeBr(acc.last_sync_at) : (PROVIDER_HINT[provider] || "--")}</td>
+                          <td className="pr-3">
+                            {active ? dateTimeBr(acc.last_sync_at) : (
+                              <>
+                                {inactiveHint || "--"}
+                                {acc.last_sync_at && <span className="block text-slate-400">Última: {dateTimeBr(acc.last_sync_at)}</span>}
+                              </>
+                            )}
+                          </td>
                           <td className="text-right pl-2">{bankBalance === null ? "--" : brl(bankBalance)}</td>
                           <td className="text-right pl-2">{systemBalance === undefined ? "--" : brl(systemBalance)}</td>
                           <td className={`text-right pl-2 font-bold ${diff === null ? "text-slate-400" : Math.abs(diff) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>

@@ -37,7 +37,11 @@ function loadRoute({ denied = false, financeAllowed = true, count = 235, reviewE
         : { ok: true, user: { id: 'admin', email: 'admin@example.test' } },
     },
     '@/lib/holding-permissions': { userCanAccessResource: async () => financeAllowed },
-    '@/lib/bank-sync': { suggestRulePattern: () => '', syncBankAccounts: async () => [] },
+    '@/lib/bank-sync': {
+      isInterImportEnabled: () => process.env.BANK_INTER_IMPORT_ENABLED === 'true',
+      suggestRulePattern: () => '',
+      syncBankAccounts: async () => [],
+    },
     '@/lib/supabase-server': { supabaseServer: { from: (table) => new Query(table) } },
   };
   const code = ts.transpileModule(readFileSync('src/app/api/system/bank-sync/route.ts', 'utf8'), {
@@ -59,6 +63,21 @@ test('paginates the review queue while preserving the complete count', async () 
   assert.equal(body.pendingReviewCount, 235);
   assert.equal(body.pendingReviews[0].id, 'review');
   assert.deepEqual(route.calls.find((call) => call.filters.status === 'revisao_duplicidade').page, [100, 199]);
+});
+
+test('reports the Inter server gate separately from the account state', async (t) => {
+  const previous = process.env.BANK_INTER_IMPORT_ENABLED;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BANK_INTER_IMPORT_ENABLED;
+    else process.env.BANK_INTER_IMPORT_ENABLED = previous;
+  });
+  delete process.env.BANK_INTER_IMPORT_ENABLED;
+  let response = await loadRoute().GET(new Request('http://localhost/api/system/bank-sync'));
+  assert.equal((await response.json()).interImportEnabled, false);
+
+  process.env.BANK_INTER_IMPORT_ENABLED = 'true';
+  response = await loadRoute().GET(new Request('http://localhost/api/system/bank-sync'));
+  assert.equal((await response.json()).interImportEnabled, true);
 });
 
 test('rejects invalid pages and access without querying financial data', async () => {

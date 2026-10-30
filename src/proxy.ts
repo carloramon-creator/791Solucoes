@@ -32,7 +32,10 @@ export async function proxy(request: NextRequest) {
 
   // A tela de login deve abrir mesmo quando o Supabase estiver indisponível.
   const isLoginPage = request.nextUrl.pathname === '/login';
-  if (isLoginPage) {
+  // O link de convite/recuperação chega com o token no #hash (invisível ao servidor);
+  // a própria página estabelece a sessão no navegador.
+  const isSetPasswordPage = request.nextUrl.pathname === '/set-password';
+  if (isLoginPage || isSetPasswordPage) {
     return supabaseResponse;
   }
 

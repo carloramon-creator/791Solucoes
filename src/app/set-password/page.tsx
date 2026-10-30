@@ -77,7 +77,7 @@ export default function SetPasswordPage() {
         const { data: userData } = await supabase.auth.getUser();
         const userEmail = userData?.user?.email || '';
 
-        if (userData?.user?.user_metadata?.role === 'sponsor') {
+        if ((userData?.user?.app_metadata?.role || userData?.user?.user_metadata?.role) === 'sponsor') {
           const { data: sp } = await supabase
             .from('patrocinadores')
             .select('id')

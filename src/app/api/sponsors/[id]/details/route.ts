@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { authorizeSponsorSelfOrManager } from '@/lib/sponsor-management-auth';
 
 function normalizeTemplateName(value: unknown) {
   return String(value || '').trim().toLowerCase();
@@ -17,9 +18,11 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id: sponsorId } = await params;
+  const { id: sponsorId } = await params;
+  const auth = await authorizeSponsorSelfOrManager(req, sponsorId);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
+  try {
     // Conectar ao Banco GLASS
     const glassUrl = process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!;
     const glassServiceKey = process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY!;

@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server';
 import AsaasClient from '@/services/asaas-service';
 import { createClient } from '@supabase/supabase-js';
+import { authorizeSponsorSelfOrManager } from '@/lib/sponsor-management-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
     const { sponsorId, quantity, cycle } = await req.json();
+    const normalizedSponsorId = String(sponsorId || '').trim();
+    if (!normalizedSponsorId) {
+      return NextResponse.json({ success: false, error: 'Patrocinador não informado.' }, { status: 400 });
+    }
+
+    const auth = await authorizeSponsorSelfOrManager(req, normalizedSponsorId);
+    if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
     const HOLDING_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const HOLDING_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -16,7 +24,7 @@ export async function POST(req: Request) {
     const { data: sponsor, error: sponsorError } = await supabaseHolding
       .from('patrocinadores')
       .select('*')
-      .eq('id', sponsorId)
+      .eq('id', normalizedSponsorId)
       .single();
 
     if (sponsorError || !sponsor) throw new Error('Patrocinador não encontrado.');

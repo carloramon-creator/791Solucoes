@@ -54,7 +54,7 @@ export async function GET(req: Request) {
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
         const chargeRes = await fetch(`${baseUrl}/api/payments/asaas/create-sponsor-charge`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-cron-secret': process.env.CRON_SECRET! },
           body: JSON.stringify({
             patrocinadorId: sponsor.id,
             nome: sponsor.nome,

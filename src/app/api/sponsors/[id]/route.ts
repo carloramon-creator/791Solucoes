@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { User } from '@supabase/supabase-js';
 import { supabaseServer } from '@/lib/supabase-server';
-import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { authorizeSponsorManagement, findHoldingAuthUserByEmail } from '@/lib/sponsor-management-auth';
 
 const EDITABLE_FIELDS = [
   'nome', 'razao_social', 'email', 'cpf_cnpj', 'telefone', 'nome_responsavel',
@@ -10,18 +10,6 @@ const EDITABLE_FIELDS = [
 ] as const;
 
 const normalizeEmail = (value: unknown) => String(value || '').trim().toLowerCase();
-
-async function findAuthUserByEmail(email: string): Promise<User | null> {
-  if (!email) return null;
-  for (let page = 1; page <= 20; page++) {
-    const { data, error } = await supabaseServer.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) throw error;
-    const found = data.users.find((u) => normalizeEmail(u.email) === email);
-    if (found) return found;
-    if (data.users.length < 1000) return null;
-  }
-  return null;
-}
 
 async function loadSponsor(id: string) {
   const { data, error } = await supabaseServer
@@ -35,7 +23,7 @@ async function loadSponsor(id: string) {
 
 /** Atualiza o patrocinador e mantém o e-mail do login (Auth) igual ao e-mail de acesso. */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem editar patrocinadores.');
+  const auth = await authorizeSponsorManagement(req);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
   try {
@@ -68,7 +56,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         return NextResponse.json({ success: false, error: 'Este e-mail ja pertence a outro patrocinador.' }, { status: 409 });
       }
 
-      const [oldUser, userWithNewEmail] = await Promise.all([findAuthUserByEmail(oldEmail), findAuthUserByEmail(newEmail)]);
+      const [oldUser, userWithNewEmail] = await Promise.all([findHoldingAuthUserByEmail(oldEmail), findHoldingAuthUserByEmail(newEmail)]);
       if (userWithNewEmail && userWithNewEmail.id !== oldUser?.id) {
         return NextResponse.json({ success: false, error: 'Ja existe um login com este e-mail na holding. Use outro e-mail.' }, { status: 409 });
       }
@@ -110,7 +98,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 /** Exclui o patrocinador (tokens vão junto) e o login dele; recusa se algum token estiver em uso. */
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await authenticateHoldingAdmin(req, 'Patrocinadores nao podem excluir patrocinadores.');
+  const auth = await authorizeSponsorManagement(req);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
   try {
@@ -135,7 +123,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     if (error) throw error;
 
     let authDeleted = false;
-    const authUser = await findAuthUserByEmail(normalizeEmail(sponsor.email));
+    const authUser = await findHoldingAuthUserByEmail(normalizeEmail(sponsor.email));
     // Só remove login de patrocinador; nunca apaga um admin que use o mesmo e-mail.
     if (authUser && authUser.user_metadata?.role === 'sponsor') {
       const { error: authError } = await supabaseServer.auth.admin.deleteUser(authUser.id);

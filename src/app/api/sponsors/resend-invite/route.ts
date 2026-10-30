@@ -1,104 +1,116 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseServer } from '@/lib/supabase-server';
+import { authorizeSponsorManagement, findHoldingAuthUserByEmail } from '@/lib/sponsor-management-auth';
 
 const PRODUCTION_URL = 'https://admin.791solucoes.com.br';
 
 export async function POST(req: Request) {
-  try {
-    const { email } = await req.json();
+  const auth = await authorizeSponsorManagement(req);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
-    if (!email) {
-      throw new Error('E-mail não fornecido.');
+  try {
+    const body = await req.json();
+    const sponsorId = String(body?.sponsorId || '').trim();
+    if (!sponsorId) {
+      return NextResponse.json({ success: false, error: 'Patrocinador não informado.' }, { status: 400 });
     }
 
-    const holdingUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const holdingServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-    const supabaseAdmin = createClient(holdingUrl, holdingServiceKey);
+    const { data: sponsor, error: sponsorError } = await supabaseServer
+      .from('patrocinadores')
+      .select('id, nome, email')
+      .eq('id', sponsorId)
+      .maybeSingle();
+    if (sponsorError) throw sponsorError;
+    if (!sponsor) return NextResponse.json({ success: false, error: 'Patrocinador não encontrado.' }, { status: 404 });
 
-    // Verificar se o usuário já existe no Auth
-    const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-    const existingUser = listData?.users?.find(u => u.email === email);
+    const email = String(sponsor.email || '').trim().toLowerCase();
+    if (!email) return NextResponse.json({ success: false, error: 'Este patrocinador não possui e-mail cadastrado.' }, { status: 400 });
+
+    const existingUser = await findHoldingAuthUserByEmail(email);
+    if (existingUser && existingUser.app_metadata?.role !== 'sponsor' && existingUser.user_metadata?.role !== 'sponsor') {
+      return NextResponse.json({ success: false, error: 'O e-mail pertence a uma conta que não é de patrocinador.' }, { status: 409 });
+    }
 
     if (existingUser) {
-      // Caso 1: Usuário já existe -> Enviar e-mail de redefinição de senha (recuperação) via Supabase SMTP
-      console.log(`[RESEND-INVITE] Usuário já existe (${existingUser.id}). Enviando e-mail de recuperação...`);
-      
-      const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
+      const { error: metadataError } = await supabaseServer.auth.admin.updateUserById(existingUser.id, {
+        app_metadata: { ...existingUser.app_metadata, role: 'sponsor' }
+      });
+      if (metadataError) throw metadataError;
+
+      const { error: resetError } = await supabaseServer.auth.resetPasswordForEmail(email, {
         redirectTo: `${PRODUCTION_URL}/set-password`
       });
 
-      if (resetError) {
-        console.error('[RESEND-INVITE] Erro ao enviar resetPasswordForEmail:', resetError.message);
-        
-        // Fallback: gerar link manualmente se o SMTP falhar
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: 'recovery',
-          email,
-          options: { redirectTo: `${PRODUCTION_URL}/set-password` }
-        });
-
-        if (linkError) throw linkError;
-
+      if (!resetError) {
         return NextResponse.json({
           success: true,
-          link: linkData?.properties?.action_link || null,
-          message: 'SMTP indisponível. Copie o link abaixo para enviar manualmente.'
+          link: null,
+          message: `E-mail de recuperação enviado para ${email}.`
         });
       }
 
-      return NextResponse.json({
-        success: true,
-        link: null,
-        message: `✅ E-mail de redefinição de senha enviado com sucesso para ${email}!`
+      console.error('[RESEND-INVITE] Erro ao enviar recuperação:', resetError.message);
+      const { data: linkData, error: linkError } = await supabaseServer.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${PRODUCTION_URL}/set-password` }
       });
-
-    } else {
-      // Caso 2: Usuário não existe -> Enviar convite (cria o usuário + envia e-mail) via Supabase SMTP
-      console.log(`[RESEND-INVITE] Usuário não existe. Enviando convite para ${email}...`);
-
-      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${PRODUCTION_URL}/set-password`,
-        data: { role: 'sponsor' }
-      });
-
-      if (inviteError) {
-        console.error('[RESEND-INVITE] Erro ao enviar convite por e-mail:', inviteError.message);
-
-        // Fallback: criar usuário e gerar link manualmente
-        const tempPassword = 'Temp791!' + Math.random().toString(36).substring(2, 8) + '!';
-        const { error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email,
-          password: tempPassword,
-          email_confirm: true,
-          user_metadata: { role: 'sponsor' }
-        });
-
-        if (createError && !createError.message.includes('already')) throw createError;
-
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: 'recovery',
-          email,
-          options: { redirectTo: `${PRODUCTION_URL}/login` }
-        });
-
-        if (linkError) throw linkError;
-
-        return NextResponse.json({
-          success: true,
-          link: linkData?.properties?.action_link || null,
-          message: 'SMTP indisponível. Copie o link abaixo para enviar manualmente.'
-        });
-      }
+      if (linkError) throw linkError;
 
       return NextResponse.json({
         success: true,
-        link: null,
-        message: `✅ Convite enviado com sucesso para ${email}!`
+        link: linkData.properties.action_link,
+        message: 'SMTP indisponível. Copie o link e envie manualmente.'
       });
     }
 
-  } catch (err: any) {
-    console.error('[RESEND INVITE ERROR]', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const { data: inviteData, error: inviteError } = await supabaseServer.auth.admin.inviteUserByEmail(email, {
+      redirectTo: `${PRODUCTION_URL}/set-password`,
+      data: { role: 'sponsor', name: sponsor.nome }
+    });
+
+    if (!inviteError) {
+      if (inviteData.user) {
+        const { error: metadataError } = await supabaseServer.auth.admin.updateUserById(inviteData.user.id, {
+          app_metadata: { ...(inviteData.user.app_metadata || {}), role: 'sponsor' }
+        });
+        if (metadataError) throw metadataError;
+      }
+      return NextResponse.json({
+        success: true,
+        link: null,
+        message: `Convite enviado para ${email}.`
+      });
+    }
+
+    console.error('[RESEND-INVITE] Erro ao enviar convite:', inviteError.message);
+    const tempPassword = `Temp791!${crypto.randomUUID()}!`;
+    const { data: created, error: createError } = await supabaseServer.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
+      app_metadata: { role: 'sponsor' },
+      user_metadata: { role: 'sponsor', name: sponsor.nome }
+    });
+    if (createError) throw createError;
+
+    const { data: linkData, error: linkError } = await supabaseServer.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: `${PRODUCTION_URL}/set-password` }
+    });
+    if (linkError) {
+      await supabaseServer.auth.admin.deleteUser(created.user.id);
+      throw linkError;
+    }
+
+    return NextResponse.json({
+      success: true,
+      link: linkData.properties.action_link,
+      message: 'SMTP indisponível. Copie o link e envie manualmente.'
+    });
+  } catch (err) {
+    console.error('[RESEND INVITE ERROR]', err instanceof Error ? err.message : err);
+    return NextResponse.json({ success: false, error: err instanceof Error ? err.message : 'Erro ao enviar acesso.' }, { status: 500 });
   }
 }

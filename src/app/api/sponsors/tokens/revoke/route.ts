@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { authorizeSponsorSelfOrManager } from '@/lib/sponsor-management-auth';
 
 function generateVoucherCode(sponsorName: string) {
   const base = String(sponsorName || 'SPON').trim().toUpperCase().replace(/\s+/g, '');
@@ -18,6 +19,9 @@ export async function POST(req: Request) {
     if (!sponsorId || !tokenId) {
       return NextResponse.json({ success: false, error: 'sponsorId e tokenId são obrigatórios.' }, { status: 400 });
     }
+
+    const auth = await authorizeSponsorSelfOrManager(req, sponsorId);
+    if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
 
     const holdingSupabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

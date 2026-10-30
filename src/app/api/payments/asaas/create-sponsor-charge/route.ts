@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import AsaasClient from '@/services/asaas-service';
 import { createClient } from '@supabase/supabase-js';
+import { authorizeSponsorManagement } from '@/lib/sponsor-management-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,6 +10,13 @@ export const revalidate = 0;
  * ROTA DE COBRANÇA PARA PATROCINADORES (HOLDING)
  */
 export async function POST(req: Request) {
+  const cronSecret = process.env.CRON_SECRET;
+  const isAuthorizedCron = Boolean(cronSecret) && req.headers.get('x-cron-secret') === cronSecret;
+  if (!isAuthorizedCron) {
+    const auth = await authorizeSponsorManagement(req);
+    if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
+
   try {
     const { 
       patrocinadorId, 

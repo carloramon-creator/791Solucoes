@@ -133,13 +133,6 @@ export default function PatrocinadoresPage() {
     }
   }
 
-  const generateVoucherCode = (nome: string) => {
-    const prefix = nome.substring(0, 4).toUpperCase().replace(/\s/g, '');
-    const random = Math.floor(1000 + Math.random() * 9000);
-    const suffix = Math.random().toString(36).substring(2, 4).toUpperCase();
-    return `791-${prefix}-${random}-${suffix}`;
-  };
-
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -186,7 +179,7 @@ export default function PatrocinadoresPage() {
         // CRIAR NOVO PATROCINADOR (via API para criar auth user e enviar email)
         const resCreate = await fetch('/api/sponsors/create', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify(payload)
         });
         const createData = await resCreate.json();
@@ -206,7 +199,7 @@ export default function PatrocinadoresPage() {
         try {
           const chargeRes = await fetch('/api/payments/asaas/create-sponsor-charge', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
             body: JSON.stringify({
               patrocinadorId: sponsor.id,
               nome: formData.nome,
@@ -277,13 +270,16 @@ export default function PatrocinadoresPage() {
     if (!confirm(`Gerar ${needed} token(s) faltante(s) para ${p.nome}? (possui ${existingCount} de ${p.total_licencas})`)) return;
 
     try {
-      const vouchersToInsert = Array.from({ length: needed }, () => ({
-        codigo: generateVoucherCode(p.nome),
-        patrocinador_id: p.id
-      }));
-      const { error } = await supabase.from('vouchers').insert(vouchersToInsert);
-      if (error) throw error;
-      alert(`✅ ${needed} token(s) gerado(s) com sucesso para ${p.nome}!`);
+      const response = await fetch(`/api/sponsors/${p.id}/tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ mode: 'sync' })
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+      alert(data.created > 0
+        ? `✅ ${data.created} token(s) gerado(s) com sucesso para ${p.nome}!`
+        : `✅ ${p.nome} já está com os tokens sincronizados.`);
       fetchPatrocinadores();
     } catch (err: any) {
       alert(`Erro ao gerar tokens: ${err.message}`);
@@ -294,23 +290,21 @@ export default function PatrocinadoresPage() {
     if (!confirm(`Deseja gerar um novo Voucher para ${nome}?`)) return;
     
     try {
-      const voucherCode = generateVoucherCode(nome);
-      const { error } = await supabase
-        .from('vouchers')
-        .insert([{
-          codigo: voucherCode,
-          patrocinador_id: sponsorId
-        }]);
-
-      if (error) throw error;
-      alert(`✅ Voucher ${voucherCode} gerado com sucesso!`);
+      const response = await fetch(`/api/sponsors/${sponsorId}/tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ mode: 'single' })
+      });
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+      alert(`✅ Voucher ${data.voucherCode} gerado com sucesso!`);
       fetchPatrocinadores();
     } catch (err: any) {
       alert(`Erro ao gerar voucher: ${err.message}`);
     }
   }
 
-  async function handleResendInvite(email: string) {
+  async function handleResendInvite(sponsorId: string, email: string) {
     if (!email) {
       alert("Este patrocinador não possui um e-mail cadastrado.");
       return;
@@ -319,8 +313,8 @@ export default function PatrocinadoresPage() {
     try {
       const res = await fetch('/api/sponsors/resend-invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ sponsorId })
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
@@ -448,7 +442,7 @@ export default function PatrocinadoresPage() {
     setCurrentTemplates([]);
     setCurrentTokens([]);
     try {
-      const res = await fetch(`/api/sponsors/${id}/details`);
+      const res = await fetch(`/api/sponsors/${id}/details`, { headers: await authHeaders() });
       const data = await res.json();
       if (data.success) {
         setCurrentVidracarias(data.vidracarias || []);
@@ -490,7 +484,7 @@ export default function PatrocinadoresPage() {
     try {
       const response = await fetch('/api/payments/asaas/create-sponsor-charge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           patrocinadorId: p.id,
           nome: dataToUse.nome,
@@ -672,7 +666,7 @@ export default function PatrocinadoresPage() {
                     <td className="px-8 py-6 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => handleResendInvite(p.email)}
+                          onClick={() => handleResendInvite(p.id, p.email)}
                           className="p-3 hover:bg-slate-100 hover:text-slate-600 rounded-xl text-slate-400 transition-all" 
                           title="Reenviar Acesso / Recuperar Senha"
                         >

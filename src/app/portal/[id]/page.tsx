@@ -64,6 +64,13 @@ export default function SponsorPortal() {
   const [quotasCycle, setQuotasCycle] = useState('MONTHLY');
   const [requestingQuotas, setRequestingQuotas] = useState(false);
 
+  async function authHeaders(): Promise<Record<string, string>> {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessão não encontrada. Faça login novamente.');
+    return { Authorization: `Bearer ${token}` };
+  }
+
   async function fetchPortalData() {
     if (!id) return;
     setLoading(true);
@@ -75,7 +82,7 @@ export default function SponsorPortal() {
       }
       
       // 1. Buscar os detalhes do patrocinador pela API existente
-      const res = await fetch(`/api/sponsors/${id}/details`);
+      const res = await fetch(`/api/sponsors/${id}/details`, { headers: await authHeaders() });
       const details = await res.json();
       
       // 2. Buscar dados do próprio patrocinador na Holding
@@ -131,7 +138,7 @@ export default function SponsorPortal() {
     try {
       const response = await fetch('/api/sponsors/tokens/revoke', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           sponsorId: sponsor.id,
           tokenId: token.id,
@@ -168,7 +175,7 @@ Para ativar o patrocínio:
     try {
       const res = await fetch('/api/payments/asaas/create-extra-quotas', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({
           sponsorId: id,
           quantity: Number(quotasAmount) || 1,

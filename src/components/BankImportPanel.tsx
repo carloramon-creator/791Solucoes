@@ -58,7 +58,7 @@ type Draft = { categoryId: string; createRule: boolean; pattern: string; saving?
 
 const PROVIDER_LABEL: Record<string, string> = { asaas: "Asaas", inter: "Inter", cora: "Cora" };
 const PROVIDER_HINT: Record<string, string> = {
-  inter: "Falta liberar o escopo extrato.read na integração do Inter.",
+  inter: "Importação pronta; aguardando o Inter liberar a API (integração ativa no Internet Banking PJ).",
   cora: "Falta ativar a Integração Direta da Cora (certificado + client id).",
 };
 

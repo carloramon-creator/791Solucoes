@@ -1,5 +1,6 @@
 import { supabaseServer } from '@/lib/supabase-server';
 import { getAsaasClient, todayBrt } from '@/lib/glass-tenant-billing';
+import { fetchInterTransactions } from '@/lib/inter-statement';
 
 export const UNCLASSIFIED_CATEGORY = 'A classificar';
 
@@ -143,7 +144,7 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
     imported: 0, reconciled: 0, autoClassified: 0, pendingSettlement: 0, providerBalance: null,
   };
 
-  if (provider !== 'asaas') {
+  if (provider !== 'asaas' && provider !== 'inter') {
     result.skipped = 'Extrato deste banco ainda não habilitado.';
     return result;
   }
@@ -174,7 +175,9 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
     const startDate = lookback < startFloor ? startFloor : lookback;
     const finishDate = todayBrt();
 
-    const { transactions, balance } = await fetchAsaasTransactions(startDate, finishDate);
+    const { transactions, balance } = provider === 'inter'
+      ? await fetchInterTransactions(startDate, finishDate)
+      : await fetchAsaasTransactions(startDate, finishDate);
     result.providerBalance = balance;
 
     const { data: existing } = await supabaseServer

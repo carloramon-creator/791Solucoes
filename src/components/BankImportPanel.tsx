@@ -234,6 +234,53 @@ export default function BankImportPanel({
     }
   };
 
+  const readyToSave = pending.filter((item) => {
+    const draft = draftOf(item);
+    return Boolean(draft.categoryId) && !draft.saving;
+  });
+  const anySaving = pending.some((item) => draftOf(item).saving);
+
+  const saveAll = async () => {
+    const batch = readyToSave.map((item) => ({ item, draft: draftOf(item) }));
+    if (batch.length === 0) return;
+    setMessage(null);
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const { item, draft } of batch) next[item.id] = { ...draft, ...prev[item.id], saving: true, error: undefined };
+      return next;
+    });
+    let saved = 0, failed = 0, similar = 0;
+    // Sequencial: evita regras duplicadas quando duas linhas usam o mesmo nome.
+    for (const { item, draft } of batch) {
+      try {
+        if (draft.createRule && normalizeText(draft.pattern).length < 3) {
+          throw new Error("O nome da regra precisa ter pelo menos 3 letras ou números.");
+        }
+        const res = await holdingAuthFetch("/api/system/bank-sync/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId: item.id, categoryId: draft.categoryId, createRule: draft.createRule, pattern: draft.pattern }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.error || "Falha ao classificar.");
+        saved++;
+        similar += Number(json.similarApplied) || 0;
+      } catch (err) {
+        failed++;
+        setDraft(item.id, { saving: false, error: err instanceof Error ? err.message : "Falha ao classificar." }, item);
+      }
+    }
+    setMessage([
+      `${saved} lançamento(s) salvo(s)`,
+      similar > 0 ? `regras aplicadas a mais ${similar} semelhante(s)` : "",
+      failed > 0 ? `${failed} com erro (veja nas linhas)` : "",
+    ].filter(Boolean).join(" · ") + ".");
+    if (saved > 0) {
+      await refresh();
+      onChanged();
+    }
+  };
+
   const removeRule = async (id: string) => {
     const res = await holdingAuthFetch(`/api/system/bank-sync/rules?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     if (res.ok) setRules((prev) => prev.filter((r) => r.id !== id));
@@ -513,7 +560,20 @@ export default function BankImportPanel({
               )}
 
               <section className="overflow-x-auto">
-                <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500 mb-2">A classificar ({pending.length})</h3>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500">A classificar ({pending.length})</h3>
+                  {!loading && pending.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { void saveAll(); }}
+                      disabled={readyToSave.length === 0 || anySaving}
+                      title={readyToSave.length === 0 ? "Escolha a classe/subclasse nas linhas para salvar tudo de uma vez." : undefined}
+                      className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-emerald-600 px-4 py-2 text-[calc(10px+2pt)] font-bold uppercase tracking-widest text-white disabled:opacity-50"
+                    >
+                      {anySaving && <Loader2 size={14} className="animate-spin" />} Salvar tudo ({readyToSave.length})
+                    </button>
+                  )}
+                </div>
                 {!loading && pending.length > 0 && <p className="text-[calc(10px+2pt)] text-slate-400 mb-1 lg:hidden">Deslize para ver todas as colunas.</p>}
                 {loading ? (
                   <div className="py-6 text-center text-slate-400"><Loader2 size={18} className="animate-spin inline" /></div>

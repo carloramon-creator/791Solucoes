@@ -36,7 +36,7 @@ function renderPanel(interImportEnabled, accounts, capture = () => {}, pending =
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', code)((id) => {
     if (id === 'react') return hooks;
-    if (id === '@/lib/holding-auth-fetch') return { holdingAuthFetch: async () => { throw new Error('Unexpected request'); } };
+    if (id === '@/lib/holding-auth-fetch') return { holdingAuthFetch: async (...args) => { if (globalThis.__bankFetch) return globalThis.__bankFetch(...args); throw new Error('Unexpected request'); } };
     if (id === '@/components/FinanceCategoryDialog') return { __esModule: true, default: CategoryDialogStub };
     return require(id);
   }, mod, mod.exports);
@@ -102,7 +102,8 @@ test('enlarges the statement text and keeps classification controls scrollable',
   assert.match(html, /<h2 class="text-\[calc\(1\.125rem\+2pt\)\]/);
   assert.match(html, /<h3 class="text-\[calc\(10px\+2pt\)\][^"]*">Contas<\/h3>/);
   assert.match(html, /<table class="w-full min-w-\[900px\] table-fixed text-\[calc\(0\.75rem\+2pt\)\]">/);
-  assert.match(html, /<section class="overflow-x-auto"><h3[^>]*>A classificar \(1\)<\/h3>/);
+  assert.match(html, /<section class="overflow-x-auto"><div[^>]*><h3[^>]*>A classificar \(1\)<\/h3>/);
+  assert.match(html, /disabled=""[^>]*> Salvar tudo \(0\)<\/button>/);
   assert.match(html, /<table class="w-full min-w-\[1240px\] text-\[calc\(0\.75rem\+2pt\)\]">/);
   assert.match(html, /<select[^>]*>/);
   assert.match(html, /<button[^>]*>Salvar<\/button>/);
@@ -255,4 +256,48 @@ test('edits the rule text in a popup without touching other rows', () => {
   html = renderToStaticMarkup(ui.render());
   assert.match(html, /title="Sempre que contiver: Primeira Empresa"/);
   assert.doesNotMatch(html, /Editar regra<\/h3>/);
+});
+
+test('saves every row with a chosen class in sequence, keeping failures and untouched rows', async () => {
+  const pending = ['a', 'b', 'c', 'd'].map((id) => ({
+    id, type: 'expense', value: 10, description: `Pix enviado - ${id}`, date: '2026-10-30', suggested_pattern: `Empresa ${id}`,
+  }));
+  const calls = [];
+  let active = 0, maxActive = 0;
+  globalThis.__bankFetch = async (url, init) => {
+    if (!init?.method) return { ok: true, json: async () => ({ success: true, accounts: [], pending: [], pendingReviews: [], pendingReviewCount: 0, rules: [] }) };
+    active++; maxActive = Math.max(maxActive, active);
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    await new Promise((resolve) => setImmediate(resolve));
+    active--;
+    if (body.recordId === 'b') return { ok: false, json: async () => ({ success: false, error: 'Categoria não encontrada.' }) };
+    return { ok: true, json: async () => ({ success: true, similarApplied: body.recordId === 'a' ? 2 : 0 }) };
+  };
+  try {
+    let ui;
+    renderPanel(true, [inter], (value) => { ui = value; }, pending, [{ id: 'cat', name: 'Classe', type: 'expense', parent_id: null }]);
+    ui.states[13] = {
+      a: { categoryId: 'cat', createRule: true, pattern: 'Empresa a' },
+      b: { categoryId: 'cat', createRule: false, pattern: 'Empresa b' },
+      c: { categoryId: 'cat', createRule: true, pattern: ' x ' },
+    };
+    const html = renderToStaticMarkup(ui.render());
+    assert.match(html, /Salvar tudo \(3\)/);
+    const button = nodes(ui.render(), (node) => node.type === 'button' && [].concat(node.props.children).includes(' Salvar tudo ('))[0];
+    await button.props.onClick();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(maxActive, 1);
+    assert.deepEqual(calls.map((c) => c.recordId), ['a', 'b']);
+    assert.deepEqual(calls[0], { recordId: 'a', categoryId: 'cat', createRule: true, pattern: 'Empresa a' });
+    assert.equal(calls[1].createRule, false);
+    assert.equal(ui.states[13].b.error, 'Categoria não encontrada.');
+    assert.equal(ui.states[13].b.saving, false);
+    assert.match(ui.states[13].c.error, /pelo menos 3/);
+    assert.equal(ui.states[13].d, undefined);
+    assert.equal(ui.states[3], '1 lançamento(s) salvo(s) · regras aplicadas a mais 2 semelhante(s) · 2 com erro (veja nas linhas).');
+    assert.equal(ui.changed, 1);
+  } finally {
+    delete globalThis.__bankFetch;
+  }
 });

@@ -817,6 +817,10 @@ export default function FinancePage() {
       setIsModalOpen(false);
       setEditingRecord(null);
       await loadData();
+      if ((previousMetadata.bank_link_provider === "inter" || previousMetadata.provider === "inter") &&
+          previousMetadata.bank_tx_id && json.record?.metadata?.bank_tx_id !== previousMetadata.bank_tx_id) {
+        alert("A movimentação do Inter voltou para revisão porque o lançamento vinculado foi alterado.");
+      }
     } catch (err: any) {
       alert(`Erro ao salvar: ${err?.message || "desconhecido"}`);
     } finally {
@@ -830,7 +834,8 @@ export default function FinancePage() {
       return;
     }
 
-    const confirmed = confirm("Tem certeza que deseja excluir este lancamento?");
+    const hasInterLink = (record.metadata?.bank_link_provider === "inter" || record.metadata?.provider === "inter") && record.metadata?.bank_tx_id;
+    const confirmed = confirm(`Tem certeza que deseja excluir este lancamento?${hasInterLink ? "\n\nA movimentação do Inter voltará para revisão." : ""}`);
     if (!confirmed) return;
 
     try {
@@ -899,6 +904,9 @@ export default function FinancePage() {
       setIsSettleModalOpen(false);
       setSettleRecord(null);
       await loadData();
+      if (json.bankReviewRequired) {
+        alert("A movimentação do Inter voltou para revisão. Confira a baixa antes de criar outro lançamento.");
+      }
     } catch (err: any) {
       alert(`Erro ao baixar: ${err?.message || "desconhecido"}`);
     } finally {

@@ -45,6 +45,7 @@ export type AccountSyncResult = {
   reconciled: number;
   autoClassified: number;
   pendingSettlement: number;
+  pendingReview: number;
   providerBalance: number | null;
   skipped?: string;
   error?: string;
@@ -79,6 +80,139 @@ function matchRule(rules: Rule[], accountId: string, recordType: 'revenue' | 'ex
     if (!best || needle.length > normalizeText(best.pattern).length) best = rule;
   }
   return best;
+}
+
+function ruleSnapshot(rule: Rule | null) {
+  if (!rule) return null;
+  return {
+    id: rule.id,
+    pattern: rule.pattern,
+    record_type: rule.record_type,
+    category_id: rule.category_id,
+    category_name: rule.category_name,
+    bank_account_id: rule.bank_account_id,
+  };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function importInterTransactions(
+  account: BankAccountRow,
+  transactions: NormalizedTx[],
+  rules: Rule[],
+  result: AccountSyncResult,
+) {
+  const batchSize = 200;
+  for (let offset = 0; offset < transactions.length; offset += batchSize) {
+    const batch = transactions.slice(offset, offset + batchSize).map((tx) => ({
+      external_id: tx.externalId,
+      tx_date: tx.date,
+      amount: tx.amount,
+      tx_type: tx.type,
+      description: tx.description,
+      counterparty: tx.counterparty,
+      reference_id: tx.referenceId,
+      balance_after: tx.balanceAfter,
+      raw: tx.raw,
+      rule: ruleSnapshot(matchRule(
+        rules, account.id, tx.amount > 0 ? 'revenue' : 'expense', `${tx.description} ${tx.counterparty || ''}`,
+      )),
+    }));
+    const { data, error } = await supabaseServer.rpc('bank_inter_import_batch', {
+      p_account_id: account.id,
+      p_transactions: batch,
+    });
+    if (error) throw new Error(error.message);
+    if (!isObject(data) || !isObject(data.rule_counts)) {
+      throw new Error('O banco retornou um resultado inválido para o lote do Inter.');
+    }
+    const { imported, pending_review: pendingReview, auto_classified: autoClassified, existing, rule_counts: ruleCounts } = data;
+    if (![imported, pendingReview, autoClassified, existing].every(
+      (count) => typeof count === 'number' && Number.isSafeInteger(count) && count >= 0,
+    )) {
+      throw new Error('O banco retornou contagens inválidas para o lote do Inter.');
+    }
+    if (typeof imported !== 'number' || typeof pendingReview !== 'number' ||
+        typeof autoClassified !== 'number' || typeof existing !== 'number' ||
+        imported + pendingReview + existing !== batch.length || autoClassified > imported) {
+      throw new Error('O banco retornou contagens inconsistentes para o lote do Inter.');
+    }
+    let ruleTotal = 0;
+    for (const [id, count] of Object.entries(ruleCounts)) {
+      const rule = rules.find((item) => item.id === id);
+      if (!rule || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+        throw new Error('O banco retornou contagens de regras inválidas para o lote do Inter.');
+      }
+      rule.hits += count;
+      ruleTotal += count;
+    }
+    if (ruleTotal !== autoClassified) {
+      throw new Error('O banco retornou contagens de regras inconsistentes para o lote do Inter.');
+    }
+    result.imported += imported + pendingReview;
+    result.pendingReview += pendingReview;
+    result.autoClassified += autoClassified;
+  }
+}
+
+export class InterReviewError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+  }
+}
+
+export async function resolveInterReview(input: {
+  transactionId: string;
+  action: 'link' | 'create';
+  recordId?: string;
+  allowPaid: boolean;
+  actorId: string;
+}) {
+  let rule: ReturnType<typeof ruleSnapshot> = null;
+  if (input.action === 'create') {
+    const [transactionRes, rulesRes] = await Promise.all([
+      supabaseServer.from('system_bank_transactions')
+        .select('bank_account_id, amount, description, counterparty')
+        .eq('id', input.transactionId)
+        .eq('provider', 'inter')
+        .eq('status', 'revisao_duplicidade')
+        .maybeSingle(),
+      supabaseServer.from('system_bank_classification_rules')
+        .select('id, pattern, record_type, category_id, category_name, bank_account_id, hits'),
+    ]);
+    if (transactionRes.error) throw new Error(transactionRes.error.message);
+    if (rulesRes.error) throw new Error(rulesRes.error.message);
+    if (!transactionRes.data) throw new InterReviewError('A movimentação não está mais disponível para revisão.', 409);
+    const tx = transactionRes.data;
+    const amount = Number(tx.amount);
+    if (!Number.isFinite(amount) || amount === 0) throw new Error('A movimentação possui valor inválido.');
+    rule = ruleSnapshot(matchRule(
+      (rulesRes.data || []) as Rule[],
+      String(tx.bank_account_id),
+      amount > 0 ? 'revenue' : 'expense',
+      `${tx.description || ''} ${tx.counterparty || ''}`,
+    ));
+  }
+
+  const { data, error } = await supabaseServer.rpc('bank_inter_resolve_review', {
+    p_transaction_id: input.transactionId,
+    p_action: input.action,
+    p_record_id: input.recordId || null,
+    p_expected_rule: rule,
+    p_allow_paid: input.allowPaid,
+    p_actor: input.actorId,
+  });
+  if (error) {
+    if (error.code === '42501') throw new InterReviewError(error.message, 403);
+    if (error.code === 'P0001') throw new InterReviewError(error.message, 409);
+    throw new Error(error.message);
+  }
+  if (!isObject(data) || data.action !== input.action || typeof data.auto_classified !== 'boolean') {
+    throw new Error('O banco retornou um resultado inválido para a conciliação.');
+  }
+  return { action: input.action, autoClassified: data.auto_classified };
 }
 
 export function categoryMetadata(category: CategoryRow | null, categories: CategoryRow[]) {
@@ -142,22 +276,30 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
   const provider = String(account.provider || '');
   const result: AccountSyncResult = {
     accountId: account.id, account: account.name, provider,
-    imported: 0, reconciled: 0, autoClassified: 0, pendingSettlement: 0, providerBalance: null,
+    imported: 0, reconciled: 0, autoClassified: 0, pendingSettlement: 0, pendingReview: 0, providerBalance: null,
   };
 
   if (provider !== 'asaas' && provider !== 'inter') {
     result.skipped = 'Extrato deste banco ainda não habilitado.';
     return result;
   }
+  if (provider === 'inter' && process.env.BANK_INTER_IMPORT_ENABLED !== 'true') {
+    result.skipped = 'Importação do Inter bloqueada até a validação com o banco.';
+    return result;
+  }
 
   // Trava por conta: evita que o cron e o botão "Sincronizar" importem ao mesmo tempo.
   const nowIso = new Date().toISOString();
-  const { data: locked } = await supabaseServer
+  const { data: locked, error: lockError } = await supabaseServer
     .from('system_bank_accounts')
     .update({ sync_lock_until: new Date(Date.now() + 5 * 60 * 1000).toISOString() })
     .eq('id', account.id)
     .or(`sync_lock_until.is.null,sync_lock_until.lt.${nowIso}`)
     .select('id');
+  if (lockError) {
+    result.error = `Falha ao iniciar sincronização: ${lockError.message}`;
+    return result;
+  }
   if (!locked?.length) {
     result.skipped = 'Sincronização já em andamento.';
     return result;
@@ -165,12 +307,13 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
 
   try {
     const startFloor = account.sync_start_date || todayBrt();
-    const { data: lastTx } = await supabaseServer
+    const { data: lastTx, error: lastTxError } = await supabaseServer
       .from('system_bank_transactions')
       .select('tx_date')
       .eq('bank_account_id', account.id)
       .order('tx_date', { ascending: false })
       .limit(1);
+    if (provider === 'inter' && lastTxError) throw new Error(lastTxError.message);
     const lastDate = lastTx?.[0]?.tx_date as string | undefined;
     const lookback = lastDate ? addDays(lastDate, -3) : startFloor;
     const startDate = lookback < startFloor ? startFloor : lookback;
@@ -179,114 +322,120 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
     const { transactions, balance } = provider === 'inter'
       ? await fetchInterTransactions(startDate, finishDate, account.account_number)
       : await fetchAsaasTransactions(startDate, finishDate);
-    if (provider === 'inter') {
-      throw new Error('Conciliação do Inter ainda não implementada e validada; nenhuma movimentação foi importada.');
-    }
     result.providerBalance = balance;
 
-    const { data: existing } = await supabaseServer
-      .from('system_bank_transactions')
-      .select('external_id')
-      .eq('bank_account_id', account.id)
-      .gte('tx_date', startDate);
-    const known = new Set((existing || []).map((row) => String(row.external_id)));
-
-    for (const tx of transactions) {
-      if (known.has(tx.externalId) || tx.amount === 0) continue;
-
-      const { data: inserted, error: insertError } = await supabaseServer
+    if (provider === 'inter') {
+      await importInterTransactions(account, transactions, rules, result);
+    } else {
+      const { data: existing } = await supabaseServer
         .from('system_bank_transactions')
-        .upsert({
-          bank_account_id: account.id,
-          provider,
-          external_id: tx.externalId,
-          tx_date: tx.date,
-          amount: tx.amount,
-          tx_type: tx.type,
-          description: tx.description,
-          counterparty: tx.counterparty,
-          reference_id: tx.referenceId,
-          balance_after: tx.balanceAfter,
-          raw: tx.raw,
-        }, { onConflict: 'bank_account_id,external_id', ignoreDuplicates: true })
-        .select('id');
-      if (insertError) throw new Error(insertError.message);
-      const txId = inserted?.[0]?.id as string | undefined;
-      if (!txId) continue;
-      result.imported++;
+        .select('external_id')
+        .eq('bank_account_id', account.id)
+        .gte('tx_date', startDate);
+      const known = new Set((existing || []).map((row) => String(row.external_id)));
 
-      const match = await findReconcilableRecord(tx, provider);
-      if (match) {
-        const metadata = (match.metadata && typeof match.metadata === 'object') ? match.metadata as Record<string, unknown> : {};
-        await supabaseServer
-          .from('system_finance_records')
-          .update({
-            bank_account_id: match.bank_account_id || account.id,
-            metadata: { ...metadata, bank_tx_id: txId, bank_confirmed_at: tx.date },
-          })
-          .eq('id', match.id);
-        const status = match.status === 'paid' ? 'conciliado' : 'pendente_baixa';
-        await supabaseServer.from('system_bank_transactions')
-          .update({ finance_record_id: match.id, status, updated_at: new Date().toISOString() })
-          .eq('id', txId);
-        if (status === 'conciliado') result.reconciled++; else result.pendingSettlement++;
-        continue;
-      }
+      for (const tx of transactions) {
+        if (known.has(tx.externalId) || tx.amount === 0) continue;
 
-      const recordType: 'revenue' | 'expense' = tx.amount > 0 ? 'revenue' : 'expense';
-      const rule = matchRule(rules, account.id, recordType, `${tx.description} ${tx.counterparty || ''}`);
-      const category = rule?.category_id ? categories.find((c) => c.id === rule.category_id) || null : null;
-
-      const { data: record, error: recordError } = await supabaseServer
-        .from('system_finance_records')
-        .insert({
-          type: recordType,
-          value: Math.abs(tx.amount),
-          description: tx.description.slice(0, 300),
-          payment_method: 'Transferencia',
-          bank_account_id: account.id,
-          category: rule ? rule.category_name : UNCLASSIFIED_CATEGORY,
-          status: 'paid',
-          created_at: `${tx.date}T12:00:00-03:00`,
-          metadata: {
-            source: 'bank_import',
+        const { data: inserted, error: insertError } = await supabaseServer
+          .from('system_bank_transactions')
+          .upsert({
+            bank_account_id: account.id,
             provider,
-            bank_tx_id: txId,
             external_id: tx.externalId,
-            bank_tx_type: tx.type,
+            tx_date: tx.date,
+            amount: tx.amount,
+            tx_type: tx.type,
+            description: tx.description,
             counterparty: tx.counterparty,
             reference_id: tx.referenceId,
-            needs_classification: !rule,
-            ...(rule ? { classified_by_rule: rule.id, ...categoryMetadata(category, categories) } : {}),
-          },
-        })
-        .select('id')
-        .single();
-      if (recordError || !record) throw new Error(recordError?.message || 'Falha ao criar lançamento.');
+            balance_after: tx.balanceAfter,
+            raw: tx.raw,
+          }, { onConflict: 'bank_account_id,external_id', ignoreDuplicates: true })
+          .select('id');
+        if (insertError) throw new Error(insertError.message);
+        const txId = inserted?.[0]?.id as string | undefined;
+        if (!txId) continue;
+        result.imported++;
 
-      await supabaseServer.from('system_bank_transactions')
-        .update({ finance_record_id: record.id, status: rule ? 'classificado' : 'a_classificar', updated_at: new Date().toISOString() })
-        .eq('id', txId);
+        const match = await findReconcilableRecord(tx, provider);
+        if (match) {
+          const metadata = (match.metadata && typeof match.metadata === 'object') ? match.metadata as Record<string, unknown> : {};
+          await supabaseServer
+            .from('system_finance_records')
+            .update({
+              bank_account_id: match.bank_account_id || account.id,
+              metadata: { ...metadata, bank_tx_id: txId, bank_confirmed_at: tx.date },
+            })
+            .eq('id', match.id);
+          const status = match.status === 'paid' ? 'conciliado' : 'pendente_baixa';
+          await supabaseServer.from('system_bank_transactions')
+            .update({ finance_record_id: match.id, status, updated_at: new Date().toISOString() })
+            .eq('id', txId);
+          if (status === 'conciliado') result.reconciled++; else result.pendingSettlement++;
+          continue;
+        }
 
-      if (rule) {
-        result.autoClassified++;
-        rule.hits += 1;
-        await supabaseServer.from('system_bank_classification_rules').update({ hits: rule.hits }).eq('id', rule.id);
+        const recordType: 'revenue' | 'expense' = tx.amount > 0 ? 'revenue' : 'expense';
+        const rule = matchRule(rules, account.id, recordType, `${tx.description} ${tx.counterparty || ''}`);
+        const category = rule?.category_id ? categories.find((c) => c.id === rule.category_id) || null : null;
+
+        const { data: record, error: recordError } = await supabaseServer
+          .from('system_finance_records')
+          .insert({
+            type: recordType,
+            value: Math.abs(tx.amount),
+            description: tx.description.slice(0, 300),
+            payment_method: 'Transferencia',
+            bank_account_id: account.id,
+            category: rule ? rule.category_name : UNCLASSIFIED_CATEGORY,
+            status: 'paid',
+            created_at: `${tx.date}T12:00:00-03:00`,
+            metadata: {
+              source: 'bank_import',
+              provider,
+              bank_tx_id: txId,
+              external_id: tx.externalId,
+              bank_tx_type: tx.type,
+              counterparty: tx.counterparty,
+              reference_id: tx.referenceId,
+              needs_classification: !rule,
+              ...(rule ? { classified_by_rule: rule.id, ...categoryMetadata(category, categories) } : {}),
+            },
+          })
+          .select('id')
+          .single();
+        if (recordError || !record) throw new Error(recordError?.message || 'Falha ao criar lançamento.');
+
+        await supabaseServer.from('system_bank_transactions')
+          .update({ finance_record_id: record.id, status: rule ? 'classificado' : 'a_classificar', updated_at: new Date().toISOString() })
+          .eq('id', txId);
+
+        if (rule) {
+          result.autoClassified++;
+          rule.hits += 1;
+          await supabaseServer.from('system_bank_classification_rules').update({ hits: rule.hits }).eq('id', rule.id);
+        }
       }
     }
 
-    await supabaseServer.from('system_bank_accounts').update({
+    const { error: completionError } = await supabaseServer.from('system_bank_accounts').update({
       last_sync_at: new Date().toISOString(),
       last_sync_error: null,
       provider_balance: balance,
       provider_balance_at: balance === null ? null : new Date().toISOString(),
       sync_lock_until: null,
     }).eq('id', account.id);
+    if (provider === 'inter' && completionError) throw new Error(completionError.message);
   } catch (err) {
     result.error = err instanceof Error ? err.message : 'Falha ao sincronizar.';
-    await supabaseServer.from('system_bank_accounts')
+    const { error: unlockError } = await supabaseServer.from('system_bank_accounts')
       .update({ last_sync_error: result.error.slice(0, 500), sync_lock_until: null })
       .eq('id', account.id);
+    if (unlockError) {
+      console.error('[BANK SYNC] Falha ao liberar a trava:', unlockError.message);
+      result.error += ` Falha ao liberar a trava: ${unlockError.message}`;
+    }
   }
 
   return result;
@@ -303,14 +452,16 @@ export async function syncBankAccounts(options: { accountId?: string } = {}) {
   if (error) throw new Error(error.message);
   if (!accounts?.length) return [];
 
-  const [{ data: rules }, { data: categories }] = await Promise.all([
+  const [rulesRes, categoriesRes] = await Promise.all([
     supabaseServer.from('system_bank_classification_rules').select('id, pattern, record_type, category_id, category_name, bank_account_id, hits'),
     supabaseServer.from('system_finance_categories').select('id, name, type, parent_id'),
   ]);
+  const lookupError = rulesRes.error || categoriesRes.error;
+  if (lookupError) throw new Error(lookupError.message);
 
   const results: AccountSyncResult[] = [];
   for (const account of accounts as BankAccountRow[]) {
-    results.push(await syncAccount(account, (rules || []) as Rule[], (categories || []) as CategoryRow[]));
+    results.push(await syncAccount(account, (rulesRes.data || []) as Rule[], (categoriesRes.data || []) as CategoryRow[]));
   }
   return results;
 }
@@ -342,7 +493,7 @@ export async function classifyImportedRecord(input: {
 
   const applyTo = async (target: { id: string; metadata: unknown }, ruleId?: string) => {
     const metadata = (target.metadata && typeof target.metadata === 'object') ? target.metadata as Record<string, unknown> : {};
-    await supabaseServer.from('system_finance_records').update({
+    const { error: updateError } = await supabaseServer.from('system_finance_records').update({
       category: category.name,
       metadata: {
         ...metadata,
@@ -353,7 +504,8 @@ export async function classifyImportedRecord(input: {
         ...categoryMetadata(category, allCategories),
       },
     }).eq('id', target.id);
-    if (metadata.bank_tx_id) {
+    if (updateError) throw new Error(updateError.message);
+    if (metadata.bank_tx_id && metadata.bank_link_provider !== 'inter' && metadata.provider !== 'inter') {
       await supabaseServer.from('system_bank_transactions')
         .update({ status: 'classificado', updated_at: new Date().toISOString() })
         .eq('id', String(metadata.bank_tx_id));

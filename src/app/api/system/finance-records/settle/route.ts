@@ -4,16 +4,17 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 type DifferenceHandling = 'adjust' | 'keep_open';
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
 function toNumber(value: unknown, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
 }
 
-function toMetadataObject(value: unknown): Record<string, any> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, any>;
-  }
-  return {};
+function toMetadataObject(value: unknown): Record<string, unknown> {
+  return isObject(value) ? value : {};
 }
 
 export async function POST(req: Request) {
@@ -61,6 +62,35 @@ export async function POST(req: Request) {
     }
 
     const baseMetadata = toMetadataObject(record.metadata);
+    const isInterRecord = baseMetadata.bank_link_provider === 'inter' || baseMetadata.provider === 'inter';
+    if (isInterRecord && baseMetadata.bank_tx_id != null) {
+      if (typeof baseMetadata.bank_tx_id !== 'string' || !baseMetadata.bank_tx_id.trim()) {
+        return NextResponse.json({ success: false, error: 'O vínculo bancário do lançamento é inválido.' }, { status: 409 });
+      }
+      if (Math.abs(paidAmount * 100 - Math.round(paidAmount * 100)) > 0.000001) {
+        return NextResponse.json({ success: false, error: 'Informe o valor pago com até duas casas decimais.' }, { status: 400 });
+      }
+      const { data, error } = await supabaseServer.rpc('bank_inter_settle_record', {
+        p_record_id: recordId,
+        p_paid_amount: paidAmount,
+        p_bank_account_id: bankAccountId,
+        p_payment_method: paymentMethod,
+        p_handling: handling,
+      });
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: error.code === 'P0001' ? 409 : 500 });
+      }
+      if (!isObject(data) || !isObject(data.settledRecord) ||
+          data.settledRecord.id !== recordId || data.settledRecord.status !== 'paid' ||
+          (data.remainingRecord !== null && !isObject(data.remainingRecord)) ||
+          typeof data.bankReviewRequired !== 'boolean' || !isObject(data.meta) ||
+          typeof data.meta.originalValue !== 'number' || typeof data.meta.paidAmount !== 'number' ||
+          typeof data.meta.difference !== 'number' || data.meta.handling !== handling) {
+        throw new Error('O banco retornou uma resposta inválida para a baixa.');
+      }
+      return NextResponse.json({ success: true, ...data });
+    }
+
     const settledAt = new Date().toISOString();
 
     const settlementKind = paidAmount > originalValue
@@ -81,7 +111,7 @@ export async function POST(req: Request) {
       },
     };
 
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Record<string, unknown> = {
       status: 'paid',
       value: paidAmount,
       metadata: settledMetadata,
@@ -106,7 +136,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    let remainingRecord: any = null;
+    let remainingRecord: Record<string, unknown> | null = null;
     if (handling === 'keep_open' && absDifference > 0) {
       const remainingPayload = {
         type: record.type,
@@ -144,6 +174,7 @@ export async function POST(req: Request) {
       success: true,
       settledRecord,
       remainingRecord,
+      bankReviewRequired: false,
       meta: {
         originalValue,
         paidAmount,
@@ -151,7 +182,10 @@ export async function POST(req: Request) {
         handling,
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err?.message || 'Falha ao baixar lançamento.' }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+      ? err.message
+      : 'Falha ao baixar lançamento.';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

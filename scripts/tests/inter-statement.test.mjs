@@ -233,7 +233,13 @@ test('never treats exhausted pagination or an invalid period as a successful imp
   await assert.rejects(inter.fetchInterTransactions('2026-02-30', '2026-03-01'), /Período inválido/);
 });
 
-test('keeps Inter imports blocked until existing ledger reconciliation is validated', async () => {
+test('keeps Inter imports blocked until real reconciliation is validated', async (t) => {
+  const previous = process.env.BANK_INTER_IMPORT_ENABLED;
+  delete process.env.BANK_INTER_IMPORT_ENABLED;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BANK_INTER_IMPORT_ENABLED;
+    else process.env.BANK_INTER_IMPORT_ENABLED = previous;
+  });
   const calls = [];
   const account = {
     id: 'account', name: 'Inter', provider: 'inter', account_number: '123-4',
@@ -273,12 +279,87 @@ test('keeps Inter imports blocked until existing ledger reconciliation is valida
     throw new Error(`Unexpected dependency ${id}`);
   }, mod, mod.exports);
   const result = await mod.exports.syncBankAccounts();
-  assert.match(result[0].error, /Conciliação do Inter ainda não implementada e validada/);
-  assert.deepEqual(fetchCalls, [['2026-10-01', '2026-10-30', '123-4']]);
+  assert.match(result[0].skipped, /bloqueada até a validação/);
+  assert.deepEqual(fetchCalls, []);
   assert.equal(calls.some(({ table }) => table === 'system_finance_records'), false);
   assert.equal(calls.some(({ table, action }) => table === 'system_bank_transactions' && action !== 'select'), false);
-  assert.ok(calls.some(({ table, value }) =>
-    table === 'system_bank_accounts' && value?.sync_lock_until === null && value?.last_sync_error));
+  assert.equal(calls.some(({ table, action }) => table === 'system_bank_accounts' && action === 'update'), false);
+});
+
+test('sends Inter transactions in bounded batches and reports review items', async (t) => {
+  const previous = process.env.BANK_INTER_IMPORT_ENABLED;
+  process.env.BANK_INTER_IMPORT_ENABLED = 'true';
+  t.after(() => {
+    if (previous === undefined) delete process.env.BANK_INTER_IMPORT_ENABLED;
+    else process.env.BANK_INTER_IMPORT_ENABLED = previous;
+  });
+  const account = {
+    id: 'account', name: 'Inter', provider: 'inter', account_number: '123-4',
+    sync_enabled: true, sync_start_date: '2026-10-01',
+  };
+  const rule = {
+    id: 'rule', pattern: 'fornecedor', record_type: 'expense', category_id: null,
+    category_name: 'Compras', bank_account_id: 'account', hits: 0,
+  };
+  const batches = [];
+  const updates = [];
+  class Query {
+    constructor(table) { this.table = table; this.action = 'select'; }
+    select() { return this; }
+    eq() { return this; }
+    not() { return this; }
+    or() { return this; }
+    order() { return this; }
+    limit() { return this; }
+    update(value) { this.action = 'update'; this.value = value; return this; }
+    then(resolve, reject) {
+      let data = [];
+      if (this.table === 'system_bank_accounts' && this.action === 'select') data = [account];
+      if (this.table === 'system_bank_classification_rules') data = [rule];
+      if (this.table === 'system_bank_accounts' && this.action === 'update') {
+        updates.push(this.value);
+        if (this.value.sync_lock_until) data = [{ id: 'account' }];
+      }
+      return Promise.resolve({ data, error: null }).then(resolve, reject);
+    }
+  }
+  const transactions = Array.from({ length: 201 }, (_, index) => ({
+    externalId: `id-${index}`, date: '2026-10-30', amount: -10, type: 'PIX',
+    description: 'Fornecedor', counterparty: null, referenceId: null, balanceAfter: null, raw: {},
+  }));
+  const code = ts.transpileModule(readFileSync('src/lib/bank-sync.ts', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', code)((id) => {
+    if (id === '@/lib/supabase-server') return { supabaseServer: {
+      from: (table) => new Query(table),
+      rpc: async (name, args) => {
+        assert.equal(name, 'bank_inter_import_batch');
+        batches.push(args);
+        return { data: batches.length === 1
+          ? { imported: 199, pending_review: 1, auto_classified: 1, existing: 0, rule_counts: { rule: 1 } }
+          : { imported: 1, pending_review: 0, auto_classified: 0, existing: 0, rule_counts: {} }, error: null };
+      },
+    } };
+    if (id === '@/lib/glass-tenant-billing') return { todayBrt: () => '2026-10-30' };
+    if (id === '@/lib/inter-statement') return {
+      fetchInterTransactions: async (...args) => {
+        assert.deepEqual(args, ['2026-10-01', '2026-10-30', '123-4']);
+        return { transactions, balance: 42 };
+      },
+    };
+    throw new Error(`Unexpected dependency ${id}`);
+  }, mod, mod.exports);
+  const result = await mod.exports.syncBankAccounts();
+  assert.equal(result[0].error, undefined);
+  assert.equal(result[0].imported, 201);
+  assert.equal(result[0].pendingReview, 1);
+  assert.equal(result[0].autoClassified, 1);
+  assert.deepEqual(batches.map((batch) => batch.p_transactions.length), [200, 1]);
+  assert.equal(batches[0].p_transactions[0].rule.id, 'rule');
+  assert.equal(rule.hits, 1);
+  assert.ok(updates.some((value) => value.sync_lock_until === null && value.provider_balance === 42));
 });
 
 test('preserves Asaas synchronization while the Inter safety gate is active', async () => {
@@ -330,4 +411,78 @@ test('preserves Asaas synchronization while the Inter safety gate is active', as
   assert.deepEqual(asaasCalls, [{ startDate: '2026-10-01', finishDate: '2026-10-30', offset: 0, limit: 100 }]);
   assert.ok(calls.some(({ table, value }) =>
     table === 'system_bank_accounts' && value?.sync_lock_until === null && value?.provider_balance === 0));
+});
+
+test('preserves Asaas payment matching and creation of an unmatched expense', async () => {
+  const account = {
+    id: 'asaas-account', name: 'Asaas', provider: 'asaas', account_number: null,
+    sync_enabled: true, sync_start_date: '2026-10-01',
+  };
+  const writes = [];
+  let insertedBankTransactions = 0;
+  class Query {
+    constructor(table) { this.table = table; this.action = 'select'; }
+    select(value) { this.selection = value; return this; }
+    eq() { return this; }
+    not() { return this; }
+    or() { return this; }
+    order() { return this; }
+    limit() { return this; }
+    gte() { return this; }
+    update(value) { this.action = 'update'; this.value = value; return this; }
+    insert(value) { this.action = 'insert'; this.value = value; return this; }
+    upsert(value) { this.action = 'upsert'; this.value = value; return this; }
+    single() { this.singleResult = true; return this; }
+    then(resolve, reject) {
+      let data = [];
+      if (this.action !== 'select') writes.push({ table: this.table, action: this.action, value: this.value });
+      if (this.table === 'system_bank_accounts' && this.action === 'select') data = [account];
+      if (this.table === 'system_bank_accounts' && this.action === 'update' && this.value.sync_lock_until) data = [{ id: 'asaas-account' }];
+      if (this.table === 'system_bank_transactions' && this.action === 'upsert') {
+        insertedBankTransactions += 1;
+        data = [{ id: `tx-${insertedBankTransactions}` }];
+      }
+      if (this.table === 'system_finance_records' && this.action === 'select') {
+        data = [{ id: 'existing-payment', status: 'paid', bank_account_id: null, metadata: { origin: 'webhook' } }];
+      }
+      if (this.table === 'system_finance_records' && this.action === 'insert' && this.singleResult) data = { id: 'new-expense' };
+      return Promise.resolve({ data, error: null }).then(resolve, reject);
+    }
+  }
+  const code = ts.transpileModule(readFileSync('src/lib/bank-sync.ts', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', code)((id) => {
+    if (id === '@/lib/supabase-server') return { supabaseServer: { from: (table) => new Query(table) } };
+    if (id === '@/lib/glass-tenant-billing') return {
+      todayBrt: () => '2026-10-30',
+      getAsaasClient: async () => ({
+        listFinancialTransactions: async () => ({
+          data: [
+            { id: 'payment-tx', date: '2026-10-29', value: 100, type: 'PAYMENT', description: 'Recebimento', paymentId: 'pay_123' },
+            { id: 'expense-tx', date: '2026-10-30', value: -7, type: 'FEE', description: 'Tarifa' },
+          ],
+          hasMore: false,
+        }),
+        getBalance: async () => 93,
+      }),
+    };
+    if (id === '@/lib/inter-statement') return { fetchInterTransactions: () => { throw new Error('Inter must not be called'); } };
+    throw new Error(`Unexpected dependency ${id}`);
+  }, mod, mod.exports);
+  const [result] = await mod.exports.syncBankAccounts();
+  assert.equal(result.error, undefined);
+  assert.equal(result.imported, 2);
+  assert.equal(result.reconciled, 1);
+  const linked = writes.find((write) => write.table === 'system_finance_records' && write.action === 'update');
+  assert.equal(linked.value.bank_account_id, 'asaas-account');
+  assert.equal(linked.value.metadata.bank_tx_id, 'tx-1');
+  const created = writes.find((write) => write.table === 'system_finance_records' && write.action === 'insert');
+  assert.equal(created.value.type, 'expense');
+  assert.equal(created.value.value, 7);
+  assert.equal(created.value.status, 'paid');
+  assert.equal(created.value.category, 'A classificar');
+  assert.equal(created.value.metadata.provider, 'asaas');
+  assert.ok(writes.some((write) => write.table === 'system_bank_transactions' && write.value?.status === 'conciliado'));
 });

@@ -4,17 +4,43 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Extrato do Inter
 
-A importacao do Inter permanece bloqueada ate implementar e validar a conciliacao com
-lancamentos existentes e testar a API com a conta real. Nao habilite a
-sincronizacao apenas porque o token OAuth foi emitido.
+A importacao do Inter permanece bloqueada enquanto o acesso e a conciliacao nao
+forem validados com a conta real. Ela exige tanto `sync_enabled` na conta como
+`BANK_INTER_IMPORT_ENABLED=true` no servidor. Nao habilite nenhum dos dois apenas
+porque o token OAuth foi emitido; o extrato e o saldo ainda precisam responder.
 
 O cliente usa mTLS e o escopo `extrato.read`. O numero da conta informado no
 cadastro bancario inclui o digito para o cabecalho `x-conta-corrente`. A consulta
 divide periodos superiores a 90 dias e verifica a paginacao; identificadores
 ausentes ou repetidos, valores invalidos e respostas incompletas interrompem
-a importacao em vez de gerar lancamentos presumidos.
+a importacao em vez de gerar lancamentos presumidos. O identificador precisa ser
+estavel na resposta real, e mudancas de data ou valor de um ID ja importado
+interrompem a sincronizacao para conferencia.
 
-Testes isolados: `node --test scripts/tests/inter-statement.test.mjs`.
+O banco processa lotes atomicos e idempotentes. Se houver lancamentos pagos ou
+pendentes nao vinculados de mesmo tipo e valor na conta (ou sem conta definida),
+independentemente da data, a movimentacao fica em revisao sem alterar saldo.
+Sem correspondencias, o lancamento pago e criado e fica para classificacao ou
+recebe uma regra existente. Na revisao, o usuario pode vincular ao lancamento
+ou confirmar a criacao de outro. Lancamentos de cartao e metadados com vinculo
+inconsistente exigem ajuste antes do vinculo. Dados incompletos ou invalidos
+de tipo, situacao ou valor tambem sao mantidos para conferencia. Ao vincular um
+pendente, a baixa continua manual; ao vincular um pago sem conta, a atribuicao
+a conta do Inter pode alterar os saldos. Alterar valor, conta, tipo ou excluir
+um lancamento vinculado devolve a movimentacao a revisao. A baixa parcial de um
+vinculo Inter e gravada junto com o saldo restante em uma unica transacao. A
+comparacao conservadora reduz o risco de duplicidade, mas nao comprova que duas
+movimentacoes sejam iguais. Lancamentos manuais criados depois ou ao mesmo tempo
+da importacao ainda podem exigir conferencia.
+
+Testes do cliente e sincronizacao: `node --test scripts/tests/inter-statement.test.mjs`.
+Para testar tambem a migracao em PostgreSQL isolado, instale
+`@electric-sql/pglite` fora do projeto e informe o caminho do modulo:
+`PGLITE_MODULE=file:///caminho/node_modules/@electric-sql/pglite/dist/index.js node --test scripts/tests/inter-reconciliation.integration.mjs`.
+Os testes de banco usam somente dados ficticios em memoria; nao apontam para producao.
+Para testar concorrencia real, instale `embedded-postgres` 17 fora do projeto e use
+`EMBEDDED_POSTGRES_MODULE=file:///caminho/node_modules/embedded-postgres/dist/index.js node --test scripts/tests/inter-reconciliation-concurrency.integration.mjs`.
+Esse teste cria e encerra uma instancia local temporaria com dados ficticios.
 
 ## NFS-e da holding para os tenants
 

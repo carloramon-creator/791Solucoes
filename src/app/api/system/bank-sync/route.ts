@@ -19,8 +19,13 @@ async function guard(req: Request) {
 export async function GET(req: Request) {
   const g = await guard(req);
   if (g.error) return g.error;
+  const rawOffset = new URL(req.url).searchParams.get('reviewOffset') || '0';
+  const reviewOffset = Number(rawOffset);
+  if (!/^(0|[1-9]\d*)$/.test(rawOffset) || !Number.isSafeInteger(reviewOffset) || reviewOffset > 2147483548) {
+    return NextResponse.json({ success: false, error: 'Página de revisão inválida.' }, { status: 400 });
+  }
 
-  const [accountsRes, pendingRes, settleRes, rulesRes] = await Promise.all([
+  const [accountsRes, pendingRes, settleRes, reviewsRes, rulesRes] = await Promise.all([
     supabaseServer.from('system_bank_accounts')
       .select('id, name, bank_name, provider, sync_enabled, sync_start_date, last_sync_at, last_sync_error, provider_balance, provider_balance_at')
       .order('name'),
@@ -34,12 +39,22 @@ export async function GET(req: Request) {
       .eq('status', 'pendente_baixa')
       .order('tx_date', { ascending: false })
       .limit(100),
+    supabaseServer.from('system_bank_transactions')
+      .select('id, bank_account_id, tx_date, amount, description, counterparty, review_reason', { count: 'exact' })
+      .eq('provider', 'inter')
+      .eq('status', 'revisao_duplicidade')
+      .order('tx_date', { ascending: false })
+      .order('id')
+      .range(reviewOffset, reviewOffset + 99),
     supabaseServer.from('system_bank_classification_rules')
       .select('id, pattern, record_type, category_name, bank_account_id, hits, created_at')
       .order('created_at', { ascending: false }),
   ]);
-  const error = accountsRes.error || pendingRes.error || settleRes.error || rulesRes.error;
+  const error = accountsRes.error || pendingRes.error || settleRes.error || reviewsRes.error || rulesRes.error;
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  if (reviewsRes.count === null) {
+    return NextResponse.json({ success: false, error: 'Não foi possível contar as movimentações em revisão.' }, { status: 500 });
+  }
 
   const pending = (pendingRes.data || []).map((record) => {
     const metadata = (record.metadata && typeof record.metadata === 'object') ? record.metadata as Record<string, unknown> : {};
@@ -62,6 +77,8 @@ export async function GET(req: Request) {
     accounts: accountsRes.data || [],
     pending,
     pendingSettlement: settleRes.data || [],
+    pendingReviews: reviewsRes.data || [],
+    pendingReviewCount: reviewsRes.count,
     rules: rulesRes.data || [],
   });
 }

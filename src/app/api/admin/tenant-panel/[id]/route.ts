@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { userCanAccessResource } from '@/lib/holding-permissions';
 import { getGlassClient } from '@/lib/glass-client';
-import { comboOfRoot, computeGlassSubscription, rootOfSlug } from '@/lib/glass-pricing';
+import { GLASS_COMBOS, comboOfRoot, comboPrice, computeGlassSubscription, rootOfSlug } from '@/lib/glass-pricing';
 import { loadTenantContext, loadTenantInvoices } from '@/lib/glass-tenant-billing';
 
 /** Painel de controle do tenant: módulos, bloqueios por excedente e faturas. */
@@ -28,31 +28,38 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const pricing = computeGlassSubscription({ tenant, plan, modules, sponsored: Boolean(sponsorName) });
 
     const active = new Set((tenant.modulos_ativos || []).map((slug) => rootOfSlug(slug, modules)));
-    const blockedSlugs = new Set((blocksResult.data || []).filter((b) => b.whatsapp_bloqueado_em).flatMap((b) => b.modulos_removidos || []));
+    const blockedRoots = new Set((blocksResult.data || [])
+      .filter((b) => b.whatsapp_bloqueado_em)
+      .flatMap((b) => (b.modulos_removidos || []).map((slug: string) => rootOfSlug(slug, modules))));
+    const rootName = (slug: string) => modules.find((m) => m.slug === slug && !m.parent_slug)?.nome || slug;
 
-    const rootModules = modules
-      .filter((m) => !m.parent_slug && m.slug)
-      .map((m) => {
-        const slug = String(m.slug);
-        const combo = comboOfRoot(slug);
-        return {
-          slug,
-          nome: m.nome,
-          active: active.has(slug),
-          comboId: combo?.id || null,
-          comboNome: combo?.nome || null,
-          base: !combo,
-          locked: slug === 'configuracoes',
-          blockedByOverage: blockedSlugs.has(slug),
-          menus: modules.filter((child) => child.parent_slug === slug).length,
-        };
-      });
+    // Plano base (sempre ligado) + um item por combo cobrado.
+    const rows = [
+      {
+        id: 'base',
+        nome: 'Plano base (Standard)',
+        price: pricing.base,
+        active: true,
+        locked: true,
+        blockedByOverage: false,
+        modulos: modules.filter((m) => !m.parent_slug && m.slug && !comboOfRoot(String(m.slug))).map((m) => m.nome),
+      },
+      ...GLASS_COMBOS.map((combo) => ({
+        id: combo.id,
+        nome: combo.nome,
+        price: comboPrice(plan, combo.id),
+        active: combo.roots.some((root) => active.has(root)),
+        locked: false,
+        blockedByOverage: combo.roots.some((root) => blockedRoots.has(root)),
+        modulos: combo.roots.map(rootName),
+      })),
+    ];
 
     return NextResponse.json({
       tenant,
       sponsorName,
       pricing,
-      modules: rootModules,
+      modules: rows,
       blocks: blocksResult.data || [],
       invoices,
       warnings,

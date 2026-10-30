@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { userCanAccessResource } from '@/lib/holding-permissions';
 import { getGlassClient } from '@/lib/glass-client';
-import { computeGlassSubscription, rootOfSlug } from '@/lib/glass-pricing';
+import { GLASS_COMBOS, computeGlassSubscription, rootOfSlug } from '@/lib/glass-pricing';
 import {
   findTenantAsaasCustomers,
   getAsaasClient,
@@ -10,15 +10,13 @@ import {
   loadTenantContext,
 } from '@/lib/glass-tenant-billing';
 
-const LOCKED_ROOTS = new Set(['configuracoes']);
-
 function asaasErrorMessage(err: unknown) {
   const data = (err as { response?: { data?: { errors?: Array<{ description?: string }> } } })?.response?.data;
   return data?.errors?.[0]?.description || (err instanceof Error ? err.message : 'Falha na comunicação com o Asaas.');
 }
 
 /**
- * Liga/desliga um módulo principal do tenant (com todos os seus menus) e recalcula
+ * Liga/desliga um combo do tenant (todos os módulos e menus dele) e recalcula
  * o valor das próximas mensalidades na assinatura ativa do Asaas.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,26 +33,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch {
     return NextResponse.json({ success: false, error: 'Requisição inválida.' }, { status: 400 });
   }
-  const root = String(body?.module || '').trim();
+  const comboId = String(body?.combo || '').trim();
   const enabled = body?.enabled === true;
-  if (!root || typeof body?.enabled !== 'boolean') {
-    return NextResponse.json({ success: false, error: 'Módulo não informado.' }, { status: 400 });
+  if (!comboId || typeof body?.enabled !== 'boolean') {
+    return NextResponse.json({ success: false, error: 'Combo não informado.' }, { status: 400 });
   }
-  if (LOCKED_ROOTS.has(root)) {
-    return NextResponse.json({ success: false, error: 'Este módulo é essencial e não pode ser desligado.' }, { status: 400 });
+  if (comboId === 'base') {
+    return NextResponse.json({ success: false, error: 'O plano base não pode ser desligado.' }, { status: 400 });
   }
+  const combo = GLASS_COMBOS.find((c) => c.id === comboId);
+  if (!combo) return NextResponse.json({ success: false, error: 'Combo inválido.' }, { status: 400 });
 
   const glass = await getGlassClient();
   const { tenant, modules, plan, sponsorName } = await loadTenantContext(glass, id);
   if (!tenant) return NextResponse.json({ success: false, error: 'Vidraçaria não encontrada.' }, { status: 404 });
-  const rootModule = modules.find((m) => m.slug === root && !m.parent_slug);
-  if (!rootModule) return NextResponse.json({ success: false, error: 'Módulo inválido.' }, { status: 400 });
-
+  const roots = new Set(combo.roots);
   const current = tenant.modulos_ativos || [];
-  const family = [root, ...modules.filter((m) => m.parent_slug === root && m.slug).map((m) => String(m.slug))];
+  const family = modules
+    .filter((m) => m.slug && roots.has(String(m.parent_slug || m.slug)))
+    .map((m) => String(m.slug));
+  if (family.length === 0) return NextResponse.json({ success: false, error: 'Combo sem módulos cadastrados.' }, { status: 400 });
   const nextModules = enabled
     ? [...new Set([...current, ...family])]
-    : current.filter((slug) => rootOfSlug(slug, modules) !== root);
+    : current.filter((slug) => !roots.has(rootOfSlug(slug, modules)));
   const removed = current.filter((slug) => !nextModules.includes(slug));
 
   if (enabled ? family.every((slug) => current.includes(slug)) : removed.length === 0) {
@@ -118,7 +119,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       .eq('status', 'pending');
     for (const block of blocks || []) {
       const list: string[] = block.modulos_removidos || [];
-      const kept = list.filter((slug) => rootOfSlug(slug, modules) !== root);
+      const kept = list.filter((slug) => !roots.has(rootOfSlug(slug, modules)));
       if (kept.length !== list.length) {
         await glass.from('billing_bloqueios_excedente')
           .update({ modulos_removidos: kept, updated_at: new Date().toISOString() })
@@ -127,7 +128,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  console.log(`[TENANT PANEL] ${auth.user.email} ${enabled ? 'ligou' : 'desligou'} ${root} em ${id} (valor ${before} -> ${after})`);
+  console.log(`[TENANT PANEL] ${auth.user.email} ${enabled ? 'ligou' : 'desligou'} combo ${comboId} em ${id} (valor ${before} -> ${after})`);
   return NextResponse.json({
     success: true,
     valueBefore: before,

@@ -16,22 +16,19 @@ import {
   Lock,
   Receipt,
   RefreshCw,
-  Settings,
   X,
 } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import OverageSettleModal from '@/components/OverageSettleModal';
 
 type PanelModule = {
-  slug: string;
+  id: string;
   nome: string;
+  price: number;
   active: boolean;
-  comboId: string | null;
-  comboNome: string | null;
-  base: boolean;
   locked: boolean;
   blockedByOverage: boolean;
-  menus: number;
+  modulos: string[];
 };
 
 type PanelInvoice = {
@@ -154,13 +151,13 @@ export default function TenantPanelPage() {
 
   async function toggleModule(mod: PanelModule) {
     setConfirmModule(null);
-    setBusyModule(mod.slug);
+    setBusyModule(mod.id);
     setNotice(null);
     try {
       const res = await holdingAuthFetch(`/api/admin/tenant-panel/${id}/modules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ module: mod.slug, enabled: !mod.active }),
+        body: JSON.stringify({ combo: mod.id, enabled: !mod.active }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json?.error || 'Falha ao alterar o módulo.');
@@ -266,9 +263,6 @@ export default function TenantPanelPage() {
           <button onClick={load} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-black uppercase text-slate-600 hover:bg-slate-50">
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
-          <button onClick={() => router.push(`/assinaturas/${id}/configurar`)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#3b597b] px-3 py-2 text-[10px] font-black uppercase text-white hover:bg-[#2f4863]">
-            <Settings size={13} /> Configurar assinatura
-          </button>
         </div>
       </div>
 
@@ -313,25 +307,20 @@ export default function TenantPanelPage() {
           <thead className="bg-slate-50">
             <tr>
               <th className={th}>Módulo</th>
-              <th className={th}>Cobrança</th>
-              <th className={th}>Menus</th>
+              <th className={th}>Inclui</th>
+              <th className={`${th} text-right`}>Valor/mês</th>
               <th className={th}>Situação</th>
               <th className={`${th} text-center`}>Ligado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {modules.map((mod) => {
-              const combo = pricing.combos.find((c) => c.id === mod.comboId);
               const disabled = !permissions.modules || mod.locked || busyModule !== null;
               return (
-                <tr key={mod.slug} className="hover:bg-slate-50/50">
+                <tr key={mod.id} className="hover:bg-slate-50/50">
                   <td className={`${td} font-semibold`}>{mod.nome}</td>
-                  <td className={td}>
-                    {mod.base ? <span className="text-slate-400">Plano base</span> : (
-                      <span>{mod.comboNome} <span className="text-slate-400">· {currency(combo?.price || 0)}/mês</span></span>
-                    )}
-                  </td>
-                  <td className={`${td} text-slate-400`}>{mod.menus || '—'}</td>
+                  <td className={`${td} max-w-[420px] text-slate-500`}>{mod.modulos.join(', ') || '—'}</td>
+                  <td className={`${td} text-right font-semibold ${mod.active ? 'text-slate-700' : 'text-slate-300 line-through'}`}>{currency(mod.price)}</td>
                   <td className={td}>
                     {mod.blockedByOverage ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700"><AlertTriangle size={11} /> Bloqueado (excedente)</span>
@@ -343,8 +332,8 @@ export default function TenantPanelPage() {
                   </td>
                   <td className={`${td} text-center`}>
                     {mod.locked ? (
-                      <span title="Módulo essencial" className="inline-flex text-slate-300"><Lock size={14} /></span>
-                    ) : busyModule === mod.slug ? (
+                      <span title="O plano base não pode ser desligado" className="inline-flex text-slate-300"><Lock size={14} /></span>
+                    ) : busyModule === mod.id ? (
                       <Loader2 size={16} className="mx-auto animate-spin text-[#3b597b]" />
                     ) : (
                       <button
@@ -366,7 +355,7 @@ export default function TenantPanelPage() {
           </tbody>
         </table>
         <p className="border-t border-slate-100 px-5 py-2 text-[10px] text-slate-400">
-          Um combo deixa de ser cobrado quando todos os módulos dele estão desligados.
+          Desligar um combo tira todos os módulos e menus dele do cliente e retira o valor da assinatura.
           {pricing.extras > 0 && ` Usuários/dispositivos extras: ${currency(pricing.extras)}.`}
           {pricing.discountPercent > 0 && ` Desconto do ciclo: ${pricing.discountPercent}%.`}
         </p>
@@ -454,7 +443,7 @@ export default function TenantPanelPage() {
 
       {groups.cancelled.length > 0 && (
         <Section
-          title={`Canceladas (${groups.cancelled.length})`}
+          title={`Canceladas / abonadas (${groups.cancelled.length})`}
           icon={<Ban size={16} />}
           right={<button onClick={() => setShowCancelled((v) => !v)} className="text-[10px] font-black uppercase text-[#3b597b]">{showCancelled ? 'Ocultar' : 'Mostrar'}</button>}
         >
@@ -466,6 +455,7 @@ export default function TenantPanelPage() {
                   <th className={th}>Referência</th>
                   <th className={th}>Tipo</th>
                   <th className={th}>Descrição</th>
+                  <th className={th}>Situação</th>
                   <th className={`${th} text-right`}>Valor</th>
                 </tr>
               </thead>
@@ -476,6 +466,7 @@ export default function TenantPanelPage() {
                     <td className={`${td} font-mono text-[11px]`}>{inv.reference}</td>
                     <td className={td}>{inv.type}</td>
                     <td className={`${td} max-w-[360px] truncate`} title={inv.description}>{inv.description}</td>
+                    <td className={td}>{inv.type === 'Excedente' ? 'Abonada' : 'Cancelada'}</td>
                     <td className={`${td} text-right line-through`}>{currency(inv.value)}</td>
                   </tr>
                 ))}
@@ -492,9 +483,9 @@ export default function TenantPanelPage() {
             <h3 className="text-sm font-black uppercase text-slate-800">{confirmModule.active ? 'Desligar' : 'Ligar'} {confirmModule.nome}?</h3>
             <p className="mt-2 text-xs leading-relaxed text-slate-600">
               {confirmModule.active
-                ? `O cliente deixa de ver ${confirmModule.nome}${confirmModule.menus ? ` e os ${confirmModule.menus} menus dele` : ''}.`
-                : `O cliente passa a ter ${confirmModule.nome}${confirmModule.menus ? ` com os ${confirmModule.menus} menus dele` : ''}.`}
-              {!confirmModule.base && ' O valor da assinatura é recalculado e as próximas mensalidades no Asaas são ajustadas.'}
+                ? `O cliente deixa de ver ${confirmModule.modulos.join(', ')} e todos os menus deles.`
+                : `O cliente passa a ter ${confirmModule.modulos.join(', ')} com todos os menus.`}
+              {` A assinatura ${confirmModule.active ? 'diminui' : 'aumenta'} ${currency(confirmModule.price)}/mês e as próximas mensalidades no Asaas são ajustadas.`}
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setConfirmModule(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-[10px] font-black uppercase text-slate-600">Voltar</button>

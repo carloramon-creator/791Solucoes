@@ -8,7 +8,6 @@ import {
   AlertCircle, 
   RefreshCw,
   Building2,
-  Settings,
   MessageCircle,
   Smartphone,
   TrendingUp,
@@ -1183,13 +1182,6 @@ export default function AssinaturasPage() {
                         >
                           <FileCheck size={18} />
                         </button>
-                         <button 
-                           onClick={() => router.push(`/assinaturas/${tenant.id}/configurar`)}
-                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-slate-100 hover:text-[#3b597b]"
-                           title="Configurar Plano e Módulos"
-                         >
-                           <Settings size={18} />
-                         </button>
                          <button
                            onClick={() => {
                              setTenantReportTenant(tenant);

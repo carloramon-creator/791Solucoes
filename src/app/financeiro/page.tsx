@@ -1043,6 +1043,11 @@ export default function FinancePage() {
             categories={categories}
             systemBalances={Object.fromEntries(sourceOptions.filter((source) => source.kind === "account" && source.accountId).map((source) => [source.accountId as string, source.amount]))}
             onChanged={() => { void loadData(); }}
+            onCategoriesCreated={(created) => {
+              const ids = new Set(created.map((category) => category.id));
+              setCategories((previous) => [...previous.filter((category) => !ids.has(category.id)), ...created]
+                .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")));
+            }}
           />
           <button
             onClick={handlePrintPdf}

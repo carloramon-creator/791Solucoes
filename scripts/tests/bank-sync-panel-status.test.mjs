@@ -16,28 +16,42 @@ const code = ts.transpileModule(source, {
   },
 }).outputText;
 
-function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = []) {
-  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}];
+function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = [], categories = []) {
+  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}, null];
   const effects = [];
+  const createdCalls = [];
+  const refs = [];
+  const CategoryDialogStub = () => null;
+  let refIndex = 0, changed = 0;
   let index = 0;
   const hooks = {
     useState: () => {
       const position = index++;
-      return [states[position], (value) => { states[position] = value; }];
+      return [states[position], (value) => { states[position] = typeof value === 'function' ? value(states[position]) : value; }];
     },
     useCallback: (callback) => callback,
     useEffect: (effect) => { effects.push(effect); },
-    useRef: (value) => ({ current: value }),
+    useRef: (value) => { const position = refIndex++; return refs[position] ||= { current: value }; },
   };
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', code)((id) => {
     if (id === 'react') return hooks;
     if (id === '@/lib/holding-auth-fetch') return { holdingAuthFetch: async () => { throw new Error('Unexpected request'); } };
+    if (id === '@/components/FinanceCategoryDialog') return { __esModule: true, default: CategoryDialogStub };
     return require(id);
   }, mod, mod.exports);
-  const html = renderToStaticMarkup(mod.exports.default({ categories: [], systemBalances: {}, onChanged: () => {} }));
-  assert.equal(index, states.length);
-  capture({ states, effects });
+  const props = {
+    categories, systemBalances: {}, onChanged: () => { changed++; },
+    onCategoriesCreated: (created) => { createdCalls.push(created); props.categories = [...props.categories, ...created]; },
+  };
+  const render = () => {
+    index = 0; refIndex = 0;
+    const element = mod.exports.default(props);
+    assert.equal(index, states.length);
+    return element;
+  };
+  const html = renderToStaticMarkup(render());
+  capture({ states, effects, render, createdCalls, CategoryDialogStub, get changed() { return changed; } });
   return html;
 }
 
@@ -92,4 +106,73 @@ test('enlarges the statement text and keeps classification controls scrollable',
   assert.match(html, /<table class="w-full min-w-\[920px\] text-\[calc\(0\.75rem\+2pt\)\]">/);
   assert.match(html, /<select[^>]*>/);
   assert.match(html, /<button[^>]*>Salvar<\/button>/);
+});
+
+test('shows selectable classes once with indented children, without repeated parent labels', () => {
+  const pending = [{
+    id: 'item', type: 'expense', value: 10, description: 'Movimento de teste',
+    date: '2026-10-30', suggested_pattern: 'Teste',
+  }];
+  const categories = [
+    { id: 'cards', name: 'Cartões de Crédito', type: 'expense', parent_id: null },
+    { id: 'cora', name: 'Cora', type: 'expense', parent_id: 'cards' },
+    { id: 'inter', name: 'Inter', type: 'expense', parent_id: 'cards' },
+    { id: 'income', name: 'Receitas', type: 'revenue', parent_id: null },
+  ];
+  const html = renderPanel(true, [inter], undefined, pending, categories);
+  assert.match(html, /<option value="__new_category__">\+ Nova classe \/ subclasse…<\/option>/);
+  assert.match(html, /<option value="cards">Cartões de Crédito<\/option>/);
+  assert.match(html, /<option value="cora"[^>]*>  ├─ Cora<\/option>/);
+  assert.match(html, /<option value="inter"[^>]*>  └─ Inter<\/option>/);
+  assert.equal((html.match(/>Cartões de Crédito<\/option>/g) || []).length, 1);
+  assert.doesNotMatch(html, /<optgroup|Cartões de Crédito ›|value="income"/);
+});
+
+function nodes(node, predicate) {
+  if (!node || typeof node !== 'object') return [];
+  if (Array.isArray(node)) return node.flatMap((child) => nodes(child, predicate));
+  return [...(predicate(node) ? [node] : []), ...nodes(node.props?.children, predicate)];
+}
+
+test('opens one popup, keeps drafts on cancel, and selects new categories without classifying', () => {
+  const pending = ['first', 'second'].map((id) => ({
+    id, type: 'expense', value: 10, description: id, date: '2026-10-30', suggested_pattern: id,
+  }));
+  const root = { id: 'root', name: 'Classe', type: 'expense', parent_id: null };
+  const child = { id: 'child', name: 'Filha', type: 'expense', parent_id: root.id };
+  let ui;
+  renderPanel(true, [inter], (value) => { ui = value; }, pending, [root, child]);
+  const originalDrafts = {
+    first: { categoryId: child.id, createRule: false, pattern: 'Meu padrão' },
+    second: { categoryId: root.id, createRule: true, pattern: 'Não alterar' },
+  };
+  ui.states[13] = structuredClone(originalDrafts);
+  let select = nodes(ui.render(), (node) => node.type === 'select')[0];
+  select.props.onChange({ target: { value: '__new_category__' } });
+  let popups = nodes(ui.render(), (node) => node.type === ui.CategoryDialogStub);
+  assert.equal(popups.length, 1);
+  assert.equal(popups[0].props.type, 'expense');
+  assert.equal(popups[0].props.initialParentId, root.id);
+  assert.deepEqual(ui.states[13], originalDrafts);
+  assert.equal(ui.states[0], true);
+  assert.equal(nodes(ui.render(), (node) => node.props?.inert === true).length, 1);
+  popups[0].props.onClose();
+  assert.equal(ui.states[14], null);
+  assert.deepEqual(ui.states[13], originalDrafts);
+  select = nodes(ui.render(), (node) => node.type === 'select')[0];
+  select.props.onChange({ target: { value: '__new_category__' } });
+  popups = nodes(ui.render(), (node) => node.type === ui.CategoryDialogStub);
+  const createdRoot = { id: 'new-root', name: 'Nova classe', type: 'expense', parent_id: null };
+  const createdChild = { id: 'new-child', name: 'Nova filha', type: 'expense', parent_id: createdRoot.id };
+  popups[0].props.onCreated([createdRoot, createdChild], createdChild.id);
+  assert.equal(ui.states[14], null);
+  assert.equal(ui.states[13].first.categoryId, createdChild.id);
+  assert.equal(ui.states[13].first.createRule, false);
+  assert.equal(ui.states[13].first.pattern, 'Meu padrão');
+  assert.deepEqual(ui.states[13].second, originalDrafts.second);
+  assert.equal(ui.changed, 0);
+  assert.deepEqual(ui.createdCalls, [[createdRoot, createdChild]]);
+  const html = renderToStaticMarkup(ui.render());
+  assert.match(html, /<option value="new-child"[^>]*selected=""[^>]*>  └─ Nova filha<\/option>/);
+  assert.equal(ui.states[6].length, 2);
 });

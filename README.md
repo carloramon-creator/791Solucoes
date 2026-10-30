@@ -10,6 +10,14 @@ forem validados com a conta real. Ela exige tanto `sync_enabled` na conta como
 porque o token OAuth foi emitido; o extrato e o saldo ainda precisam responder.
 O painel distingue o bloqueio no servidor da habilitacao da conta.
 
+No extrato, a opcao "+ Nova classe / subclasse" abre um popup sem perder os
+rascunhos. A lista mostra cada classe uma vez, com suas subclasses recuadas
+como filhas, sem repetir o nome da classe em cada opcao.
+E possivel criar uma classe, uma subclasse de classe existente ou
+as duas juntas (em uma unica insercao atomica). O tipo acompanha o lancamento.
+O cadastro fica selecionado na linha; a classificacao so ocorre ao clicar em
+Salvar. Essa criacao nao habilita uso em webhook.
+
 O cliente usa mTLS e o escopo `extrato.read`. Informe a conta completa, incluindo
 o digito, tanto nas configuracoes financeiras quanto no cadastro bancario usado
 para o cabecalho `x-conta-corrente`. Registrar o webhook usa os valores atuais

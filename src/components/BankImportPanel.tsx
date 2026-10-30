@@ -3,15 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Landmark, Loader2, RefreshCw, Trash2, X } from "lucide-react";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
+import FinanceCategoryDialog, { type FinanceCategory } from "@/components/FinanceCategoryDialog";
 
 type FinanceType = "revenue" | "expense";
-
-interface Category {
-  id: string;
-  name: string;
-  type: FinanceType;
-  parent_id?: string | null;
-}
 
 interface SyncAccount {
   id: string;
@@ -110,10 +104,12 @@ export default function BankImportPanel({
   categories,
   systemBalances,
   onChanged,
+  onCategoriesCreated,
 }: {
-  categories: Category[];
+  categories: FinanceCategory[];
   systemBalances: Record<string, number>;
   onChanged: () => void;
+  onCategoriesCreated: (created: FinanceCategory[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -129,6 +125,7 @@ export default function BankImportPanel({
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [rules, setRules] = useState<Rule[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [categoryTarget, setCategoryTarget] = useState<{ item: PendingItem; parentId: string } | null>(null);
   const loadSequence = useRef(0);
 
   const load = useCallback(() => {
@@ -289,7 +286,7 @@ export default function BankImportPanel({
 
   const optionsFor = (type: FinanceType) => {
     const roots = categories.filter((c) => !c.parent_id && c.type === type);
-    return roots.map((root) => ({ root, children: categories.filter((c) => c.parent_id === root.id) }));
+    return roots.map((root) => ({ root, children: categories.filter((c) => c.parent_id === root.id && c.type === type) }));
   };
 
   const count = pending.length + settlements.length + reviewCount;
@@ -307,7 +304,7 @@ export default function BankImportPanel({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
+        <div inert={categoryTarget !== null} className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl my-8 text-[calc(1rem+2pt)] leading-normal" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-b border-slate-100">
               <div>
@@ -527,16 +524,28 @@ export default function BankImportPanel({
                             <td className="pl-3">
                               <select
                                 value={draft.categoryId}
-                                onChange={(e) => setDraft(item.id, { categoryId: e.target.value, error: undefined }, item)}
+                                disabled={draft.saving}
+                                aria-label={`Classe / subclasse de ${item.description}`}
+                                onChange={(e) => {
+                                  if (e.target.value === "__new_category__") {
+                                    const selected = categories.find((category) => category.id === draft.categoryId && category.type === item.type);
+                                    setCategoryTarget({ item, parentId: selected?.parent_id || selected?.id || "" });
+                                  } else {
+                                    setDraft(item.id, { categoryId: e.target.value, error: undefined }, item);
+                                  }
+                                }}
                                 className="w-full border border-slate-200 rounded-lg px-2 py-1 bg-white"
                               >
                                 <option value="">Escolher…</option>
-                                {optionsFor(item.type).map(({ root, children }) => (
-                                  <optgroup key={root.id} label={root.name}>
-                                    <option value={root.id}>{root.name}</option>
-                                    {children.map((child) => <option key={child.id} value={child.id}>{root.name} › {child.name}</option>)}
-                                  </optgroup>
-                                ))}
+                                <option value="__new_category__">+ Nova classe / subclasse…</option>
+                                {optionsFor(item.type).flatMap(({ root, children }) => [
+                                  <option key={root.id} value={root.id}>{root.name}</option>,
+                                  ...children.map((child, index) => (
+                                    <option key={child.id} value={child.id} aria-label={`${root.name}: ${child.name}`}>
+                                      {`\u00a0\u00a0${index === children.length - 1 ? "└─" : "├─"} ${child.name}`}
+                                    </option>
+                                  )),
+                                ])}
                               </select>
                               {draft.error && <span className="block text-red-600 mt-1">{draft.error}</span>}
                             </td>
@@ -590,6 +599,19 @@ export default function BankImportPanel({
             </div>
           </div>
         </div>
+      )}
+      {categoryTarget && (
+        <FinanceCategoryDialog
+          type={categoryTarget.item.type}
+          categories={categories}
+          initialParentId={categoryTarget.parentId}
+          onClose={() => setCategoryTarget(null)}
+          onCreated={(created, selectedId) => {
+            onCategoriesCreated(created);
+            setDraft(categoryTarget.item.id, { categoryId: selectedId, error: undefined }, categoryTarget.item);
+            setCategoryTarget(null);
+          }}
+        />
       )}
     </>
   );

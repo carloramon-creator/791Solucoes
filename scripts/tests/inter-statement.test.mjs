@@ -9,7 +9,7 @@ const config = {
   interClientSecret: 'secret',
   interCertCrt: 'certificate',
   interCertKey: 'key',
-  interAccountNumber: '12345678',
+  interAccountNumber: '123456789',
 };
 
 function loadInter(respond = () => { throw new Error('Unexpected request'); }) {
@@ -124,13 +124,23 @@ test('reads all declared pages, uses the account digit and obtains balance', asy
     const currentPage = Number(query.get('pagina'));
     return { body: page([transaction(`id-${currentPage}`)], { total: 2, page: currentPage, pages: 2 }) };
   });
-  const result = await inter.fetchInterTransactions('2026-10-01', '2026-10-02', '0046411099-8');
+  const result = await inter.fetchInterTransactions('2026-10-01', '2026-10-02', '0098765432-1');
   assert.deepEqual(result.transactions.map((item) => item.externalId), ['id-0', 'id-1']);
   assert.equal(result.balance, 0);
   const statementCalls = inter.calls.filter(({ options }) => options.path.includes('/extrato/completo'));
   assert.equal(statementCalls.length, 2);
-  assert.equal(statementCalls[0].options.headers['x-conta-corrente'], '464110998');
+  assert.ok(statementCalls.every(({ options }) => options.headers['x-conta-corrente'] === '987654321'));
+  const balanceCall = inter.calls.find(({ options }) => options.path === '/banking/v2/saldo');
+  assert.equal(balanceCall.options.headers['x-conta-corrente'], '987654321');
   assert.equal(new URL(statementCalls[1].options.path, 'https://inter.example').searchParams.get('pagina'), '1');
+});
+
+test('uses the complete configured account when no bank account is supplied', async () => {
+  const inter = loadInter((options) => authenticateOrBalance(options) || { body: page([]) });
+  await inter.fetchInterTransactions('2026-10-01', '2026-10-02');
+  const bankCalls = inter.calls.filter(({ options }) => options.path.startsWith('/banking/v2/'));
+  assert.equal(bankCalls.length, 2);
+  assert.ok(bankCalls.every(({ options }) => options.headers['x-conta-corrente'] === '123456789'));
 });
 
 test('rejects malformed, inconsistent or incomplete pages instead of reporting success', async () => {

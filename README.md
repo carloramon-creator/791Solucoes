@@ -9,8 +9,10 @@ forem validados com a conta real. Ela exige tanto `sync_enabled` na conta como
 `BANK_INTER_IMPORT_ENABLED=true` no servidor. Nao habilite nenhum dos dois apenas
 porque o token OAuth foi emitido; o extrato e o saldo ainda precisam responder.
 
-O cliente usa mTLS e o escopo `extrato.read`. O numero da conta informado no
-cadastro bancario inclui o digito para o cabecalho `x-conta-corrente`. A consulta
+O cliente usa mTLS e o escopo `extrato.read`. Informe a conta completa, incluindo
+o digito, tanto nas configuracoes financeiras quanto no cadastro bancario usado
+para o cabecalho `x-conta-corrente`. Registrar o webhook usa os valores atuais
+do formulario, mas nao salva suas alteracoes: use "Salvar Credenciais". A consulta
 divide periodos superiores a 90 dias e verifica a paginacao; identificadores
 ausentes ou repetidos, valores invalidos e respostas incompletas interrompem
 a importacao em vez de gerar lancamentos presumidos. O identificador precisa ser

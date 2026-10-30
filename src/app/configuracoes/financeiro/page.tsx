@@ -135,7 +135,7 @@ export default function FinanceiroConfigPage() {
       const result = await response.json();
       
       if (result.success) {
-        alert('Webhook registrado com sucesso no Banco Inter! ✅');
+        alert('Webhook registrado com sucesso no Banco Inter! ✅\nClique em Salvar Credenciais para guardar as alterações feitas nesta tela.');
       } else {
         throw new Error(result.error || 'O Banco Inter recusou o registro. Verifique os certificados.');
       }
@@ -348,19 +348,20 @@ export default function FinanceiroConfigPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Conta Corrente (S/ Dígito - Obrigatório V3)</label>
+                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Conta Corrente (com dígito)</label>
                 <div className="relative">
                   <span className="absolute left-3 top-3.5 text-slate-400">
                     <Building size={14} />
                   </span>
                   <input 
                     type="text" 
-                    placeholder="Sua conta..."
+                    placeholder="Sua conta com dígito"
                     value={config.interAccountNumber || ''}
                     onChange={(e) => setConfig({...config, interAccountNumber: e.target.value})}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
                   />
                 </div>
+                <p className="mt-2 text-[10px] text-slate-500">Inclua o dígito e clique em Salvar Credenciais para guardar alterações.</p>
               </div>
             </div>
 

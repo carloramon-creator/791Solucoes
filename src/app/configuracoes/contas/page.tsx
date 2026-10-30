@@ -734,7 +734,7 @@ export default function ContasBancariasPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Número da Conta</label>
+                  <label className="block text-[10px] text-slate-500 uppercase tracking-widest mb-1.5">Número da Conta (com dígito, se houver)</label>
                   <input 
                     type="text" 
                     placeholder="12345-6"

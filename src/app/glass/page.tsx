@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { supabase } from '@/lib/supabase';
+import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { Building2, Search, Settings, Activity, Users, MessageCircle, Save, ChevronDown, ChevronRight, Loader2, Check } from 'lucide-react';
 
 interface Vidracaria {
@@ -83,11 +84,11 @@ export default function GlassClientsPage() {
         if (pData) setSystemPlan(pData);
 
         // 4. Buscar Patrocinadores e Vínculos (Holding) para o selo
-        const { data: sData } = await supabase
+        const { data: sData } = await createSupabaseBrowser()
           .from('patrocinadores')
           .select('id, nome');
         
-        const { data: vDataHold } = await supabase
+        const { data: vDataHold } = await createSupabaseBrowser()
           .from('vouchers')
           .select('patrocinador_id, usado_por_vidracaria_id')
           .not('usado_por_vidracaria_id', 'is', null);

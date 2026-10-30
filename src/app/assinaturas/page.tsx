@@ -364,11 +364,11 @@ export default function AssinaturasPage() {
         .single();
       if (pData) setSystemPlan(pData);
 
-      const { data: sData } = await supabase
+      const { data: sData } = await authClient
         .from('patrocinadores')
         .select('id, nome');
 
-      const { data: vDataHold } = await supabase
+      const { data: vDataHold } = await authClient
         .from('vouchers')
         .select('patrocinador_id, usado_por_vidracaria_id')
         .not('usado_por_vidracaria_id', 'is', null);

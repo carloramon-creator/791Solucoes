@@ -16,8 +16,8 @@ const code = ts.transpileModule(source, {
   },
 }).outputText;
 
-function renderPanel(interImportEnabled, accounts, capture = () => {}) {
-  const states = [true, false, false, null, accounts, interImportEnabled, [], [], [], 0, 0, {}, [], {}];
+function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = []) {
+  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}];
   const effects = [];
   let index = 0;
   const hooks = {
@@ -77,4 +77,19 @@ test('marks the Inter server state unknown when a refresh fails', async () => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(context.states[5], null);
   assert.match(context.states[3], /Unexpected request/);
+});
+
+test('enlarges the statement text and keeps classification controls scrollable', () => {
+  const pending = [{
+    id: 'item', type: 'expense', value: 10, description: 'Movimento de teste',
+    date: '2026-10-30', bank_account_id: 'inter', suggested_pattern: 'Teste',
+  }];
+  const html = renderPanel(true, [inter], undefined, pending);
+  assert.match(html, /<h2 class="text-\[calc\(1\.125rem\+2pt\)\]/);
+  assert.match(html, /<h3 class="text-\[calc\(10px\+2pt\)\][^"]*">Contas<\/h3>/);
+  assert.match(html, /<table class="w-full min-w-\[900px\] table-fixed text-\[calc\(0\.75rem\+2pt\)\]">/);
+  assert.match(html, /<section class="overflow-x-auto"><h3[^>]*>A classificar \(1\)<\/h3>/);
+  assert.match(html, /<table class="w-full min-w-\[920px\] text-\[calc\(0\.75rem\+2pt\)\]">/);
+  assert.match(html, /<select[^>]*>/);
+  assert.match(html, /<button[^>]*>Salvar<\/button>/);
 });

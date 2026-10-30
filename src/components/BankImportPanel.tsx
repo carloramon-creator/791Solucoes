@@ -308,14 +308,14 @@ export default function BankImportPanel({
 
       {open && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl my-8" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl my-8 text-[calc(1rem+2pt)] leading-normal" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-b border-slate-100">
               <div>
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-tight flex items-center gap-2"><Landmark size={18} className="text-[#3b597b]" /> Extrato bancário</h2>
-                <p className="text-xs text-slate-500">Lançamentos novos são pagos e aguardam classificação. Possíveis duplicados do Inter aguardam sua decisão, sem afetar o saldo.</p>
+                <h2 className="text-[calc(1.125rem+2pt)] font-bold text-slate-800 uppercase tracking-tight flex items-center gap-2"><Landmark size={18} className="text-[#3b597b]" /> Extrato bancário</h2>
+                <p className="text-[calc(0.75rem+2pt)] text-slate-500">Lançamentos novos são pagos e aguardam classificação. Possíveis duplicados do Inter aguardam sua decisão, sem afetar o saldo.</p>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <button onClick={syncNow} disabled={syncing} className="bg-[#3b597b] text-white px-4 py-2 rounded-xl text-[10px] font-bold flex items-center gap-2 uppercase tracking-widest disabled:opacity-60">
+              <div className="flex items-center justify-between gap-2 shrink-0">
+                <button onClick={syncNow} disabled={syncing} className="bg-[#3b597b] text-white px-4 py-2 rounded-xl text-[calc(10px+2pt)] font-bold flex items-center gap-2 uppercase tracking-widest whitespace-nowrap disabled:opacity-60">
                   {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sincronizar agora
                 </button>
                 <button onClick={() => setOpen(false)} aria-label="Fechar extrato" className="p-2 text-slate-400 hover:text-slate-700"><X size={18} /></button>
@@ -323,16 +323,16 @@ export default function BankImportPanel({
             </div>
 
             <div className="p-6 space-y-6">
-              {message && <div className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-slate-700">{message}</div>}
+              {message && <div className="text-[calc(0.75rem+2pt)] bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-slate-700">{message}</div>}
 
               <section className="overflow-x-auto">
-                <h3 className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Contas</h3>
-                <p className="text-[10px] text-slate-400 mb-1 md:hidden">Deslize para ver todas as colunas.</p>
-                <table className="w-full min-w-[760px] table-fixed text-xs">
-                  <thead className="text-[10px] uppercase tracking-widest text-slate-400">
+                <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500 mb-2">Contas</h3>
+                <p className="text-[calc(10px+2pt)] text-slate-400 mb-1 lg:hidden">Deslize para ver todas as colunas.</p>
+                <table className="w-full min-w-[900px] table-fixed text-[calc(0.75rem+2pt)]">
+                  <thead className="text-[calc(10px+2pt)] uppercase tracking-widest text-slate-400">
                     <tr className="text-left">
-                      <th className="w-[15%] py-1.5 pr-3 whitespace-nowrap">Conta</th><th className="w-[11%] pr-3 whitespace-nowrap">Extrato</th><th className="w-[9%] pr-3 whitespace-nowrap">Desde</th><th className="w-[20%] pr-3 leading-tight">Última sincronização</th>
-                      <th className="w-[14%] text-right pl-2 leading-tight">Saldo no banco</th><th className="w-[17%] text-right pl-2 leading-tight">Saldo no sistema</th><th className="w-[14%] text-right pl-2 whitespace-nowrap">Diferença</th>
+                      <th className="w-[15%] py-1.5 pr-3 whitespace-nowrap">Conta</th><th className="w-[15%] pr-3 whitespace-nowrap">Extrato</th><th className="w-[11%] pr-3 whitespace-nowrap">Desde</th><th className="w-[19%] pr-3 leading-tight">Última sincronização</th>
+                      <th className="w-[14%] text-right pl-2 leading-tight">Saldo no banco</th><th className="w-[15%] text-right pl-2 leading-tight">Saldo no sistema</th><th className="w-[11%] text-right pl-2 whitespace-nowrap">Diferença</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -383,9 +383,9 @@ export default function BankImportPanel({
 
               {settlements.length > 0 && (
                 <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                  <h3 className="text-[10px] uppercase tracking-widest font-black text-amber-700 mb-2">No banco, mas pendente no sistema ({settlements.length})</h3>
-                  <p className="text-xs text-amber-800 mb-2">A movimentação foi vinculada, mas o lançamento continua pendente. Dê baixa no lançamento correspondente.</p>
-                  <ul className="text-xs space-y-1">
+                  <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-amber-700 mb-2">No banco, mas pendente no sistema ({settlements.length})</h3>
+                  <p className="text-[calc(0.75rem+2pt)] text-amber-800 mb-2">A movimentação foi vinculada, mas o lançamento continua pendente. Dê baixa no lançamento correspondente.</p>
+                  <ul className="text-[calc(0.75rem+2pt)] space-y-1">
                     {settlements.map((s) => (
                       <li key={s.id}>{dateBr(`${s.tx_date}T12:00:00`)} · {accountName(s.bank_account_id)} · {s.description} · <b>{brl(Number(s.amount))}</b></li>
                     ))}
@@ -395,8 +395,8 @@ export default function BankImportPanel({
 
               {reviews.length > 0 && (
                 <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                  <h3 className="text-[10px] uppercase tracking-widest font-black text-amber-700 mb-2">Possíveis duplicados do Inter ({reviewCount})</h3>
-                  <p className="text-xs text-amber-800 mb-3">
+                  <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-amber-700 mb-2">Possíveis duplicados do Inter ({reviewCount})</h3>
+                  <p className="text-[calc(0.75rem+2pt)] text-amber-800 mb-3">
                     Estas movimentações ainda não alteram o saldo. Compare os lançamentos e escolha vincular ou criar um novo.
                     {reviewCount > 100 ? " Exibindo até 100 por página." : ""}
                   </p>
@@ -404,7 +404,7 @@ export default function BankImportPanel({
                     {reviews.map((item) => {
                       const draft = reviewDrafts[item.id] || EMPTY_REVIEW;
                       return (
-                        <div key={item.id} className="bg-white rounded-xl border border-amber-200 p-3 text-xs">
+                        <div key={item.id} className="bg-white rounded-xl border border-amber-200 p-3 text-[calc(0.75rem+2pt)]">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="font-bold text-slate-800">
@@ -479,7 +479,7 @@ export default function BankImportPanel({
                     })}
                   </div>
                   {reviewCount > 100 && (
-                    <div className="flex justify-end items-center gap-3 mt-3 text-xs text-amber-800">
+                    <div className="flex justify-end items-center gap-3 mt-3 text-[calc(0.75rem+2pt)] text-amber-800">
                       <span>{reviewOffset + 1}–{Math.min(reviewOffset + reviews.length, reviewCount)} de {reviewCount}</span>
                       <button
                         disabled={reviewOffset === 0 || loading}
@@ -500,18 +500,19 @@ export default function BankImportPanel({
                 </section>
               )}
 
-              <section>
-                <h3 className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">A classificar ({pending.length})</h3>
+              <section className="overflow-x-auto">
+                <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500 mb-2">A classificar ({pending.length})</h3>
+                {!loading && pending.length > 0 && <p className="text-[calc(10px+2pt)] text-slate-400 mb-1 lg:hidden">Deslize para ver todas as colunas.</p>}
                 {loading ? (
                   <div className="py-6 text-center text-slate-400"><Loader2 size={18} className="animate-spin inline" /></div>
                 ) : pending.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-3">Nada pendente. Tudo classificado.</p>
+                  <p className="text-[calc(0.75rem+2pt)] text-slate-400 py-3">Nada pendente. Tudo classificado.</p>
                 ) : (
-                  <table className="w-full text-xs">
-                    <thead className="text-[10px] uppercase tracking-widest text-slate-400">
+                  <table className="w-full min-w-[920px] text-[calc(0.75rem+2pt)]">
+                    <thead className="text-[calc(10px+2pt)] uppercase tracking-widest text-slate-400">
                       <tr className="text-left">
-                        <th className="py-1.5 w-20">Data</th><th className="w-24">Conta</th><th>Descrição</th><th className="text-right w-24">Valor</th>
-                        <th className="w-56 pl-3">Classe / subclasse</th><th className="w-56">Regra (aprender)</th><th className="w-20"></th>
+                        <th className="py-1.5 w-24 pr-2">Data</th><th className="w-24">Conta</th><th>Descrição</th><th className="text-right w-24">Valor</th>
+                        <th className="w-52 pl-3">Classe / subclasse</th><th className="w-56">Regra (aprender)</th><th className="w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -519,7 +520,7 @@ export default function BankImportPanel({
                         const draft = draftOf(item);
                         return (
                           <tr key={item.id} className="border-t border-slate-100 align-top">
-                            <td className="py-1.5">{dateBr(item.date)}</td>
+                            <td className="py-1.5 pr-2 whitespace-nowrap">{dateBr(item.date)}</td>
                             <td>{accountName(item.bank_account_id)}</td>
                             <td className="pr-2 text-slate-700">{item.description}{item.counterparty ? <span className="block text-slate-400">{item.counterparty}</span> : null}</td>
                             <td className={`text-right font-bold ${item.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{item.type === "revenue" ? "+" : "-"}{brl(item.value)}</td>
@@ -565,12 +566,12 @@ export default function BankImportPanel({
                 )}
               </section>
 
-              <section>
-                <h3 className="text-[10px] uppercase tracking-widest font-black text-slate-500 mb-2">Regras aprendidas ({rules.length})</h3>
+              <section className="overflow-x-auto">
+                <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500 mb-2">Regras aprendidas ({rules.length})</h3>
                 {rules.length === 0 ? (
-                  <p className="text-xs text-slate-400">Ao classificar com &quot;Sempre que contiver&quot;, o sistema passa a classificar sozinho os próximos lançamentos parecidos.</p>
+                  <p className="text-[calc(0.75rem+2pt)] text-slate-400">Ao classificar com &quot;Sempre que contiver&quot;, o sistema passa a classificar sozinho os próximos lançamentos parecidos.</p>
                 ) : (
-                  <table className="w-full text-xs">
+                  <table className="w-full min-w-[700px] text-[calc(0.75rem+2pt)]">
                     <tbody>
                       {rules.map((rule) => (
                         <tr key={rule.id} className="border-t border-slate-100">

@@ -13,7 +13,6 @@ import {
   ShieldCheck, 
   Zap, 
   TrendingUp, 
-  MoreHorizontal,
   X,
   Loader2,
   CheckCircle2,
@@ -100,6 +99,7 @@ export default function PatrocinadoresPage() {
     ciclo: 'MONTHLY'
   });
   const [editingSponsor, setEditingSponsor] = useState<Patrocinador | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPatrocinadores();
@@ -172,13 +172,16 @@ export default function PatrocinadoresPage() {
 
       if (editingSponsor) {
         // ATUALIZAR PATROCINADOR EXISTENTE
-        const { error: uError } = await supabase
-          .from('patrocinadores')
-          .update(payload)
-          .eq('id', editingSponsor.id);
-
-        if (uError) throw uError;
-        alert('✅ Patrocinador atualizado com sucesso!');
+        const resUpdate = await fetch(`/api/sponsors/${editingSponsor.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+          body: JSON.stringify(payload)
+        });
+        const updateData = await resUpdate.json();
+        if (!updateData.success) throw new Error(updateData.error);
+        alert(updateData.authMissing
+          ? '✅ Patrocinador atualizado. Ele ainda não tem login: use o botão de envelope para enviar o acesso.'
+          : '✅ Patrocinador atualizado com sucesso!');
       } else {
         // CRIAR NOVO PATROCINADOR (via API para criar auth user e enviar email)
         const resCreate = await fetch('/api/sponsors/create', {
@@ -392,6 +395,29 @@ export default function PatrocinadoresPage() {
       }
     }
   };
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessão não encontrada. Faça login novamente.');
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  async function handleDelete(p: Patrocinador) {
+    if (!confirm(`Excluir o patrocinador "${p.nome}"?\n\nOs tokens dele e o login de acesso (${p.email}) também serão excluídos. Esta ação não pode ser desfeita.`)) return;
+    setDeletingId(p.id);
+    try {
+      const res = await fetch(`/api/sponsors/${p.id}`, { method: 'DELETE', headers: await authHeaders() });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      alert('✅ Patrocinador excluído.');
+      fetchPatrocinadores();
+    } catch (err) {
+      alert(`❌ ${err instanceof Error ? err.message : 'Erro ao excluir patrocinador.'}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   function handleEdit(p: Patrocinador) {
     setEditingSponsor(p);
@@ -700,8 +726,13 @@ export default function PatrocinadoresPage() {
                         >
                           <Pencil size={18} />
                         </button>
-                        <button className="p-3 hover:bg-slate-100 rounded-xl text-slate-400 transition-all">
-                          <MoreHorizontal size={18} />
+                        <button 
+                          onClick={() => handleDelete(p)}
+                          disabled={deletingId === p.id}
+                          className="p-3 hover:bg-red-50 hover:text-red-600 rounded-xl text-slate-400 transition-all" 
+                          title="Excluir Patrocinador"
+                        >
+                          {deletingId === p.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                         </button>
                       </div>
                     </td>

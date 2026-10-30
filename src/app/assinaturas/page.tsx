@@ -29,6 +29,7 @@ import { supabase } from '@/lib/supabase';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import OverageSettleModal from '@/components/OverageSettleModal';
+import { computeGlassSubscription } from '@/lib/glass-pricing';
 
 // Tipagem baseada na tabela vidracarias do Glass
 interface Vidracaria {
@@ -1027,34 +1028,13 @@ export default function AssinaturasPage() {
               ) : (
                 filteredTenants.map((tenant) => {
                   const usage = usageByTenant[tenant.id];
-                  // Cálculo do Valor Mensal usando combos (igual à página configurar)
-                  const COMBOS = [
-                    { id: 'financeiro', slugs: ['financeiro','contas-pagar','contas-receber','fluxo-caixa','agendamentos','bancos','cobrancas-boletos','lancamentos','contas-correntes','balancete','comissoes-a-pagar','conciliacao','dre','ia-financeira','integracoes','links-pagamento','plano-contas','formas-pagamento'] },
-                    { id: 'producao',   slugs: ['producao','ordens-servico','relatorios','etapas-producao','estoque'] },
-                    { id: 'comunicacao', slugs: ['chat','crm'] },
-                    { id: 'rh',        slugs: ['rh'] },
-                    { id: 'fiscal',    slugs: ['fiscal','notas-fiscais','notas-fiscais-configuracoes','nf-lista','aliquotas'] },
-                  ];
-
-                  let valorTotal = sponsorMap[tenant.id] ? 0 : Number(systemPlan?.base_price || 0);
-                  const ativosSet = new Set(tenant.modulos_ativos || []);
-
-                  COMBOS.forEach(combo => {
-                    if (combo.slugs.some(s => ativosSet.has(s))) {
-                      const price =
-                        systemPlan?.bundle_prices?.[combo.id] !== undefined
-                          ? Number(systemPlan.bundle_prices[combo.id])
-                          : Number(systemPlan?.optional_modules_pricing?.[combo.id] || 0);
-                      valorTotal += price;
-                    }
-                  });
-
-                  const baseUsers = Number(systemPlan?.user_limit || systemPlan?.system_limits?.usersIncluded || 0);
-                  const extraUsers = Math.max(0, Number(tenant.limite_usuarios || 0) - baseUsers);
-                  valorTotal += extraUsers * Number(systemPlan?.system_limits?.extraUserPrice || 0);
-                  const baseWpp = Number(systemPlan?.system_limits?.wppDevices || 0);
-                  const extraWpp = Math.max(0, Number(tenant.limite_usuarios_whats || 0) - baseWpp);
-                  valorTotal += extraWpp * Number(systemPlan?.system_limits?.extraDevicePrice || 0);
+                  // Valor do ciclo: regra compartilhada com o painel do tenant
+                  const valorTotal = computeGlassSubscription({
+                    tenant,
+                    plan: systemPlan,
+                    modules,
+                    sponsored: Boolean(sponsorMap[tenant.id]),
+                  }).total;
 
                   const basicIds = systemPlan?.included_modules || [];
                   const selectedModuleNames = Array.from(new Set(
@@ -1065,14 +1045,6 @@ export default function AssinaturasPage() {
                       .map((mod) => mod.nome)
                   ));
 
-                  // Aplicar Desconto do Ciclo (Apenas uma vez!)
-                  if (tenant.ciclo_pagamento === 'semiannual') {
-                    const discount = Number(systemPlan?.discount_semestral || 5);
-                    valorTotal = valorTotal * (1 - discount / 100);
-                  } else if (tenant.ciclo_pagamento === 'annual') {
-                    const discount = Number(systemPlan?.discount_anual || 15);
-                    valorTotal = valorTotal * (1 - discount / 100);
-                  }
 
                   let diasRestantes: number | null = null;
                   let vencimentoStr = '';
@@ -1095,7 +1067,14 @@ export default function AssinaturasPage() {
                           </div>
                           <div className="flex flex-col">
                             <span className="min-w-0 break-words text-sm font-medium">
-                              {tenant.nome}
+                              <button
+                                type="button"
+                                onClick={() => router.push(`/assinaturas/${tenant.id}`)}
+                                title="Abrir painel de controle do cliente"
+                                className="text-left hover:text-[#3b597b] hover:underline"
+                              >
+                                {tenant.nome}
+                              </button>
                               <span className="ml-1 inline-block max-w-full break-all text-[9px] text-slate-400 bg-slate-100 px-1.5 rounded uppercase tracking-tighter">
                                 /{tenant.slug}
                               </span>

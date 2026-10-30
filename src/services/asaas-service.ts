@@ -114,6 +114,31 @@ export class AsaasClient {
         return response.data.data?.[0] || null;
     }
 
+    async listCustomers(params: Record<string, string | number>) {
+        const response = await this.client.get('/customers', { params: { limit: 100, ...params } });
+        return (response.data?.data || []) as Array<{ id: string; deleted?: boolean }>;
+    }
+
+    async listPayments(params: Record<string, string | number>) {
+        const response = await this.client.get('/payments', { params: { limit: 100, ...params } });
+        return (response.data?.data || []) as any[];
+    }
+
+    async listSubscriptions(params: Record<string, string | number>) {
+        const response = await this.client.get('/subscriptions', { params: { limit: 100, ...params } });
+        return (response.data?.data || []) as any[];
+    }
+
+    /** Altera o valor da assinatura; updatePendingPayments também ajusta as cobranças já geradas e não pagas. */
+    async updateSubscriptionValue(subscriptionId: string, value: number, description?: string) {
+        const response = await this.client.post(`/subscriptions/${subscriptionId}`, {
+            value,
+            updatePendingPayments: true,
+            ...(description ? { description } : {}),
+        });
+        return response.data;
+    }
+
     async getCustomerByCpfCnpj(cpfCnpj: string) {
         const response = await this.client.get('/customers', {
             params: { cpfCnpj }

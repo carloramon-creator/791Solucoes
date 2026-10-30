@@ -164,8 +164,9 @@ export default function FinanceiroConfigPage() {
         })
       });
 
-      if (!response.ok) throw new Error('Falha ao registrar webhook no Asaas');
-      alert('Webhook do Asaas registrado com sucesso!');
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.error || 'Falha ao registrar webhook no Asaas');
+      alert(result.action === 'updated' ? 'Webhook do Asaas atualizado e protegido com token!' : 'Webhook do Asaas registrado com sucesso!');
     } catch (err: any) {
       alert(`Erro: ${err.message}`);
     } finally {

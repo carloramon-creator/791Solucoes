@@ -103,7 +103,7 @@ test('enlarges the statement text and keeps classification controls scrollable',
   assert.match(html, /<h3 class="text-\[calc\(10px\+2pt\)\][^"]*">Contas<\/h3>/);
   assert.match(html, /<table class="w-full min-w-\[900px\] table-fixed text-\[calc\(0\.75rem\+2pt\)\]">/);
   assert.match(html, /<section class="overflow-x-auto"><h3[^>]*>A classificar \(1\)<\/h3>/);
-  assert.match(html, /<table class="w-full min-w-\[920px\] text-\[calc\(0\.75rem\+2pt\)\]">/);
+  assert.match(html, /<table class="w-full min-w-\[1240px\] text-\[calc\(0\.75rem\+2pt\)\]">/);
   assert.match(html, /<select[^>]*>/);
   assert.match(html, /<button[^>]*>Salvar<\/button>/);
 });
@@ -122,8 +122,8 @@ test('shows selectable classes once with indented children, without repeated par
   const html = renderPanel(true, [inter], undefined, pending, categories);
   assert.match(html, /<option value="__new_category__">\+ Nova classe \/ subclasse…<\/option>/);
   assert.match(html, /<option value="cards">Cartões de Crédito<\/option>/);
-  assert.match(html, /<option value="cora"[^>]*>  ├─ Cora<\/option>/);
-  assert.match(html, /<option value="inter"[^>]*>  └─ Inter<\/option>/);
+  assert.match(html, /<option value="cora"[^>]*>    • Cora<\/option>/);
+  assert.match(html, /<option value="inter"[^>]*>    • Inter<\/option>/);
   assert.equal((html.match(/>Cartões de Crédito<\/option>/g) || []).length, 1);
   assert.doesNotMatch(html, /<optgroup|Cartões de Crédito ›|value="income"/);
 });
@@ -173,6 +173,41 @@ test('opens one popup, keeps drafts on cancel, and selects new categories withou
   assert.equal(ui.changed, 0);
   assert.deepEqual(ui.createdCalls, [[createdRoot, createdChild]]);
   const html = renderToStaticMarkup(ui.render());
-  assert.match(html, /<option value="new-child"[^>]*selected=""[^>]*>  └─ Nova filha<\/option>/);
+  assert.match(html, /<option value="new-child"[^>]*selected=""[^>]*>    • Nova filha<\/option>/);
   assert.equal(ui.states[6].length, 2);
+});
+
+test('keeps statement columns and rule text on one line in a wider modal', () => {
+  const pending = [{
+    id: 'item', type: 'expense', value: 10, description: 'Pix enviado - Ifoodcom Agencia De Restaurantes Online Sa',
+    date: '2026-10-30', bank_account_id: 'inter', counterparty: 'Ifoodcom Agencia', suggested_pattern: 'Ifoodcom Agencia De Restaurantes Online Sa',
+  }];
+  const html = renderPanel(true, [{ ...inter, name: 'Banco Inter Empresas' }], undefined, pending);
+  assert.match(html, /max-w-\[1480px\]/);
+  assert.match(html, /<td class="pr-3 whitespace-nowrap">Banco Inter Empresas<\/td>/);
+  assert.match(html, /<td class="pr-3 text-slate-700 whitespace-nowrap">Pix enviado - Ifoodcom/);
+  assert.match(html, /<input style="width:45ch" class="max-w-\[28rem\][^"]*" value="Ifoodcom Agencia De Restaurantes Online Sa"\/>/);
+  assert.doesNotMatch(html, /Transferência entre contas/);
+});
+
+test('identifies transfers to or from 791 Soluções Empresariais and preselects the matching transfer class', () => {
+  const pending = [
+    { id: 'out', type: 'expense', value: 50, description: 'Pix enviado - 791 Solucoes Empresariais Ltda', date: '2026-10-28', counterparty: '791 Solucoes Empresariais Ltda', suggested_pattern: '791 Solucoes Empresariais Ltda' },
+    { id: 'in', type: 'revenue', value: 50, description: 'Pix recebido', date: '2026-10-28', counterparty: '791 SOLUÇÕES EMPRESARIAIS', suggested_pattern: '791 SOLUÇÕES EMPRESARIAIS' },
+  ];
+  const categories = [{ id: 'transfer-out', name: 'Transferência entre contas', type: 'expense', parent_id: null }];
+  let ui;
+  const html = renderPanel(true, [inter], (value) => { ui = value; }, pending, categories);
+  assert.equal((html.match(/⇄ Transferência entre contas/g) || []).length, 2);
+  assert.match(html, /<option value="transfer-out" selected="">Transferência entre contas<\/option>/);
+  assert.equal((html.match(/Criar classe \(receita\)/g) || []).length, 1);
+  assert.doesNotMatch(html, /\(despesa\)/);
+  const create = nodes(ui.render(), (node) => node.type === 'button' && node.props.type === 'button' && [].concat(node.props.children).includes('Criar classe '));
+  assert.equal(create.length, 1);
+  create[0].props.onClick();
+  const popup = nodes(ui.render(), (node) => node.type === ui.CategoryDialogStub)[0];
+  assert.equal(popup.props.type, 'revenue');
+  assert.equal(popup.props.initialParentId, '');
+  assert.equal(popup.props.initialName, 'Transferência entre contas');
+  assert.deepEqual(ui.states[13], {});
 });

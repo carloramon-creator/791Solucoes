@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { ChevronDown, Loader2, X } from "lucide-react";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
 
 export interface FinanceCategory {
@@ -20,16 +20,17 @@ function isCategory(value: unknown): value is FinanceCategory {
 }
 
 export default function FinanceCategoryDialog({
-  type, categories, initialParentId, onClose, onCreated,
+  type, categories, initialParentId, initialName = "", onClose, onCreated,
 }: {
   type: FinanceCategory["type"];
   categories: FinanceCategory[];
   initialParentId: string;
+  initialName?: string;
   onClose: () => void;
   onCreated: (created: FinanceCategory[], selectedId: string) => void;
 }) {
   const [mode, setMode] = useState<"category" | "subcategory">(initialParentId ? "subcategory" : "category");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [parentId, setParentId] = useState(initialParentId);
   const [subcategoryName, setSubcategoryName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -101,7 +102,7 @@ export default function FinanceCategoryDialog({
     }
   }
 
-  const inputClass = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 disabled:opacity-60";
+  const inputClass = "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 disabled:opacity-60";
 
   return (
     <div
@@ -139,10 +140,13 @@ export default function FinanceCategoryDialog({
             {mode === "subcategory" && (
               <label className="block space-y-1">
                 <span className="font-semibold text-slate-600">Classe principal</span>
-                <select required disabled={saving} value={parentId} onChange={(event) => setParentId(event.target.value)} className={inputClass}>
-                  <option value="">Escolher classe…</option>
-                  {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
-                </select>
+                <span className="relative block">
+                  <select required disabled={saving} value={parentId} onChange={(event) => setParentId(event.target.value)} className={`${inputClass} appearance-none pr-10`}>
+                    <option value="">Escolher classe…</option>
+                    {roots.map((root) => <option key={root.id} value={root.id}>{root.name}</option>)}
+                  </select>
+                  <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                </span>
                 {roots.length === 0 && <span className="block text-slate-500">Crie primeiro uma classe na opção Nova classe.</span>}
               </label>
             )}

@@ -96,6 +96,14 @@ const EMPTY_REVIEW: ReviewDraft = {
   expanded: false, loading: false, saving: false, candidates: [], offset: 0, pageSize: 20, total: 0,
 };
 
+const OWN_COMPANY_NAME = "791 solucoes empresariais";
+const TRANSFER_CATEGORY_NAME = "Transferência entre contas";
+const normalizeText = (value: string) =>
+  value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export const isInternalTransfer = (item: { description: string; counterparty?: string | null }) =>
+  normalizeText(`${item.description} ${item.counterparty || ""}`).includes(OWN_COMPANY_NAME);
+const isTransferCategoryName = (name: string) => /^transferencias? entre contas$/.test(normalizeText(name));
+
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(v) ? v : 0);
 const dateBr = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "--");
 const dateTimeBr = (v?: string | null) => (v ? new Date(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "nunca");
@@ -125,7 +133,7 @@ export default function BankImportPanel({
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [rules, setRules] = useState<Rule[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
-  const [categoryTarget, setCategoryTarget] = useState<{ item: PendingItem; parentId: string } | null>(null);
+  const [categoryTarget, setCategoryTarget] = useState<{ item: PendingItem; parentId: string; initialName?: string } | null>(null);
   const loadSequence = useRef(0);
 
   const load = useCallback(() => {
@@ -192,7 +200,13 @@ export default function BankImportPanel({
     }
   };
 
-  const draftOf = (item: PendingItem): Draft => drafts[item.id] || { categoryId: "", createRule: true, pattern: item.suggested_pattern };
+  const transferCategoryFor = (type: FinanceType) =>
+    categories.find((category) => category.type === type && isTransferCategoryName(category.name));
+  const draftOf = (item: PendingItem): Draft => drafts[item.id] || {
+    categoryId: isInternalTransfer(item) ? transferCategoryFor(item.type)?.id || "" : "",
+    createRule: true,
+    pattern: item.suggested_pattern,
+  };
   const setDraft = (id: string, patch: Partial<Draft>, item: PendingItem) =>
     setDrafts((prev) => ({ ...prev, [id]: { ...draftOf(item), ...prev[id], ...patch } }));
 
@@ -305,7 +319,7 @@ export default function BankImportPanel({
 
       {open && (
         <div inert={categoryTarget !== null} className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl my-8 text-[calc(1rem+2pt)] leading-normal" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[1480px] my-8 text-[calc(1rem+2pt)] leading-normal" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <h2 className="text-[calc(1.125rem+2pt)] font-bold text-slate-800 uppercase tracking-tight flex items-center gap-2"><Landmark size={18} className="text-[#3b597b]" /> Extrato bancário</h2>
@@ -505,22 +519,41 @@ export default function BankImportPanel({
                 ) : pending.length === 0 ? (
                   <p className="text-[calc(0.75rem+2pt)] text-slate-400 py-3">Nada pendente. Tudo classificado.</p>
                 ) : (
-                  <table className="w-full min-w-[920px] text-[calc(0.75rem+2pt)]">
+                  <table className="w-full min-w-[1240px] text-[calc(0.75rem+2pt)]">
                     <thead className="text-[calc(10px+2pt)] uppercase tracking-widest text-slate-400">
                       <tr className="text-left">
-                        <th className="py-1.5 w-24 pr-2">Data</th><th className="w-24">Conta</th><th>Descrição</th><th className="text-right w-24">Valor</th>
-                        <th className="w-52 pl-3">Classe / subclasse</th><th className="w-56">Regra (aprender)</th><th className="w-20"></th>
+                        <th className="py-1.5 pr-3">Data</th><th className="pr-3">Conta</th><th className="pr-3">Descrição</th><th className="text-right whitespace-nowrap">Valor</th>
+                        <th className="pl-3 whitespace-nowrap">Classe / subclasse</th><th className="pl-2 whitespace-nowrap">Regra (aprender)</th><th className="w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {pending.map((item) => {
                         const draft = draftOf(item);
+                        const transfer = isInternalTransfer(item);
+                        const transferCategory = transfer ? transferCategoryFor(item.type) : undefined;
                         return (
                           <tr key={item.id} className="border-t border-slate-100 align-top">
-                            <td className="py-1.5 pr-2 whitespace-nowrap">{dateBr(item.date)}</td>
-                            <td>{accountName(item.bank_account_id)}</td>
-                            <td className="pr-2 text-slate-700">{item.description}{item.counterparty ? <span className="block text-slate-400">{item.counterparty}</span> : null}</td>
-                            <td className={`text-right font-bold ${item.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{item.type === "revenue" ? "+" : "-"}{brl(item.value)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{dateBr(item.date)}</td>
+                            <td className="pr-3 whitespace-nowrap">{accountName(item.bank_account_id)}</td>
+                            <td className="pr-3 text-slate-700 whitespace-nowrap">
+                              {item.description}
+                              {item.counterparty ? <span className="block text-slate-400">{item.counterparty}</span> : null}
+                              {transfer && (
+                                <span className="mt-1 flex items-center gap-2">
+                                  <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">⇄ Transferência entre contas</span>
+                                  {!transferCategory && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCategoryTarget({ item, parentId: "", initialName: TRANSFER_CATEGORY_NAME })}
+                                      className="font-semibold text-[#3b597b] underline"
+                                    >
+                                      Criar classe {item.type === "revenue" ? "(receita)" : "(despesa)"}
+                                    </button>
+                                  )}
+                                </span>
+                              )}
+                            </td>
+                            <td className={`text-right whitespace-nowrap font-bold ${item.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{item.type === "revenue" ? "+" : "-"}{brl(item.value)}</td>
                             <td className="pl-3">
                               <select
                                 value={draft.categoryId}
@@ -534,22 +567,22 @@ export default function BankImportPanel({
                                     setDraft(item.id, { categoryId: e.target.value, error: undefined }, item);
                                   }
                                 }}
-                                className="w-full border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                                className="w-60 border border-slate-200 rounded-lg px-2 py-1 bg-white"
                               >
                                 <option value="">Escolher…</option>
                                 <option value="__new_category__">+ Nova classe / subclasse…</option>
                                 {optionsFor(item.type).flatMap(({ root, children }) => [
                                   <option key={root.id} value={root.id}>{root.name}</option>,
-                                  ...children.map((child, index) => (
+                                  ...children.map((child) => (
                                     <option key={child.id} value={child.id} aria-label={`${root.name}: ${child.name}`}>
-                                      {`\u00a0\u00a0${index === children.length - 1 ? "└─" : "├─"} ${child.name}`}
+                                      {`\u00a0\u00a0\u00a0\u00a0• ${child.name}`}
                                     </option>
                                   )),
                                 ])}
                               </select>
                               {draft.error && <span className="block text-red-600 mt-1">{draft.error}</span>}
                             </td>
-                            <td className="pl-2">
+                            <td className="pl-2 whitespace-nowrap">
                               <label className="flex items-center gap-1 text-slate-600">
                                 <input type="checkbox" checked={draft.createRule} onChange={(e) => setDraft(item.id, { createRule: e.target.checked }, item)} />
                                 Sempre que contiver:
@@ -558,7 +591,8 @@ export default function BankImportPanel({
                                 <input
                                   value={draft.pattern}
                                   onChange={(e) => setDraft(item.id, { pattern: e.target.value }, item)}
-                                  className="w-full border border-slate-200 rounded-lg px-2 py-1 mt-1"
+                                  style={{ width: `${Math.max(draft.pattern.length, 22) + 3}ch` }}
+                                  className="max-w-[28rem] border border-slate-200 rounded-lg px-2 py-1 mt-1"
                                 />
                               )}
                             </td>
@@ -584,9 +618,9 @@ export default function BankImportPanel({
                     <tbody>
                       {rules.map((rule) => (
                         <tr key={rule.id} className="border-t border-slate-100">
-                          <td className="py-1.5">“{rule.pattern}”</td>
+                          <td className="py-1.5 pr-3 whitespace-nowrap">“{rule.pattern}”</td>
                           <td>{rule.record_type === "revenue" ? "Receita" : "Despesa"}</td>
-                          <td className="font-semibold">{rule.category_name}</td>
+                          <td className="pr-3 font-semibold whitespace-nowrap">{rule.category_name}</td>
                           <td>{rule.bank_account_id ? accountName(rule.bank_account_id) : "Todas as contas"}</td>
                           <td className="text-slate-400">{rule.hits} uso(s)</td>
                           <td className="text-right"><button onClick={() => removeRule(rule.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button></td>
@@ -605,6 +639,7 @@ export default function BankImportPanel({
           type={categoryTarget.item.type}
           categories={categories}
           initialParentId={categoryTarget.parentId}
+          initialName={categoryTarget.initialName}
           onClose={() => setCategoryTarget(null)}
           onCreated={(created, selectedId) => {
             onCategoriesCreated(created);

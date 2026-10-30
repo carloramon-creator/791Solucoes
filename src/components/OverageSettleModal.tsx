@@ -37,7 +37,7 @@ export default function OverageSettleModal({ recordId, titulo, tenantName, valor
 
   useEffect(() => {
     let active = true;
-    fetch('/api/system/bank-accounts', { cache: 'no-store' })
+    holdingAuthFetch('/api/system/bank-accounts', { cache: 'no-store' })
       .then((res) => res.json())
       .then((json) => { if (active && json?.success) setAccounts(json.accounts || []); })
       .catch(() => undefined);

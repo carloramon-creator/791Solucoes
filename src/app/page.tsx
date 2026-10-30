@@ -1,5 +1,6 @@
 'use client';
 
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -253,7 +254,7 @@ export default function Dashboard() {
           });
         }
 
-        const response = await fetch(`/api/admin/subscription-usage?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}`, {
+        const response = await holdingAuthFetch(`/api/admin/subscription-usage?period=${selectedPeriod}&startDate=${rangeStartIso}&endDate=${rangeEndIso}`, {
           cache: 'no-store',
           headers: {
             Authorization: `Bearer ${token}`,

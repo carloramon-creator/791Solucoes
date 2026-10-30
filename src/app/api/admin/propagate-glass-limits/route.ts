@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGlassClient } from '@/lib/glass-client';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 type PropagationMode = 'none' | 'default' | 'all';
 
@@ -21,6 +22,8 @@ type Body = {
 };
 
 export async function POST(request: NextRequest) {
+  const auth = await authenticateHoldingAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const body = (await request.json()) as Body;
     const mode = body?.mode;

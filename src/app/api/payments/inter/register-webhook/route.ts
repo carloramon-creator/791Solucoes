@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import https from 'https';
 import axios from 'axios';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { pickSecret, readFinanceConfig } from '@/lib/finance-config-server';
 
 // Normaliza certificados PEM que podem ter quebras de linha corrompidas
 // ao serem salvos/recuperados do banco de dados como texto
@@ -17,15 +19,18 @@ function normalizePem(pem: string): string {
 
 export async function POST(req: Request) {
   try {
-    const { 
-      interClientId, 
-      interClientSecret, 
-      interCertCrt, 
-      interCertKey,
-      interCertCa,
-      interPixKey,
-      interAccountNumber
-    } = await req.json();
+    const auth = await authenticateHoldingAdmin(req);
+    if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+
+    const body = await req.json().catch(() => ({}));
+    const saved = await readFinanceConfig();
+    const interClientId = pickSecret(body.interClientId, saved.interClientId);
+    const interClientSecret = pickSecret(body.interClientSecret, saved.interClientSecret);
+    const interCertCrt = pickSecret(body.interCertCrt, saved.interCertCrt);
+    const interCertKey = pickSecret(body.interCertKey, saved.interCertKey);
+    const interCertCa = pickSecret(body.interCertCa, saved.interCertCa);
+    const interPixKey = pickSecret(body.interPixKey, saved.interPixKey);
+    const interAccountNumber = pickSecret(body.interAccountNumber, saved.interAccountNumber);
 
     if (!interCertCrt || !interCertKey || !interPixKey || !interAccountNumber) {
       return NextResponse.json({ success: false, error: 'Certificados, Chave Pix ou Conta Corrente ausentes' }, { status: 400 });

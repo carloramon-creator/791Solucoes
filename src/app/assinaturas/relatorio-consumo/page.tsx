@@ -1,5 +1,6 @@
 'use client';
 
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDown, ArrowLeft, ArrowUp, Download, FileSpreadsheet, Loader2, RefreshCw } from 'lucide-react';
@@ -115,7 +116,7 @@ export default function TenantConsumptionReportPage() {
         startDate: toIsoDate(startDate),
         endDate: toIsoDate(endDate, true),
       });
-      const response = await fetch(`/api/admin/subscription-usage?${params}`, {
+      const response = await holdingAuthFetch(`/api/admin/subscription-usage?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: 'no-store',
       });

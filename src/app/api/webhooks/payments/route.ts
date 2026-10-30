@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PaymentProcessor } from '@/services/payment-processor';
+import { fetchVerifiedAsaasPayment } from '@/lib/asaas-webhook-verify';
 
 /**
  * Webhook Universal da Holding 791 Soluções
@@ -15,10 +16,16 @@ export async function POST(req: NextRequest) {
     // --- LÓGICA ASAAS ---
     if (body.event && body.payment) {
       const event = body.event;
-      const payment = body.payment;
 
       // Se o pagamento foi confirmado
       if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
+        const verified = await fetchVerifiedAsaasPayment(body.payment?.id);
+        if (!verified.ok) {
+          console.warn(`[WEBHOOK] Pagamento Asaas não confirmado: ${verified.reason}`);
+          if (verified.retry) return NextResponse.json({ error: verified.reason }, { status: 503 });
+          return NextResponse.json({ received: true, ignored: verified.reason });
+        }
+        const payment = verified.payment;
         await PaymentProcessor.handlePaymentConfirmed({
           externalReference: payment.externalReference,
           value: payment.value,
@@ -31,39 +38,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true, provider: 'asaas' });
     }
 
-    // --- LÓGICA BANCO INTER ---
-    // O Inter manda um array de objetos. Ex: Pix ou Cobrança V2
+    // Banco Inter: o webhook dele aponta para /api/webhooks/inter e este corpo não tem
+    // como ser autenticado aqui; ignorado para não permitir baixas forjadas.
     if (Array.isArray(body)) {
-      for (const item of body) {
-        // Se for PIX (V3)
-        if (item.pix) {
-          for (const p of item.pix) {
-            // No Inter, costumamos colocar o externalReference no txid ou no campo de descrição
-            // Para a Holding, usaremos o txid ou um campo de metadados se disponível
-            if (p.txid) {
-              await PaymentProcessor.handlePaymentConfirmed({
-                externalReference: p.txid, // No Inter o txid deve ser o nosso externalReference
-                value: parseFloat(p.valor),
-                paymentMethod: 'PIX',
-                bankId: p.endToEndId,
-                metadata: { provider: 'inter', type: 'pix' }
-              });
-            }
-          }
-        }
-        
-        // Se for Cobrança/Boleto (V2)
-        if (item.cobranca && (item.event === 'COBRANCA_PAGA' || item.event === 'LIQUIDADO')) {
-           await PaymentProcessor.handlePaymentConfirmed({
-             externalReference: item.cobranca.seuNumero, // 'seuNumero' é o externalReference no Inter
-             value: item.cobranca.valorTotal,
-             paymentMethod: 'BOLETO',
-             bankId: item.cobranca.nossoNumero,
-             metadata: { provider: 'inter', type: 'billing' }
-           });
-        }
-      }
-      return NextResponse.json({ received: true, provider: 'inter' });
+      console.warn('[WEBHOOK] Notificação estilo Inter ignorada (não autenticável).');
+      return NextResponse.json({ received: true, provider: 'inter', ignored: 'unauthenticated' });
     }
 
     // Padrão de retorno para sucesso (200) mesmo se não processado, para o banco não ficar reenviando

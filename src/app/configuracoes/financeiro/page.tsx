@@ -17,7 +17,7 @@ import {
   Wallet,
   Building
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useRouter } from 'next/navigation';
 import { ConfigTabs } from '@/components/ConfigTabs';
 
@@ -46,13 +46,20 @@ export default function FinanceiroConfigPage() {
     glassUrl: '',
     glassServiceKey: '',
     barberUrl: '',
-    barberServiceKey: ''
+    barberServiceKey: '',
+    asaasApiKey_set: false,
+    asaasWebhookSecret_set: false,
+    interClientSecret_set: false,
+    interCertKey_set: false,
+    glassServiceKey_set: false,
+    barberServiceKey_set: false
   });
+  const savedHint = (isSet: boolean, fallback: string) => (isSet ? '•••••••• salvo — deixe em branco para manter' : fallback);
 
   useEffect(() => {
     async function loadConfig() {
       try {
-        const res = await fetch('/api/system/finance-config');
+        const res = await holdingAuthFetch('/api/system/finance-config');
         if (res.ok) {
           const data = await res.json();
           if (data && Object.keys(data).length > 0) {
@@ -73,7 +80,7 @@ export default function FinanceiroConfigPage() {
     setSaving(true);
     
     try {
-      const res = await fetch('/api/system/finance-config', {
+      const res = await holdingAuthFetch('/api/system/finance-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -97,7 +104,7 @@ export default function FinanceiroConfigPage() {
   };
 
   const handleRegisterWebhook = async () => {
-    if (!config.interCertCrt || !config.interCertKey) {
+    if (!config.interCertCrt || (!config.interCertKey && !config.interCertKey_set)) {
       alert('Por favor, preencha o Certificado (.crt) e a Chave Privada (.key) para registrar o webhook.');
       return;
     }
@@ -106,7 +113,7 @@ export default function FinanceiroConfigPage() {
     try {
       const endpoint = `${window.location.origin}/api/payments/inter/register-webhook`;
       
-      const response = await fetch(endpoint, {
+      const response = await holdingAuthFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -141,14 +148,14 @@ export default function FinanceiroConfigPage() {
   };
 
   const handleRegisterAsaasWebhook = async () => {
-    if (!config.asaasApiKey) {
+    if (!config.asaasApiKey && !config.asaasApiKey_set) {
       alert('Preencha a API Key do Asaas primeiro');
       return;
     }
 
     setRegisteringAsaas(true);
     try {
-      const response = await fetch('/api/payments/asaas/register-webhook', {
+      const response = await holdingAuthFetch('/api/payments/asaas/register-webhook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -231,7 +238,7 @@ export default function FinanceiroConfigPage() {
                 </span>
                 <input 
                   type="password" 
-                  placeholder="$a_..."
+                  placeholder={savedHint(config.asaasApiKey_set, "$a_...")}
                   value={config.asaasApiKey}
                   onChange={(e) => setConfig({...config, asaasApiKey: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
@@ -247,7 +254,7 @@ export default function FinanceiroConfigPage() {
                 </span>
                 <input 
                   type="password" 
-                  placeholder="whsec_..."
+                  placeholder={savedHint(config.asaasWebhookSecret_set, "whsec_...")}
                   value={config.asaasWebhookSecret || ''}
                   onChange={(e) => setConfig({...config, asaasWebhookSecret: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
@@ -318,7 +325,7 @@ export default function FinanceiroConfigPage() {
                 <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Client Secret</label>
                 <input 
                   type="password" 
-                  placeholder="Secret da sua aplicação"
+                  placeholder={savedHint(config.interClientSecret_set, "Secret da sua aplicação")}
                   value={config.interClientSecret}
                   onChange={(e) => setConfig({...config, interClientSecret: e.target.value})}
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"
@@ -372,7 +379,7 @@ export default function FinanceiroConfigPage() {
                     <label className="text-[11px] text-slate-500 uppercase tracking-widest ml-1">Chave Privada (.KEY)</label>
                     <textarea 
                       rows={5}
-                      placeholder="-----BEGIN PRIVATE KEY-----"
+                      placeholder={savedHint(config.interCertKey_set, "-----BEGIN PRIVATE KEY-----")}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 resize-none"
                       value={config.interCertKey}
                       onChange={(e) => setConfig({...config, interCertKey: e.target.value})}
@@ -445,7 +452,7 @@ export default function FinanceiroConfigPage() {
                   </span>
                   <input 
                     type="password" 
-                    placeholder="eyJhbGciOiJIUzI1NiI..."
+                    placeholder={savedHint(config.glassServiceKey_set, "eyJhbGciOiJIUzI1NiI...")}
                     value={config.glassServiceKey}
                     onChange={(e) => setConfig({...config, glassServiceKey: e.target.value})}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"
@@ -483,7 +490,7 @@ export default function FinanceiroConfigPage() {
                   </span>
                   <input 
                     type="password" 
-                    placeholder="eyJhbGciOiJIUzI1NiI..."
+                    placeholder={savedHint(config.barberServiceKey_set, "eyJhbGciOiJIUzI1NiI...")}
                     value={config.barberServiceKey}
                     onChange={(e) => setConfig({...config, barberServiceKey: e.target.value})}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 h-[44px] text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3b597b]/10 transition-all"

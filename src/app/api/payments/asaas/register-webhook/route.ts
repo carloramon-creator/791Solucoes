@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { pickSecret, readFinanceConfig } from '@/lib/finance-config-server';
 
 export async function POST(req: Request) {
   try {
-    const { asaasApiKey, asaasEnv } = await req.json();
+    const auth = await authenticateHoldingAdmin(req);
+    if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+
+    const body = await req.json().catch(() => ({}));
+    const saved = await readFinanceConfig();
+    const asaasApiKey = pickSecret(body.asaasApiKey, saved.asaasApiKey);
+    const asaasEnv = body.asaasEnv || saved.asaasEnv;
 
     if (!asaasApiKey) {
       return NextResponse.json({ success: false, error: 'API Key ausente' }, { status: 400 });

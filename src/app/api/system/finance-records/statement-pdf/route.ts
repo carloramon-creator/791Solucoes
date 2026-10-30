@@ -4,6 +4,7 @@ import { PassThrough } from 'stream';
 import fs from 'fs';
 import path from 'path';
 import { notoSansBase64 } from '@/services/nfse/noto-sans-base64';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 interface StatementPayload {
   title?: string;
@@ -55,6 +56,8 @@ function formatCurrencyBRL(value: number) {
 }
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const payload = (await req.json()) as StatementPayload;
     const columns = Array.isArray(payload.columns) ? payload.columns : [];

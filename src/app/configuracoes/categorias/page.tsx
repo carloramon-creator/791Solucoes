@@ -1,5 +1,6 @@
 "use client";
 
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useState, useEffect } from 'react';
 import { 
   Tag, 
@@ -46,7 +47,7 @@ export default function CategoriasConfigPage() {
   async function fetchCategories() {
     setLoading(true);
     try {
-      const res = await fetch('/api/system/categories');
+      const res = await holdingAuthFetch('/api/system/categories');
       if (res.ok) {
         const data = await res.json();
         setCategories(data || []);
@@ -64,7 +65,7 @@ export default function CategoriasConfigPage() {
     try {
       const isEditing = !!newCategory.id;
       const parentId = editingMode === 'subcategory' ? (newCategory.parent_id || null) : null;
-      const res = await fetch('/api/system/categories', {
+      const res = await holdingAuthFetch('/api/system/categories', {
         method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -95,7 +96,7 @@ export default function CategoriasConfigPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('Tem certeza? Isso excluirá todas as subcategorias vinculadas.')) return;
     
-    const res = await fetch(`/api/system/categories?id=${id}`, {
+    const res = await holdingAuthFetch(`/api/system/categories?id=${id}`, {
       method: 'DELETE'
     });
     

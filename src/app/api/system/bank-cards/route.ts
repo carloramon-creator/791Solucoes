@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const body = await req.json();
 
@@ -19,6 +22,8 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const body = await req.json();
     const { id, ...updates } = body;
@@ -44,6 +49,8 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');

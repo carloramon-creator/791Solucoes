@@ -560,8 +560,8 @@ export default function FinancePage() {
       const token = await getAccessToken();
       const [recordsRes, accountsRes, categoriesRes] = await Promise.all([
         fetch("/api/system/finance-records", { cache: "no-store" }),
-        fetch("/api/system/bank-accounts", { cache: "no-store" }),
-        fetch("/api/system/categories", { cache: "no-store" }),
+        holdingAuthFetch("/api/system/bank-accounts", { cache: "no-store" }),
+        holdingAuthFetch("/api/system/categories", { cache: "no-store" }),
       ]);
 
       const recordsJson = await recordsRes.json();
@@ -853,7 +853,7 @@ export default function FinancePage() {
 
     setUndoingStatement(true);
     try {
-      const response = await fetch('/api/system/finance-records/card-statement/undo', {
+      const response = await holdingAuthFetch('/api/system/finance-records/card-statement/undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ statementId: editingRecord.id }),
@@ -996,7 +996,7 @@ export default function FinancePage() {
       const userLabel = sessionData?.session?.user?.email || "Usuário";
       const payload = buildPdfPayload(userLabel);
 
-      const response = await fetch("/api/system/finance-records/statement-pdf", {
+      const response = await holdingAuthFetch("/api/system/finance-records/statement-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

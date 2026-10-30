@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getGlassClient } from '@/lib/glass-client';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -153,6 +154,8 @@ function getDateFromParam(value: string | null, fallback: Date) {
 }
 
 export async function GET(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const url = new URL(req.url);
     const period = url.searchParams.get('period') || 'mes';

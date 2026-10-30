@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { emitirNFeExcedentePago, PaymentProcessor } from '@/services/payment-processor';
-import { supabase } from '@/lib/supabase';
+import { supabaseServer } from '@/lib/supabase-server';
+import { fetchVerifiedAsaasPayment } from '@/lib/asaas-webhook-verify';
 import { createClient } from '@supabase/supabase-js';
 import { releaseOverageBlock } from '@/lib/overage-block';
 
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
     const asaasToken = req.headers.get('asaas-access-token');
     
     // Buscar config para validar token
-    const { data: config } = await supabase
+    const { data: config } = await supabaseServer
       .from('system_settings')
       .select('value')
       .eq('id', 'finance_api')
@@ -26,8 +27,8 @@ export async function POST(req: Request) {
     }
 
     const event = payload.event;
-    const payment = payload.payment;
-    const externalRef = payment.externalReference || '';
+    let payment = payload.payment || {};
+    let externalRef = payment.externalReference || '';
 
     const holdingService = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,6 +41,15 @@ export async function POST(req: Request) {
 
     // Verificamos se o pagamento foi confirmado
     if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED_IN_CASH') {
+      const verified = await fetchVerifiedAsaasPayment(payment.id);
+      if (!verified.ok) {
+        console.warn(`[ASAAS WEBHOOK] Pagamento ${payment.id} não confirmado pelo Asaas: ${verified.reason}`);
+        // retry=true: falha transitória (Asaas fora do ar) -> 503 para o Asaas reenviar.
+        if (verified.retry) return NextResponse.json({ error: verified.reason }, { status: 503 });
+        return NextResponse.json({ received: true, ignored: verified.reason });
+      }
+      payment = verified.payment;
+      externalRef = payment.externalReference || '';
       console.log(`[ASAAS WEBHOOK] Pagamento confirmado: ${payment.id} (Ref: ${externalRef})`);
 
       // CASO 1: Lançamento Financeiro da Holding

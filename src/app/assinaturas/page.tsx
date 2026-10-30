@@ -333,7 +333,7 @@ export default function AssinaturasPage() {
         endDate: range.endIso,
       });
 
-      const response = await fetch(`/api/admin/subscription-usage?${query.toString()}`, { cache: 'no-store' });
+      const response = await holdingAuthFetch(`/api/admin/subscription-usage?${query.toString()}`, { cache: 'no-store' });
       const payload = await response.json();
 
       if (!response.ok) {

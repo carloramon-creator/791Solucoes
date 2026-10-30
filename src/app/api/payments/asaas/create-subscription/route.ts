@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import AsaasClient from '@/services/asaas-service';
 import { createClient } from '@supabase/supabase-js';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -43,6 +44,8 @@ function normalizeItems(rawItems: any[], fallbackValue: number, fallbackDescript
  * ROTA DE ASSINATURA PREMIUM (VIDRAÇARIAS)
  */
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const { 
       tenantId,

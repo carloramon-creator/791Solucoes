@@ -1,5 +1,6 @@
 "use client";
 
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Wallet, 
@@ -170,9 +171,9 @@ export default function ContasBancariasPage() {
 
   const loadAccounts = async () => {
     const [accRes, financeRes, categoriesRes] = await Promise.all([
-      fetch('/api/system/bank-accounts', { cache: 'no-store' }),
+      holdingAuthFetch('/api/system/bank-accounts', { cache: 'no-store' }),
       fetch('/api/system/finance-records', { cache: 'no-store' }),
-      fetch('/api/system/categories', { cache: 'no-store' }),
+      holdingAuthFetch('/api/system/categories', { cache: 'no-store' }),
     ]);
 
     const accJson = await accRes.json();
@@ -234,7 +235,7 @@ export default function ContasBancariasPage() {
     setSaving(true);
     try {
       if (editingAccount) {
-        const res = await fetch('/api/system/bank-accounts', {
+        const res = await holdingAuthFetch('/api/system/bank-accounts', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingAccount.id, ...formData })
@@ -243,7 +244,7 @@ export default function ContasBancariasPage() {
         if (!json.success) throw new Error(json.error || 'Erro ao atualizar conta');
         if (json.account) loadAccounts();
       } else {
-        const res = await fetch('/api/system/bank-accounts', {
+        const res = await holdingAuthFetch('/api/system/bank-accounts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData)
@@ -281,7 +282,7 @@ export default function ContasBancariasPage() {
         ? { id: editingCard.id, ...cardFormData, statement_subcategory_id: cardFormData.statement_subcategory_id || null, account_id: selectedAccountId }
         : { ...cardFormData, statement_subcategory_id: cardFormData.statement_subcategory_id || null, account_id: selectedAccountId };
 
-      const res = await fetch('/api/system/bank-cards', {
+      const res = await holdingAuthFetch('/api/system/bank-cards', {
         method: editingCard ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -312,7 +313,7 @@ export default function ContasBancariasPage() {
     if (!confirm('Tem certeza que deseja excluir este cartão?')) return;
 
     try {
-      const res = await fetch(`/api/system/bank-cards?id=${cardId}`, { method: 'DELETE' });
+      const res = await holdingAuthFetch(`/api/system/bank-cards?id=${cardId}`, { method: 'DELETE' });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao excluir cartão');
       await loadAccounts();
@@ -369,7 +370,7 @@ export default function ContasBancariasPage() {
 
     setClosingCardId(statementCard.id);
     try {
-      const res = await fetch('/api/system/bank-cards/close', {
+      const res = await holdingAuthFetch('/api/system/bank-cards/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId: statementCard.id, recordIds: selectedStatementRecordIds }),
@@ -398,7 +399,7 @@ export default function ContasBancariasPage() {
     if (!confirm('Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita.')) return;
     
     try {
-      const res = await fetch(`/api/system/bank-accounts?id=${id}`, { method: 'DELETE' });
+      const res = await holdingAuthFetch(`/api/system/bank-accounts?id=${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Erro ao excluir conta');
       setAccounts(prev => prev.filter(acc => acc.id !== id));

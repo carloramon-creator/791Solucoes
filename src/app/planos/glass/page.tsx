@@ -1,5 +1,6 @@
 "use client";
 
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { useEffect, useState } from 'react';
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
@@ -123,7 +124,7 @@ export default function PlanosGlassPage() {
 
       let propagatedCount = 0;
       if (propagationMode !== 'none') {
-        const response = await fetch('/api/admin/propagate-glass-limits', {
+        const response = await holdingAuthFetch('/api/admin/propagate-glass-limits', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

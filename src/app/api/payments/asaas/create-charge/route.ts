@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { supabase } from '@/lib/supabase';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const { 
       asaasApiKey, 

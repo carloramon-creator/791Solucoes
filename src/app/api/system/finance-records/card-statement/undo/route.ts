@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 
 export async function POST(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
     const body = await req.json();
     const statementId = String(body?.statementId || '');

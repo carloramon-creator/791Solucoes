@@ -2,6 +2,20 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Extrato do Inter
+
+A importacao do Inter permanece bloqueada ate validar a conciliacao com
+lancamentos existentes e testar a API com a conta real. Nao habilite a
+sincronizacao apenas porque o token OAuth foi emitido.
+
+O cliente usa mTLS e o escopo `extrato.read`. O numero da conta informado no
+cadastro bancario inclui o digito para o cabecalho `x-conta-corrente`. A consulta
+divide periodos superiores a 90 dias e verifica a paginacao; identificadores
+ausentes ou repetidos, valores invalidos e respostas incompletas interrompem
+a importacao em vez de gerar lancamentos presumidos.
+
+Testes isolados: `node --test scripts/tests/inter-statement.test.mjs`.
+
 ## NFS-e da holding para os tenants
 
 As visualizacoes da Holding e do Glass usam os campos textuais do XML oficial,

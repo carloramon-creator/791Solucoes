@@ -8,6 +8,7 @@ type BankAccountRow = {
   id: string;
   name: string;
   provider: string | null;
+  account_number: string | null;
   sync_enabled: boolean;
   sync_start_date: string | null;
 };
@@ -176,8 +177,11 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
     const finishDate = todayBrt();
 
     const { transactions, balance } = provider === 'inter'
-      ? await fetchInterTransactions(startDate, finishDate)
+      ? await fetchInterTransactions(startDate, finishDate, account.account_number)
       : await fetchAsaasTransactions(startDate, finishDate);
+    if (provider === 'inter') {
+      throw new Error('Extrato do Inter aguardando validação da conciliação; nenhuma movimentação foi importada.');
+    }
     result.providerBalance = balance;
 
     const { data: existing } = await supabaseServer
@@ -291,7 +295,7 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
 export async function syncBankAccounts(options: { accountId?: string } = {}) {
   let query = supabaseServer
     .from('system_bank_accounts')
-    .select('id, name, provider, sync_enabled, sync_start_date')
+    .select('id, name, provider, account_number, sync_enabled, sync_start_date')
     .eq('sync_enabled', true)
     .not('provider', 'is', null);
   if (options.accountId) query = query.eq('id', options.accountId);

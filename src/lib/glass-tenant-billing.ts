@@ -13,7 +13,7 @@ export type TenantInvoice = {
   createdAt: string;
   dueDate: string | null;
   reference: string;
-  type: 'Assinatura' | 'Excedente';
+  type: 'Assinatura' | 'Excedente' | 'Avulsa';
   description: string;
   status: string;
   /** pending | overdue | paid | cancelled | other */
@@ -149,6 +149,7 @@ export async function loadTenantInvoices(tenantId: string, tenant?: { cnpj?: str
     .map((row: any) => {
       const metadata = metadataOf(row.metadata);
       const isOverage = metadata.kind === 'overage';
+      const isAvulsa = metadata.kind === 'avulsa';
       const status = String(row.status || '');
       const dueDate = String(metadata.due_date || metadata.dueDate || '') || null;
       const situation = situationOf(status, dueDate);
@@ -158,8 +159,8 @@ export async function loadTenantInvoices(tenantId: string, tenant?: { cnpj?: str
         source: 'record',
         createdAt: row.created_at,
         dueDate,
-        reference: isOverage ? formatOverageReference(metadata.ref_month || String(row.id).slice(0, 8)) : `COB-${String(row.id).slice(0, 8)}`,
-        type: isOverage ? 'Excedente' : 'Assinatura',
+        reference: isOverage ? formatOverageReference(metadata.ref_month || String(row.id).slice(0, 8)) : `${isAvulsa ? 'AVU' : 'COB'}-${String(row.id).slice(0, 8)}`,
+        type: isOverage ? 'Excedente' : isAvulsa ? 'Avulsa' : 'Assinatura',
         description: row.description || 'Cobrança 791glass',
         status,
         situation,

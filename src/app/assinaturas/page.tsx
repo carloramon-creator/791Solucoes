@@ -20,7 +20,11 @@ import {
   FileText,
   Loader2,
   Trash2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Receipt
 } from 'lucide-react';
 
 import { supabaseGlass } from '@/lib/supabase-glass';
@@ -225,6 +229,8 @@ interface TenantReport {
 
 import { useRouter } from 'next/navigation';
 
+type SortKey = 'nome' | 'status' | 'vencimento' | 'assinatura' | 'faturas';
+
 export default function AssinaturasPage() {
   const router = useRouter();
   const authClient = useMemo(() => createSupabaseBrowser(), []);
@@ -232,6 +238,12 @@ export default function AssinaturasPage() {
   const [tenants, setTenants] = useState<Vidracaria[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sponsorMap, setSponsorMap] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
+  const [chargeTenant, setChargeTenant] = useState<Vidracaria | null>(null);
+  const [chargeForm, setChargeForm] = useState({ value: '', description: '', dueDate: '', billingType: 'UNDEFINED' });
+  const [chargeSaving, setChargeSaving] = useState(false);
+  const [chargeError, setChargeError] = useState('');
+  const [chargeResult, setChargeResult] = useState<{ invoiceUrl: string | null } | null>(null);
   
   // Configuração de Módulos e Limites
   const [modules, setModules] = useState<Module[]>([]);
@@ -807,6 +819,105 @@ export default function AssinaturasPage() {
     (v.slug || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const daysUntilDue = (tenant: Vidracaria) => {
+    if (!tenant.vencimento_assinatura) return null;
+    const [year, month, day] = tenant.vencimento_assinatura.split('T')[0].split('-');
+    const due = new Date(Number(year), Number(month) - 1, Number(day));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  const statusLabelOf = (tenant: Vidracaria, dias: number | null) => {
+    if (tenant.status_assinatura === 'bloqueada' || (dias !== null && dias <= -5)) return 'BLOQUEADA';
+    if (dias !== null && dias < 0) return 'ATRASADA';
+    if (tenant.status_assinatura === 'inativa' || !tenant.ativa) return 'INATIVA';
+    return 'ATIVA';
+  };
+
+  const subscriptionValueOf = (tenant: Vidracaria) => computeGlassSubscription({
+    tenant,
+    plan: systemPlan,
+    modules,
+    sponsored: Boolean(sponsorMap[tenant.id]),
+  }).total;
+
+  const extrasValueOf = (tenant: Vidracaria) => Number(usageByTenant[tenant.id]?.overage.values.total || 0);
+
+  const sortedTenants = (() => {
+    if (!sort) return filteredTenants;
+    const valueOf = (tenant: Vidracaria): string | number => {
+      switch (sort.key) {
+        case 'nome': return (tenant.nome || '').toLocaleLowerCase('pt-BR');
+        case 'status': return statusLabelOf(tenant, daysUntilDue(tenant));
+        case 'vencimento': return daysUntilDue(tenant) ?? Number.POSITIVE_INFINITY;
+        case 'assinatura': return subscriptionValueOf(tenant);
+        case 'faturas': return extrasValueOf(tenant);
+      }
+    };
+    const factor = sort.dir === 'asc' ? 1 : -1;
+    return [...filteredTenants].sort((a, b) => {
+      const va = valueOf(a);
+      const vb = valueOf(b);
+      const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR');
+      return cmp * factor;
+    });
+  })();
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) => {
+      if (!current || current.key !== key) return { key, dir: 'asc' };
+      if (current.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  };
+
+  const renderSortHeader = ({ label, sortKey, align = 'left', title }: { label: string; sortKey: SortKey; align?: 'left' | 'center'; title?: string }) => {
+    const active = sort?.key === sortKey;
+    const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <th className={`px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap ${align === 'center' ? 'text-center' : ''}`} title={title} aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button type="button" onClick={() => toggleSort(sortKey)} className={`inline-flex items-center gap-1 uppercase tracking-widest hover:text-[#3b597b] ${active ? 'text-[#3b597b]' : ''}`}>
+          {label}
+          <Icon size={11} className={active ? '' : 'opacity-40'} />
+        </button>
+      </th>
+    );
+  };
+
+  const openChargeModal = (tenant: Vidracaria) => {
+    const due = new Date(Date.now() - 3 * 60 * 60 * 1000 + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    setChargeTenant(tenant);
+    setChargeForm({ value: '', description: '', dueDate: due, billingType: 'UNDEFINED' });
+    setChargeError('');
+    setChargeResult(null);
+  };
+
+  const submitCharge = async () => {
+    if (!chargeTenant || chargeSaving) return;
+    setChargeSaving(true);
+    setChargeError('');
+    try {
+      const res = await holdingAuthFetch(`/api/admin/tenant-panel/${chargeTenant.id}/charge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          value: Number(String(chargeForm.value).replace(/\./g, '').replace(',', '.')),
+          description: chargeForm.description,
+          dueDate: chargeForm.dueDate,
+          billingType: chargeForm.billingType,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json?.error || 'Falha ao emitir a cobrança.');
+      setChargeResult({ invoiceUrl: json.invoiceUrl || null });
+    } catch (err) {
+      setChargeError(err instanceof Error ? err.message : 'Falha ao emitir a cobrança.');
+    } finally {
+      setChargeSaving(false);
+    }
+  };
+
   const glassUsersTenantOptions = useMemo(() => {
     const unique = new Map<string, string>();
     glassUsers.forEach((user) => {
@@ -1002,11 +1113,11 @@ export default function AssinaturasPage() {
             </colgroup>
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500">
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest whitespace-nowrap">Vidraçaria / Cliente</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Status</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Vencimento</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Assinatura</th>
-                <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap" title="Extras do mês: usuários, mensagens e consultas">Faturas</th>
+                {renderSortHeader({ label: "Vidraçaria / Cliente", sortKey: "nome" })}
+                {renderSortHeader({ label: "Status", sortKey: "status", align: "center" })}
+                {renderSortHeader({ label: "Vencimento", sortKey: "vencimento", align: "center" })}
+                {renderSortHeader({ label: "Assinatura", sortKey: "assinatura", align: "center" })}
+                {renderSortHeader({ label: "Faturas", sortKey: "faturas", align: "center", title: "Extras do mês: usuários, mensagens e consultas" })}
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -1025,15 +1136,10 @@ export default function AssinaturasPage() {
                   </td>
                 </tr>
               ) : (
-                filteredTenants.map((tenant) => {
+                sortedTenants.map((tenant) => {
                   const usage = usageByTenant[tenant.id];
                   // Valor do ciclo: regra compartilhada com o painel do tenant
-                  const valorTotal = computeGlassSubscription({
-                    tenant,
-                    plan: systemPlan,
-                    modules,
-                    sponsored: Boolean(sponsorMap[tenant.id]),
-                  }).total;
+                  const valorTotal = subscriptionValueOf(tenant);
 
                   let diasRestantes: number | null = null;
                   let vencimentoStr = '';
@@ -1132,6 +1238,15 @@ export default function AssinaturasPage() {
                       </td>
                         <td className="px-2 py-1.5 text-center">
                           <div className="flex justify-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => openChargeModal(tenant)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-blue-50 hover:text-[#3b597b]"
+                            title="Emitir cobrança avulsa"
+                            aria-label="Emitir cobrança avulsa"
+                          >
+                            <Receipt size={16} />
+                          </button>
                           <button 
                             onClick={() => {
                               setVidracariaToEmit(tenant);
@@ -1226,6 +1341,67 @@ export default function AssinaturasPage() {
           </table>
         </div>
       </div>
+
+      {chargeTenant && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50/50 px-5 py-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#3b597b]">Cobrança avulsa</p>
+                <h3 className="mt-1 text-base font-black text-slate-800">{chargeTenant.nome}</h3>
+              </div>
+              <button onClick={() => setChargeTenant(null)} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={16} /></button>
+            </div>
+            {chargeResult ? (
+              <div className="space-y-4 p-5">
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                  <CheckCircle2 size={16} /> Cobrança emitida no Asaas. O cliente recebe o aviso por e-mail.
+                </div>
+                {chargeResult.invoiceUrl && (
+                  <a href={chargeResult.invoiceUrl} target="_blank" rel="noreferrer" className="block truncate rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-[#3b597b] hover:bg-slate-50">
+                    {chargeResult.invoiceUrl}
+                  </a>
+                )}
+                <div className="flex justify-end">
+                  <button onClick={() => setChargeTenant(null)} className="rounded-lg bg-[#3b597b] px-4 py-2 text-[10px] font-black uppercase text-white hover:bg-[#2f4863]">Fechar</button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 p-5">
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Descrição
+                  <input value={chargeForm.description} onChange={(e) => setChargeForm((f) => ({ ...f, description: e.target.value }))} maxLength={300} placeholder="Ex.: Implantação, treinamento, serviço extra..." className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold normal-case tracking-normal text-slate-700" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Valor (R$)
+                    <input value={chargeForm.value} onChange={(e) => setChargeForm((f) => ({ ...f, value: e.target.value.replace(/[^\d.,]/g, '') }))} inputMode="decimal" placeholder="0,00" className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-right text-sm font-semibold text-slate-700" />
+                  </label>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Vencimento
+                    <input type="date" value={chargeForm.dueDate} onChange={(e) => setChargeForm((f) => ({ ...f, dueDate: e.target.value }))} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700" />
+                  </label>
+                </div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Forma de pagamento
+                  <select value={chargeForm.billingType} onChange={(e) => setChargeForm((f) => ({ ...f, billingType: e.target.value }))} className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold normal-case tracking-normal text-slate-700">
+                    <option value="UNDEFINED">Cliente escolhe (boleto, Pix ou cartão)</option>
+                    <option value="BOLETO">Boleto</option>
+                    <option value="PIX">Pix</option>
+                  </select>
+                </label>
+                {chargeError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{chargeError}</div>}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button onClick={() => setChargeTenant(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-[10px] font-black uppercase text-slate-600">Cancelar</button>
+                  <button onClick={submitCharge} disabled={chargeSaving} className="inline-flex items-center gap-1.5 rounded-lg bg-[#3b597b] px-4 py-2 text-[10px] font-black uppercase text-white hover:bg-[#2f4863] disabled:opacity-50">
+                    {chargeSaving ? <Loader2 size={13} className="animate-spin" /> : <Receipt size={13} />} Emitir cobrança
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {tenantReportTenant && (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/65 p-4 backdrop-blur-sm">

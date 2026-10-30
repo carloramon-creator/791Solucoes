@@ -38,7 +38,7 @@ type PanelInvoice = {
   createdAt: string;
   dueDate: string | null;
   reference: string;
-  type: 'Assinatura' | 'Excedente';
+  type: 'Assinatura' | 'Excedente' | 'Avulsa';
   description: string;
   status: string;
   situation: 'pending' | 'overdue' | 'paid' | 'cancelled' | 'other';

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, Landmark, Loader2, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Landmark, Loader2, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
 import FinanceCategoryDialog, { type FinanceCategory } from "@/components/FinanceCategoryDialog";
 
@@ -134,6 +134,7 @@ export default function BankImportPanel({
   const [rules, setRules] = useState<Rule[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [categoryTarget, setCategoryTarget] = useState<{ item: PendingItem; parentId: string; initialName?: string } | null>(null);
+  const [patternTarget, setPatternTarget] = useState<{ item: PendingItem; value: string; error?: string } | null>(null);
   const loadSequence = useRef(0);
 
   const load = useCallback(() => {
@@ -318,7 +319,7 @@ export default function BankImportPanel({
       </button>
 
       {open && (
-        <div inert={categoryTarget !== null} className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
+        <div inert={categoryTarget !== null || patternTarget !== null} className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setOpen(false)}>
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[1480px] my-8 text-[calc(1rem+2pt)] leading-normal" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-6 py-4 border-b border-slate-100">
               <div>
@@ -523,7 +524,7 @@ export default function BankImportPanel({
                     <thead className="text-[calc(10px+2pt)] uppercase tracking-widest text-slate-400">
                       <tr className="text-left">
                         <th className="py-1.5 pr-3">Data</th><th className="pr-3">Conta</th><th className="pr-3">Descrição</th><th className="text-right whitespace-nowrap">Valor</th>
-                        <th className="pl-3 whitespace-nowrap">Classe / subclasse</th><th className="pl-2 whitespace-nowrap">Regra (aprender)</th><th className="w-20"></th>
+                        <th className="pl-3 whitespace-nowrap">Classe / subclasse</th><th className="pl-2 whitespace-nowrap">Regra (aprender)</th><th className="w-12"></th><th className="w-20"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -593,6 +594,18 @@ export default function BankImportPanel({
                                 Aplicar sempre a este nome
                               </label>
                             </td>
+                            <td className="pr-2">
+                              <button
+                                type="button"
+                                onClick={() => setPatternTarget({ item, value: draft.pattern })}
+                                disabled={draft.saving}
+                                title="Editar o nome da regra"
+                                aria-label={`Editar regra de ${item.description}`}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-[#3b597b] hover:border-[#3b597b]/40 disabled:opacity-40"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            </td>
                             <td className="text-right">
                               <button onClick={() => classify(item)} disabled={draft.saving} className="bg-emerald-600 text-white rounded-lg px-3 py-1 font-bold disabled:opacity-60">
                                 {draft.saving ? <Loader2 size={12} className="animate-spin inline" /> : "Salvar"}
@@ -629,6 +642,59 @@ export default function BankImportPanel({
               </section>
             </div>
           </div>
+        </div>
+      )}
+      {patternTarget && (
+        <div
+          className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/50 p-4 text-[calc(0.75rem+2pt)] leading-normal"
+          onClick={(event) => { if (event.target === event.currentTarget) setPatternTarget(null); }}
+          onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setPatternTarget(null); } }}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rule-pattern-title"
+            className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = patternTarget.value.trim();
+              if (normalizeText(value).length < 3) {
+                setPatternTarget({ ...patternTarget, error: "O nome da regra precisa ter pelo menos 3 letras ou números." });
+                return;
+              }
+              setDraft(patternTarget.item.id, { pattern: value, createRule: true, error: undefined }, patternTarget.item);
+              setPatternTarget(null);
+            }}
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <h3 id="rule-pattern-title" className="font-bold text-slate-800">Editar regra</h3>
+              <button type="button" onClick={() => setPatternTarget(null)} aria-label="Fechar edição da regra" className="p-1 text-slate-400 hover:text-slate-700"><X size={18} /></button>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <p className="text-slate-500">Lançamento: <b className="text-slate-700">{patternTarget.item.description}</b></p>
+              <label className="block space-y-1">
+                <span className="font-semibold text-slate-600">Sempre que contiver</span>
+                <input
+                  autoFocus
+                  maxLength={80}
+                  value={patternTarget.value}
+                  onChange={(event) => setPatternTarget({ ...patternTarget, value: event.target.value, error: undefined })}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
+                />
+                <span className="block text-slate-500">Os próximos lançamentos com este texto serão classificados sozinhos. Use só a parte que se repete (ex.: o nome da empresa).</span>
+              </label>
+              {patternTarget.value.trim() !== patternTarget.item.suggested_pattern && (
+                <button type="button" onClick={() => setPatternTarget({ ...patternTarget, value: patternTarget.item.suggested_pattern, error: undefined })} className="font-semibold text-[#3b597b] underline">
+                  Voltar ao nome sugerido
+                </button>
+              )}
+              {patternTarget.error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-red-700">{patternTarget.error}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
+              <button type="button" onClick={() => setPatternTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-slate-600">Cancelar</button>
+              <button type="submit" className="rounded-xl bg-[#3b597b] px-4 py-2 font-bold text-white">Aplicar</button>
+            </div>
+          </form>
         </div>
       )}
       {categoryTarget && (

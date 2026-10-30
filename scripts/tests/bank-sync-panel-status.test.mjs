@@ -17,7 +17,7 @@ const code = ts.transpileModule(source, {
 }).outputText;
 
 function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = [], categories = []) {
-  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}, null];
+  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}, null, null];
   const effects = [];
   const createdCalls = [];
   const refs = [];
@@ -224,4 +224,35 @@ test('shows the counterparty only when the description does not already contain 
   const html = renderPanel(true, [inter], undefined, pending);
   assert.doesNotMatch(html, /TCR GROUP LTDA/);
   assert.match(html, /<span class="block text-slate-400">Outro Pagador<\/span>/);
+});
+
+test('edits the rule text in a popup without touching other rows', () => {
+  const pending = ['first', 'second'].map((id) => ({
+    id, type: 'expense', value: 10, description: `Pix enviado - ${id} Ltda`, date: '2026-10-30', suggested_pattern: `${id} Ltda`,
+  }));
+  let ui;
+  renderPanel(true, [inter], (value) => { ui = value; }, pending);
+  const edit = nodes(ui.render(), (node) => node.type === 'button' && node.props['aria-label']?.startsWith('Editar regra'));
+  assert.equal(edit.length, 2);
+  edit[0].props.onClick();
+  assert.equal(ui.states[15].value, 'first Ltda');
+  let html = renderToStaticMarkup(ui.render());
+  assert.match(html, /Editar regra/);
+  assert.equal(nodes(ui.render(), (node) => node.props?.inert === true).length, 1);
+  let form = nodes(ui.render(), (node) => node.type === 'form')[0];
+  ui.states[15] = { ...ui.states[15], value: ' x ' };
+  form = nodes(ui.render(), (node) => node.type === 'form')[0];
+  form.props.onSubmit({ preventDefault() {} });
+  assert.match(ui.states[15].error, /pelo menos 3/);
+  assert.deepEqual(ui.states[13], {});
+  ui.states[15] = { ...ui.states[15], value: '  Primeira Empresa  ', error: undefined };
+  form = nodes(ui.render(), (node) => node.type === 'form')[0];
+  form.props.onSubmit({ preventDefault() {} });
+  assert.equal(ui.states[15], null);
+  assert.equal(ui.states[13].first.pattern, 'Primeira Empresa');
+  assert.equal(ui.states[13].first.createRule, true);
+  assert.equal(ui.states[13].second, undefined);
+  html = renderToStaticMarkup(ui.render());
+  assert.match(html, /title="Sempre que contiver: Primeira Empresa"/);
+  assert.doesNotMatch(html, /Editar regra<\/h3>/);
 });

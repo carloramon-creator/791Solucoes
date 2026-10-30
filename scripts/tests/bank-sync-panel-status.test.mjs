@@ -186,7 +186,11 @@ test('keeps statement columns and rule text on one line in a wider modal', () =>
   assert.match(html, /max-w-\[1480px\]/);
   assert.match(html, /<td class="pr-3 whitespace-nowrap">Banco Inter Empresas<\/td>/);
   assert.match(html, /<td class="pr-3 text-slate-700 whitespace-nowrap">Pix enviado - Ifoodcom/);
-  assert.match(html, /<input style="width:45ch" class="max-w-\[28rem\][^"]*" value="Ifoodcom Agencia De Restaurantes Online Sa"\/>/);
+  assert.match(html, /title="Sempre que contiver: Ifoodcom Agencia De Restaurantes Online Sa"/);
+  assert.match(html, /Aplicar sempre a este nome/);
+  assert.doesNotMatch(html, /value="Ifoodcom Agencia De Restaurantes Online Sa"/);
+  assert.doesNotMatch(html, /<span class="block text-slate-400">Ifoodcom Agencia<\/span>/);
+  assert.match(html, /<select[^>]*class="h-9 w-full appearance-none/);
   assert.doesNotMatch(html, /Transferência entre contas/);
 });
 
@@ -210,4 +214,14 @@ test('identifies transfers to or from 791 Soluções Empresariais and preselects
   assert.equal(popup.props.initialParentId, '');
   assert.equal(popup.props.initialName, 'Transferência entre contas');
   assert.deepEqual(ui.states[13], {});
+});
+
+test('shows the counterparty only when the description does not already contain it', () => {
+  const pending = [
+    { id: 'a', type: 'revenue', value: 1, description: 'Pix recebido - Tcr Group Ltda', counterparty: 'TCR GROUP LTDA', date: '2026-10-24', suggested_pattern: 'Tcr Group Ltda' },
+    { id: 'b', type: 'revenue', value: 1, description: 'Pix recebido', counterparty: 'Outro Pagador', date: '2026-10-24', suggested_pattern: 'Outro Pagador' },
+  ];
+  const html = renderPanel(true, [inter], undefined, pending);
+  assert.doesNotMatch(html, /TCR GROUP LTDA/);
+  assert.match(html, /<span class="block text-slate-400">Outro Pagador<\/span>/);
 });

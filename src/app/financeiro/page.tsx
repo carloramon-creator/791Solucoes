@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import BankImportPanel from "@/components/BankImportPanel";
+import BankImportPanel, { isTransferCategoryName } from "@/components/BankImportPanel";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
@@ -452,7 +452,8 @@ export default function FinancePage() {
   }, [selectedSourceIds, sourceById, sourceOptions]);
 
   const stats = useMemo(() => {
-    const paid = normalizedRecords.filter((record) => record.status === "paid");
+    // Transferências entre contas próprias só mudam o dinheiro de conta: ficam fora de receitas/despesas.
+    const paid = normalizedRecords.filter((record) => record.status === "paid" && !isTransferCategoryName(record.category));
     const revenue = paid.filter((record) => record.type === "revenue").reduce((sum, r) => sum + Number(r.value || 0), 0);
     const expenses = paid.filter((record) => record.type === "expense").reduce((sum, r) => sum + Number(r.value || 0), 0);
     return {
@@ -498,11 +499,15 @@ export default function FinancePage() {
   }, [normalizedRecords, flowDateStart, flowDateEnd, activeFlowSourceIds]);
 
   const flowIncoming = useMemo(
-    () => flowRecords.filter((record) => record.type === "revenue").reduce((sum, record) => sum + Number(record.value || 0), 0),
+    () => flowRecords.filter((record) => record.type === "revenue" && !isTransferCategoryName(record.category)).reduce((sum, record) => sum + Number(record.value || 0), 0),
     [flowRecords]
   );
   const flowOutgoing = useMemo(
-    () => flowRecords.filter((record) => record.type === "expense").reduce((sum, record) => sum + Number(record.value || 0), 0),
+    () => flowRecords.filter((record) => record.type === "expense" && !isTransferCategoryName(record.category)).reduce((sum, record) => sum + Number(record.value || 0), 0),
+    [flowRecords]
+  );
+  const flowTransfers = useMemo(
+    () => flowRecords.filter((record) => isTransferCategoryName(record.category)).reduce((sum, record) => sum + signedValue(record), 0),
     [flowRecords]
   );
   const flowNet = useMemo(() => flowRecords.reduce((sum, record) => sum + signedValue(record), 0), [flowRecords]);
@@ -1158,6 +1163,9 @@ export default function FinancePage() {
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-slate-500">Saida</p><p className="mt-1 text-xl font-bold text-red-600">{formatCurrency(flowOutgoing)}</p></div>
                 <div className="rounded-xl border border-slate-200 bg-blue-50 p-4"><p className="text-[10px] uppercase tracking-widest font-black text-blue-600">Saldo final</p><p className={`mt-1 text-xl font-bold ${flowClosingBalance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(flowClosingBalance)}</p></div>
               </div>
+              {Math.abs(flowTransfers) >= 0.01 && (
+                <p className="text-xs text-slate-500">Transferências entre contas (fora de entradas e saídas): <b>{flowTransfers > 0 ? "+" : ""}{formatCurrency(flowTransfers)}</b></p>
+              )}
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Landmark, Loader2, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Landmark, Loader2, RefreshCw, Trash2, X } from "lucide-react";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
 import FinanceCategoryDialog, { type FinanceCategory } from "@/components/FinanceCategoryDialog";
 
@@ -102,7 +102,7 @@ const normalizeText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 export const isInternalTransfer = (item: { description: string; counterparty?: string | null }) =>
   normalizeText(`${item.description} ${item.counterparty || ""}`).includes(OWN_COMPANY_NAME);
-const isTransferCategoryName = (name: string) => /^transferencias? entre contas$/.test(normalizeText(name));
+export const isTransferCategoryName = (name?: string | null) => /^transferencias? entre contas$/.test(normalizeText(name || ""));
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(v) ? v : 0);
 const dateBr = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "--");
@@ -537,7 +537,9 @@ export default function BankImportPanel({
                             <td className="pr-3 whitespace-nowrap">{accountName(item.bank_account_id)}</td>
                             <td className="pr-3 text-slate-700 whitespace-nowrap">
                               {item.description}
-                              {item.counterparty ? <span className="block text-slate-400">{item.counterparty}</span> : null}
+                              {item.counterparty && !normalizeText(item.description).includes(normalizeText(item.counterparty))
+                                ? <span className="block text-slate-400">{item.counterparty}</span>
+                                : null}
                               {transfer && (
                                 <span className="mt-1 flex items-center gap-2">
                                   <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">⇄ Transferência entre contas</span>
@@ -555,6 +557,7 @@ export default function BankImportPanel({
                             </td>
                             <td className={`text-right whitespace-nowrap font-bold ${item.type === "revenue" ? "text-emerald-600" : "text-red-600"}`}>{item.type === "revenue" ? "+" : "-"}{brl(item.value)}</td>
                             <td className="pl-3">
+                              <span className="relative block w-60">
                               <select
                                 value={draft.categoryId}
                                 disabled={draft.saving}
@@ -567,7 +570,7 @@ export default function BankImportPanel({
                                     setDraft(item.id, { categoryId: e.target.value, error: undefined }, item);
                                   }
                                 }}
-                                className="w-60 border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                                className="h-9 w-full appearance-none border border-slate-200 rounded-lg pl-2 pr-8 bg-white"
                               >
                                 <option value="">Escolher…</option>
                                 <option value="__new_category__">+ Nova classe / subclasse…</option>
@@ -580,21 +583,15 @@ export default function BankImportPanel({
                                   )),
                                 ])}
                               </select>
+                              <ChevronDown size={14} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                              </span>
                               {draft.error && <span className="block text-red-600 mt-1">{draft.error}</span>}
                             </td>
                             <td className="pl-2 whitespace-nowrap">
-                              <label className="flex items-center gap-1 text-slate-600">
+                              <label className="flex h-9 items-center gap-1 text-slate-600" title={`Sempre que contiver: ${draft.pattern}`}>
                                 <input type="checkbox" checked={draft.createRule} onChange={(e) => setDraft(item.id, { createRule: e.target.checked }, item)} />
-                                Sempre que contiver:
+                                Aplicar sempre a este nome
                               </label>
-                              {draft.createRule && (
-                                <input
-                                  value={draft.pattern}
-                                  onChange={(e) => setDraft(item.id, { pattern: e.target.value }, item)}
-                                  style={{ width: `${Math.max(draft.pattern.length, 22) + 3}ch` }}
-                                  className="max-w-[28rem] border border-slate-200 rounded-lg px-2 py-1 mt-1"
-                                />
-                              )}
                             </td>
                             <td className="text-right">
                               <button onClick={() => classify(item)} disabled={draft.saving} className="bg-emerald-600 text-white rounded-lg px-3 py-1 font-bold disabled:opacity-60">

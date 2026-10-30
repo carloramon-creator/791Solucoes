@@ -273,7 +273,7 @@ test('keeps Inter imports blocked until existing ledger reconciliation is valida
     throw new Error(`Unexpected dependency ${id}`);
   }, mod, mod.exports);
   const result = await mod.exports.syncBankAccounts();
-  assert.match(result[0].error, /aguardando validação da conciliação/);
+  assert.match(result[0].error, /Conciliação do Inter ainda não implementada e validada/);
   assert.deepEqual(fetchCalls, [['2026-10-01', '2026-10-30', '123-4']]);
   assert.equal(calls.some(({ table }) => table === 'system_finance_records'), false);
   assert.equal(calls.some(({ table, action }) => table === 'system_bank_transactions' && action !== 'select'), false);

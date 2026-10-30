@@ -4,7 +4,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Extrato do Inter
 
-A importacao do Inter permanece bloqueada ate validar a conciliacao com
+A importacao do Inter permanece bloqueada ate implementar e validar a conciliacao com
 lancamentos existentes e testar a API com a conta real. Nao habilite a
 sincronizacao apenas porque o token OAuth foi emitido.
 

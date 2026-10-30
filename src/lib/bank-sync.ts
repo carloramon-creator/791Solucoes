@@ -180,7 +180,7 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
       ? await fetchInterTransactions(startDate, finishDate, account.account_number)
       : await fetchAsaasTransactions(startDate, finishDate);
     if (provider === 'inter') {
-      throw new Error('Extrato do Inter aguardando validação da conciliação; nenhuma movimentação foi importada.');
+      throw new Error('Conciliação do Inter ainda não implementada e validada; nenhuma movimentação foi importada.');
     }
     result.providerBalance = balance;
 

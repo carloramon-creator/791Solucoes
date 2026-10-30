@@ -124,6 +124,25 @@ export class AsaasClient {
         return (response.data?.data || []) as any[];
     }
 
+    /** Extrato da conta Asaas (créditos positivos, débitos negativos). */
+    async listFinancialTransactions(params: { startDate: string; finishDate: string; offset?: number; limit?: number }) {
+        const response = await this.client.get('/financialTransactions', {
+            params: { limit: 100, offset: 0, order: 'asc', ...params },
+        });
+        return {
+            data: (response.data?.data || []) as Array<{
+                id: string; value: number; balance: number; type: string; date: string;
+                description?: string | null; paymentId?: string | null; transferId?: string | null;
+            }>,
+            hasMore: Boolean(response.data?.hasMore),
+        };
+    }
+
+    async getBalance() {
+        const response = await this.client.get('/finance/balance');
+        return Number(response.data?.balance ?? NaN);
+    }
+
     async listSubscriptions(params: Record<string, string | number>) {
         const response = await this.client.get('/subscriptions', { params: { limit: 100, ...params } });
         return (response.data?.data || []) as any[];

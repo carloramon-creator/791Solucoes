@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import BankImportPanel from "@/components/BankImportPanel";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase-browser";
 import { holdingAuthFetch } from "@/lib/holding-auth-fetch";
@@ -1030,6 +1031,11 @@ export default function FinancePage() {
           </p>
         </div>
         <div className="flex items-center gap-3 self-start md:self-auto">
+          <BankImportPanel
+            categories={categories}
+            systemBalances={Object.fromEntries(sourceOptions.filter((source) => source.kind === "account" && source.accountId).map((source) => [source.accountId as string, source.amount]))}
+            onChanged={() => { void loadData(); }}
+          />
           <button
             onClick={handlePrintPdf}
             disabled={printing}

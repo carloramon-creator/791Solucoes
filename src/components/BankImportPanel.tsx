@@ -593,8 +593,8 @@ export default function BankImportPanel({
                         const transfer = isInternalTransfer(item);
                         const transferCategory = transfer ? transferCategoryFor(item.type) : undefined;
                         return (
-                          <tr key={item.id} className="border-t border-slate-100 align-top">
-                            <td className="py-1.5 pr-3 whitespace-nowrap">{dateBr(item.date)}</td>
+                          <tr key={item.id} className="border-t border-slate-100 align-middle [&>td]:py-2">
+                            <td className="pr-3 whitespace-nowrap">{dateBr(item.date)}</td>
                             <td className="pr-3 whitespace-nowrap">{accountName(item.bank_account_id)}</td>
                             <td className="pr-3 text-slate-700 whitespace-nowrap">
                               {item.description}
@@ -667,7 +667,7 @@ export default function BankImportPanel({
                               </button>
                             </td>
                             <td className="text-right">
-                              <button onClick={() => classify(item)} disabled={draft.saving} className="bg-emerald-600 text-white rounded-lg px-3 py-1 font-bold disabled:opacity-60">
+                              <button onClick={() => classify(item)} disabled={draft.saving} className="inline-flex h-9 items-center justify-center bg-emerald-600 text-white rounded-lg px-3 font-bold disabled:opacity-60">
                                 {draft.saving ? <Loader2 size={12} className="animate-spin inline" /> : "Salvar"}
                               </button>
                             </td>
@@ -679,27 +679,36 @@ export default function BankImportPanel({
                 )}
               </section>
 
-              <section className="overflow-x-auto">
-                <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black text-slate-500 mb-2">Regras aprendidas ({rules.length})</h3>
-                {rules.length === 0 ? (
-                  <p className="text-[calc(0.75rem+2pt)] text-slate-400">Ao classificar com &quot;Sempre que contiver&quot;, o sistema passa a classificar sozinho os próximos lançamentos parecidos.</p>
-                ) : (
-                  <table className="w-full min-w-[700px] text-[calc(0.75rem+2pt)]">
-                    <tbody>
-                      {rules.map((rule) => (
-                        <tr key={rule.id} className="border-t border-slate-100">
-                          <td className="py-1.5 pr-3 whitespace-nowrap">“{rule.pattern}”</td>
-                          <td>{rule.record_type === "revenue" ? "Receita" : "Despesa"}</td>
-                          <td className="pr-3 font-semibold whitespace-nowrap">{rule.category_name}</td>
-                          <td>{rule.bank_account_id ? accountName(rule.bank_account_id) : "Todas as contas"}</td>
-                          <td className="text-slate-400">{rule.hits} uso(s)</td>
-                          <td className="text-right"><button onClick={() => removeRule(rule.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </section>
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg py-2 text-slate-500 hover:text-[#3b597b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3b597b] [&::-webkit-details-marker]:hidden">
+                  <h3 className="text-[calc(10px+2pt)] uppercase tracking-widest font-black">Regras aprendidas ({rules.length})</h3>
+                  <span className="flex items-center gap-2 text-[calc(10px+2pt)] font-bold">
+                    <span className="group-open:hidden">Expandir</span>
+                    <span className="hidden group-open:inline">Ocultar</span>
+                    <ChevronDown size={14} aria-hidden="true" className="transition-transform group-open:rotate-180" />
+                  </span>
+                </summary>
+                <div className="mt-2 overflow-x-auto">
+                  {rules.length === 0 ? (
+                    <p className="text-[calc(0.75rem+2pt)] text-slate-400">Ao classificar com &quot;Sempre que contiver&quot;, o sistema passa a classificar sozinho os próximos lançamentos parecidos.</p>
+                  ) : (
+                    <table className="w-full min-w-[700px] text-[calc(0.75rem+2pt)]">
+                      <tbody>
+                        {rules.map((rule) => (
+                          <tr key={rule.id} className="border-t border-slate-100">
+                            <td className="py-1.5 pr-3 whitespace-nowrap">“{rule.pattern}”</td>
+                            <td>{rule.record_type === "revenue" ? "Receita" : "Despesa"}</td>
+                            <td className="pr-3 font-semibold whitespace-nowrap">{rule.category_name}</td>
+                            <td>{rule.bank_account_id ? accountName(rule.bank_account_id) : "Todas as contas"}</td>
+                            <td className="text-slate-400">{rule.hits} uso(s)</td>
+                            <td className="text-right"><button onClick={() => removeRule(rule.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </details>
             </div>
           </div>
         </div>

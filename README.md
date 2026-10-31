@@ -17,6 +17,9 @@ E possivel criar uma classe, uma subclasse de classe existente ou
 as duas juntas (em uma unica insercao atomica). O tipo acompanha o lancamento.
 O cadastro fica selecionado na linha; a classificacao so ocorre ao clicar em
 Salvar. Essa criacao nao habilita uso em webhook.
+As regras aprendidas ficam recolhidas ao abrir o extrato; clique no titulo
+"Regras aprendidas" para expandir ou ocultar a lista. Os campos e botoes de
+"A classificar" ficam centralizados verticalmente em cada linha.
 
 O cliente usa mTLS e o escopo `extrato.read`. Informe a conta completa, incluindo
 o digito, tanto nas configuracoes financeiras quanto no cadastro bancario usado

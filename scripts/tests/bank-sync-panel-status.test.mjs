@@ -16,8 +16,8 @@ const code = ts.transpileModule(source, {
   },
 }).outputText;
 
-function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = [], categories = []) {
-  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, [], {}, null, null];
+function renderPanel(interImportEnabled, accounts, capture = () => {}, pending = [], categories = [], rules = []) {
+  const states = [true, false, false, null, accounts, interImportEnabled, pending, [], [], 0, 0, {}, rules, {}, null, null];
   const effects = [];
   const createdCalls = [];
   const refs = [];
@@ -134,6 +134,44 @@ function nodes(node, predicate) {
   if (Array.isArray(node)) return node.flatMap((child) => nodes(child, predicate));
   return [...(predicate(node) ? [node] : []), ...nodes(node.props?.children, predicate)];
 }
+
+test('keeps learned rules collapsed by default with a native keyboard-accessible toggle', () => {
+  const rule = { id: 'rule', pattern: 'Fornecedor de teste', record_type: 'expense', category_name: 'Compras', hits: 2 };
+  let ui;
+  renderPanel(true, [inter], (value) => { ui = value; }, [], [], [rule]);
+  const details = nodes(ui.render(), (node) => node.type === 'details');
+  assert.equal(details.length, 1);
+  assert.equal(details[0].props.open, undefined);
+  const summaries = nodes(details[0], (node) => node.type === 'summary');
+  assert.equal(summaries.length, 1);
+  const summaryHtml = renderToStaticMarkup(summaries[0]);
+  assert.match(summaryHtml, /Regras aprendidas \(1\)/);
+  assert.match(summaryHtml, /group-open:hidden">Expandir/);
+  assert.match(summaryHtml, /hidden group-open:inline">Ocultar/);
+  const html = renderToStaticMarkup(details[0]);
+  assert.match(html, /Fornecedor de teste/);
+  assert.match(html, /Compras/);
+  assert.match(html, /2 uso\(s\)/);
+  assert.equal(nodes(details[0], (node) => node.type === 'button' && typeof node.props.onClick === 'function').length, 1);
+  assert.match(renderPanel(true, []), /Ao classificar com/);
+});
+
+test('centers classification text and equally sized controls on the row axis', () => {
+  const pending = [{
+    id: 'item', type: 'expense', value: 10, description: 'Movimento de teste',
+    counterparty: 'Nome complementar', date: '2026-10-30', suggested_pattern: 'Teste',
+  }];
+  let ui;
+  renderPanel(true, [inter], (value) => { ui = value; }, pending);
+  const row = nodes(ui.render(), (node) => node.type === 'tr' && node.key === 'item')[0];
+  assert.match(row.props.className, /align-middle/);
+  assert.match(row.props.className, /\[&>td\]:py-2/);
+  assert.doesNotMatch(row.props.className, /align-top/);
+  assert.equal(nodes(row, (node) => node.type === 'td').length, 8);
+  for (const control of nodes(row, (node) => ['select', 'label', 'button'].includes(node.type))) {
+    assert.match(control.props.className, /\bh-9\b/);
+  }
+});
 
 test('opens one popup, keeps drafts on cancel, and selects new categories without classifying', () => {
   const pending = ['first', 'second'].map((id) => ({

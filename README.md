@@ -178,6 +178,10 @@ incompleto ou municipio nao identificado bloqueia o envio antes da reserva.
 A rejeicao E0239 tambem permite corrigir o cadastro e repetir a mesma DPS.
 Timeout, retorno incerto e nota autorizada continuam
 bloqueando reenvios; nao ha repeticao automatica.
+O painel identifica a etapa da falha e o HTTP quando a resposta nao e JSON,
+sem exibir HTML do servidor como documento fiscal. Consultar o resultado salvo
+preserva a mensagem da tentativa atual e identifica o registro como historico,
+para nao confundir uma rejeicao antiga com uma nova tentativa.
 
 O fluxo IPM atual, inclusive emissao automatica, NAO foi migrado para producao
 nacional nesta etapa. A ativacao antes de 01/11/2026 depende de homologacao

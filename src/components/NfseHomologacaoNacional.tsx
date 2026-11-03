@@ -19,6 +19,22 @@ const campos = [
   ['descricao', 'Descrição do serviço', 'text'],
 ] as const;
 
+async function lerResposta(response: Response): Promise<Record<string, unknown>> {
+  const tipo = response.headers.get('content-type') || 'não informado';
+  const corpo = await response.text();
+  let json: unknown;
+  try {
+    json = JSON.parse(corpo);
+  } catch (err) {
+    console.error('[Homologação nacional] Resposta não JSON:', { status: response.status, tipo, erro: err });
+    throw new Error(`O servidor retornou uma resposta inválida (HTTP ${response.status}; ${tipo}). Não reenvie: consulte o resultado salvo para verificar se houve envio.`);
+  }
+  if (!json || typeof json !== 'object' || Array.isArray(json)) {
+    throw new Error(`Resposta fiscal em formato inesperado (HTTP ${response.status}). Consulte o resultado salvo antes de reenviar.`);
+  }
+  return json as Record<string, unknown>;
+}
+
 export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
   const formId = useId();
   const [form, setForm] = useState<Record<string, string>>({});
@@ -26,6 +42,7 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState('');
   const [resultado, setResultado] = useState('');
+  const [resultadoSalvo, setResultadoSalvo] = useState(false);
   const [cancelarId, setCancelarId] = useState<string | null>(null);
 
   function idDps() {
@@ -37,8 +54,10 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
 
   async function testar(enviar: boolean) {
     if (enviar && !window.confirm('Enviar uma DPS à produção restrita nacional? É um teste sem validade fiscal. Não reenvie uma operação de resultado incerto.')) return;
-    setBusy(true); setErro(''); setResultado('');
+    setBusy(true); setErro(''); setResultado(''); setResultadoSalvo(false);
+    let etapa = 'preparar a requisição';
     try {
+      etapa = 'enviar a requisição ao servidor';
       const response = await holdingAuthFetch('/api/notas-fiscais/homologacao-nacional', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -48,24 +67,29 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
           regimeConfirmado: confirmado, confirmarHomologacao: enviar,
         }),
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || 'Falha no teste nacional.');
-      setResultado(json.xml || JSON.stringify(json, null, 2));
+      etapa = `ler a resposta do servidor (HTTP ${response.status})`;
+      const json = await lerResposta(response);
+      if (!response.ok) throw new Error(typeof json.error === 'string' ? json.error : `Falha no teste nacional (HTTP ${response.status}).`);
+      if (json.enviado !== true && json.enviado !== false) throw new Error('Resposta sem confirmação de envio. Consulte o resultado salvo antes de reenviar.');
+      setResultado(typeof json.xml === 'string' ? json.xml : JSON.stringify(json, null, 2));
     } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Falha no teste nacional.');
+      console.error('[Homologação nacional] Falha no teste:', { etapa, erro: err });
+      const mensagem = err instanceof Error ? err.message : 'Falha no teste nacional.';
+      setErro(`Falha ao ${etapa}: ${mensagem}`);
     } finally {
       setBusy(false);
     }
   }
 
   async function consultarSalvo() {
-    setBusy(true); setErro(''); setResultado('');
+    setBusy(true); setResultado('');
     try {
       const id = idDps();
       const response = await holdingAuthFetch(`/api/notas-fiscais/homologacao-nacional?id=${id}`);
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error || 'Falha ao recuperar teste.');
+      const json = await lerResposta(response);
+      if (!response.ok) throw new Error(typeof json.error === 'string' ? json.error : 'Falha ao recuperar teste.');
       setResultado(JSON.stringify(json, null, 2));
+      setResultadoSalvo(true);
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha ao recuperar teste.');
     } finally {
@@ -108,8 +132,9 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
       endpoint={`/api/notas-fiscais/homologacao-nacional/cancelar?id=${cancelarId}`}
       emitidaEm={null} nacional
       onClose={() => setCancelarId(null)}
-      onCancelada={() => { setCancelarId(null); setResultado('Teste cancelado no Emissor Nacional (produção restrita). Use "Consultar resultado salvo" para ver o evento.'); }}
+      onCancelada={() => { setCancelarId(null); setResultadoSalvo(false); setResultado('Teste cancelado no Emissor Nacional (produção restrita). Use "Consultar resultado salvo" para ver o evento.'); }}
     />}
+    {resultado && resultadoSalvo && <p className="text-sm text-amber-800">Resultado da última tentativa salva. A consulta não envia uma nova DPS e pode mostrar uma tentativa anterior ao erro acima.</p>}
     {resultado && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-4 text-xs">{resultado}</pre>}
   </section>;
 }

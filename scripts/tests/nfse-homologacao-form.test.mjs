@@ -11,11 +11,11 @@ const code = ts.transpileModule(readFileSync('src/components/NfseHomologacaoNaci
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 
-function load(react) {
+function load(react, fetch = async () => { throw new Error('Unexpected request'); }) {
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', code)((id) => {
     if (id === 'react') return react;
-    if (id === '@/lib/holding-auth-fetch') return {};
+    if (id === '@/lib/holding-auth-fetch') return { holdingAuthFetch: fetch };
     if (id === '@/components/CancelarNfseModal') return { default: () => null };
     return require(id);
   }, mod, mod.exports);
@@ -28,7 +28,7 @@ function nodes(node, predicate) {
   return [...(predicate(node) ? [node] : []), ...nodes(node.props?.children, predicate)];
 }
 
-function harness() {
+function harness(fetch) {
   const states = [];
   let stateIndex = 0;
   const Component = load({
@@ -40,10 +40,10 @@ function harness() {
         states[index] = typeof next === 'function' ? next(states[index]) : next;
       }];
     },
-  });
+  }, fetch);
   return () => {
     stateIndex = 0;
-    return Component({ cnpj: '' });
+    return Component({ cnpj: '11222333000181' });
   };
 }
 
@@ -62,6 +62,54 @@ test('each field has a separate block label linked only to its own input', () =>
     assert.equal(input.props.id, `nfse-test-${input.props.name}`);
     assert.ok(!ids.has(input.props.id));
     ids.add(input.props.id);
+  }
+});
+
+test('shows HTTP status for non-JSON Safari responses without retrying the request', async t => {
+  t.mock.method(console, 'error', () => {});
+  let calls = 0;
+  const render = harness(async () => {
+    calls++;
+    return new Response('<html>Bad Gateway</html>', { status: 502, headers: { 'Content-Type': 'text/html' } });
+  });
+  const preview = nodes(render(), node => node.type === 'button' && node.props.children === 'Pré-visualizar DPS (não envia)')[0];
+  await preview.props.onClick();
+  const alert = nodes(render(), node => node.props?.role === 'alert')[0];
+  assert.match(alert.props.children, /ler a resposta.*HTTP 502/);
+  assert.match(alert.props.children, /text\/html/);
+  assert.equal(calls, 1);
+});
+
+test('preserves current error while showing explicitly labeled historical results', async t => {
+  t.mock.method(console, 'error', () => {});
+  let calls = 0;
+  const render = harness(async () => {
+    calls++;
+    return calls === 1
+      ? Response.json({ error: 'Complete o endereço do cliente.' }, { status: 400 })
+      : Response.json({ status: 'verificar_no_portal', dataEmissao: '2026-11-03T14:37:37-03:00' });
+  });
+  const fill = (name, value) => nodes(render(), node => node.type === 'input' && node.props.name === name)[0].props.onChange({ target: { value } });
+  fill('municipioEmissao', '4216602'); fill('serie', '1'); fill('numero', '1');
+  const button = text => nodes(render(), node => node.type === 'button' && node.props.children === text)[0];
+  await button('Pré-visualizar DPS (não envia)').props.onClick();
+  await button('Consultar resultado salvo').props.onClick();
+  assert.match(nodes(render(), node => node.props?.role === 'alert')[0].props.children, /Complete o endereço/);
+  assert.equal(nodes(render(), node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.startsWith('Resultado da última tentativa salva')).length, 1);
+  assert.equal(calls, 2);
+});
+
+test('rejects malformed success shapes and reports request failures with their stage', async t => {
+  t.mock.method(console, 'error', () => {});
+  for (const fetch of [
+    async () => Response.json({}),
+    async () => Response.json([]),
+    async () => { throw new Error('The string did not match the expected pattern.'); },
+  ]) {
+    const render = harness(fetch);
+    await nodes(render(), node => node.type === 'button' && node.props.children === 'Pré-visualizar DPS (não envia)')[0].props.onClick();
+    assert.equal(nodes(render(), node => node.props?.role === 'alert').length, 1);
+    assert.equal(nodes(render(), node => node.type === 'pre').length, 0);
   }
 });
 

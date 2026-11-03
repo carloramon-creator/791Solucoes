@@ -15,6 +15,7 @@ function load(path, mocks = {}) {
   }).outputText;
   new Function('require', 'module', 'exports', source)(name => {
     if (Object.hasOwn(mocks, name)) return mocks[name];
+    if (name.endsWith('.json')) return JSON.parse(readFileSync(resolve(dirname(path), name), 'utf8'));
     const local = resolve(dirname(path), `${name}.ts`);
     if (name.startsWith('.') && existsSync(local)) return load(local, mocks);
     return require(name);
@@ -406,12 +407,8 @@ test('API retoma somente E0008/E0239 confirmadas, inclusive registro antigo, com
   }
 });
 
-test('endereço usa cadastro e município IBGE da UF, sem enviar dados do cliente nem presumir local da prestação', async t => {
-  const chamadas = [];
-  t.mock.method(globalThis, 'fetch', async url => {
-    chamadas.push(url);
-    return Response.json([{ id: 4216602, nome: 'São José' }, { id: 4205407, nome: 'Florianópolis' }]);
-  });
+test('endereço usa lista local IBGE da UF, sem rede nem presumir local da prestação', async t => {
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('Consulta externa inesperada'); });
   const endereco = await enderecoModule.enderecoTomadorNacional(tenantEndereco);
   assert.deepEqual(endereco, dados.tomador.endereco);
   const outro = await enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: 'florianopolis' });
@@ -423,15 +420,15 @@ test('endereço usa cadastro e município IBGE da UF, sem enviar dados do client
   });
   assert.equal(alternativo.logradouro, 'Rua Alternativa');
   assert.equal(alternativo.complemento, undefined);
-  for (const url of chamadas) assert.equal(url, 'https://servicodados.ibge.gov.br/api/v1/localidades/estados/SC/municipios');
   for (const campo of ['endereco', 'numero', 'bairro', 'cep', 'cidade', 'estado']) {
     await assert.rejects(enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, [campo]: '' }), /Complete o endereço/);
   }
   await assert.rejects(enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: 'Cidade inexistente' }), /não encontrado/);
-  globalThis.fetch = async () => Response.json({}, { status: 503 });
-  await assert.rejects(enderecoModule.enderecoTomadorNacional(tenantEndereco), /HTTP 503/);
-  globalThis.fetch = async () => Response.json({});
-  await assert.rejects(enderecoModule.enderecoTomadorNacional(tenantEndereco), /Resposta inválida/);
+  await assert.rejects(enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: '4216602', estado: 'SP' }), /não encontrado/);
+  const lista = JSON.parse(readFileSync('src/services/nfse/municipios-ibge.json', 'utf8'));
+  assert.ok(lista.length >= 5500);
+  assert.equal(new Set(lista.map(m => m.codigo)).size, lista.length);
+  assert.equal(new Set(lista.map(m => m.uf)).size, 27);
 });
 
 test('sincronização mantém cancelamento mesmo quando a consulta IPM não traz XML completo', async () => {

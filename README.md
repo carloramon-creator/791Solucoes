@@ -172,8 +172,10 @@ o mesmo numero/serie, protegido por reserva atomica. O registro antigo
 `verificar_no_portal` so e liberado quando contem a resposta estruturada
 E0008 ou E0239 correspondente. A DPS inclui o endereco nacional do tomador
 do cadastro Glass (rua, numero, complemento, bairro e CEP). O municipio e
-identificado na lista publica do IBGE da UF cadastrada, sem enviar dados
-do cliente ao IBGE e sem presumir o municipio da prestacao. Cadastro
+identificado na lista local oficial do IBGE da UF cadastrada, sem consulta
+externa durante a emissao nem presumir o municipio da prestacao.
+Atualizar a lista: `node scripts/atualizar-municipios-nfse.mjs`.
+Cadastro
 incompleto ou municipio nao identificado bloqueia o envio antes da reserva.
 A rejeicao E0239 tambem permite corrigir o cadastro e repetir a mesma DPS.
 Timeout, retorno incerto e nota autorizada continuam

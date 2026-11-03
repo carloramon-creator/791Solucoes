@@ -2,6 +2,7 @@ export interface HistoricoFiscal {
   inicioAtividade: string;
   apuracao: 'competencia';
   semFolha: boolean;
+  folhaCategoriaId?: string;
   semReceitasExternas?: boolean;
   receitasExternas: Record<string, number>;
   folha: Record<string, number>;

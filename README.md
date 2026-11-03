@@ -207,6 +207,20 @@ e competencias de 2027 sao bloqueados para parametrizacao especifica.
 O percentual aproximado usa a aliquota efetiva dos Anexos III/V:
 `(RBT12 * aliquota nominal - parcela a deduzir) / RBT12`.
 O fator R usa receita dos 12 meses anteriores e folha/encargos efetivamente pagos;
+Em NFS-e, a fonte opcional de folha financeira seleciona uma classe principal
+de despesa e inclui suas subclasses automaticamente. Apenas lancamentos pagos
+entram, pela `metadata.fator_r_data_pagamento` (campo "Pagamento real da folha"
+no Financeiro) ou `metadata.settlement.settled_at` na baixa. Nao se presume a
+data de criacao/vencimento como pagamento. Datas ausentes, valores invalidos e
+duplicidade de transacao bancaria bloqueiam a apuracao. Registre remuneracoes
+BRUTAS e encargos patronais/FGTS elegiveis separados; nao duplique retencoes
+ja incluidas no bruto nem inclua beneficios, lucros ou despesas nao elegiveis.
+O sistema nao verifica a elegibilidade contabil da subclasse pelo nome.
+A fonte automatica substitui a folha manual (nao soma ambas), atualiza o fator R
+antes de cada previa/emissao e congela os IDs/valores da folha na nota.
+Receita permanece nas notas fiscais mais os ajustes externos declarados,
+sem somar novamente recebimentos bancarios. Atualize/reconcilie receitas sem
+nota: faturamento fiscal nao e necessariamente toda a receita contabil.
 sem folha a simulacao de licenciamento segue o Anexo V, nao presume 6%.
 Notas reais autorizadas do sistema entram por competencia; homologacao,
 canceladas e duplicatas nao entram. Resultados nacionais persistidos fora do

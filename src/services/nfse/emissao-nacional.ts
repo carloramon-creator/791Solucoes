@@ -6,6 +6,7 @@ import { calcularSimples, mesesAnteriores, type HistoricoFiscal } from './simple
 import nacional from './providers/national';
 import { lerDocumentoOficial } from './documento-oficial';
 import xmlService, { type DPSData } from './xml-service';
+import { folhaFinanceira } from './folha-financeira';
 
 export interface ConfigNacional {
   enabled: boolean;
@@ -18,6 +19,17 @@ export interface ConfigNacional {
 }
 
 export const usaNacional = (competencia: string) => competencia >= '2026-11-01';
+
+export async function apurarSimples(supabase: SupabaseClient, competencia: string, historico: HistoricoFiscal) {
+  const receitas = await receitasFiscais(supabase, competencia);
+  const folha = historico.folhaCategoriaId ? await folhaFinanceira(supabase, competencia, historico.folhaCategoriaId) : undefined;
+  const meses = mesesAnteriores(competencia);
+  const base = folha ? {
+    ...historico, semFolha: false, folha: folha.meses,
+    historicoConfirmadoAte: historico.semReceitasExternas ? meses[meses.length - 1] : historico.historicoConfirmadoAte,
+  } : historico;
+  return { receitas, apuracao: { ...calcularSimples(competencia, base, receitas), ...(folha ? { folhaFinanceira: folha } : {}) } };
+}
 
 export async function receitasFiscais(supabase: SupabaseClient, competencia?: string): Promise<Record<string, number>> {
   const totais: Record<string, number> = {};
@@ -117,7 +129,7 @@ export async function emitirNacionalProducao({
     || parametros.codigoTributacaoNacional !== '010501' || parametros.codigoNbs !== '111032200') {
     throw new Error('Parametrização nacional de licenciamento inválida.');
   }
-  const apuracao = calcularSimples(competencia.slice(0, 7), parametros.historico, await receitasFiscais(supabase, competencia.slice(0, 7)));
+  const { apuracao } = await apurarSimples(supabase, competencia.slice(0, 7), parametros.historico);
   const endereco = await enderecoTomadorNacional(tenant);
   const documento = String(tenant.cnpj || '').replace(/\D/g, '');
   if (typeof config.pfxBase64 !== 'string' || typeof config.passphrase !== 'string') throw new Error('Certificado A1 da holding não configurado.');

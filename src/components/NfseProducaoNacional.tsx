@@ -5,7 +5,7 @@ import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import type { ConfigNacional } from '@/services/nfse/emissao-nacional';
 import { mesesAnteriores } from '@/services/nfse/simples-nacional';
 
-type Apuracao = { anexo: string; faixa: number; percentual: number; rbt12: number; fs12: number; fatorR: number };
+type Apuracao = { anexo: string; faixa: number; percentual: number; rbt12: number; fs12: number; fatorR: number; folhaFinanceira?: { categoriaNome: string; meses: Record<string, number>; lancamentos: { id: string; mes: string; valor: number }[] } };
 
 export default function NfseProducaoNacional() {
   const formId = useId();
@@ -15,6 +15,7 @@ export default function NfseProducaoNacional() {
   const [erro, setErro] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [busy, setBusy] = useState(false);
+  const [classesFolha, setClassesFolha] = useState<{ id: string; name: string }[]>([]);
   function configurar() {
     const meses = mesesAnteriores(competencia);
     setConfig({
@@ -29,6 +30,7 @@ export default function NfseProducaoNacional() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Falha ao carregar configuração fiscal.');
       setConfig(json.config); setApuracao(json.apuracao); setCompetencia(json.competencia);
+      setClassesFolha(json.classesFolha || []);
       if (json.apuracaoErro) setErro(json.apuracaoErro);
     }).catch(err => setErro(err instanceof Error ? err.message : 'Falha ao carregar configuração fiscal.'));
   }, []);
@@ -68,6 +70,7 @@ export default function NfseProducaoNacional() {
         <p className="font-bold">Última simulação carregada/salva · {competencia} · Anexo {apuracao.anexo}, faixa {apuracao.faixa} · {apuracao.percentual}%</p>
         <p>Não é recalculada enquanto você edita. Não ativar sem confirmar o enquadramento.</p>
         <p>RBT12: {moeda(apuracao.rbt12)} · Folha/encargos pagos: {moeda(apuracao.fs12)} · Fator R: {(apuracao.fatorR * 100).toFixed(2)}%</p>
+        {apuracao.folhaFinanceira && <p>Fonte: {apuracao.folhaFinanceira.categoriaNome} · {apuracao.folhaFinanceira.lancamentos.length} pagamentos incluídos. Recalculado antes de cada emissão.</p>}
       </div>}
       <div className="flex items-start gap-2 text-sm">
         <input id={`${formId}-enquadramento`} type="checkbox" checked={config.enquadramentoConfirmado} onChange={e => setConfig({ ...config, enquadramentoConfirmado: e.target.checked, enabled: e.target.checked ? config.enabled : false })} />
@@ -75,8 +78,21 @@ export default function NfseProducaoNacional() {
         Confirmei que o licenciamento está sujeito ao fator R e que os dados de receita e folha estão corretos. Não marcar se houver divergência com o enquadramento do contador.
         </label>
       </div>
+      <div>
+        <label className="block text-sm" htmlFor={`${formId}-classe-folha`}>Fonte da folha para o fator R</label>
+        <select id={`${formId}-classe-folha`} className="rounded border p-2" value={config.historico.folhaCategoriaId || ""}
+          onChange={e => {
+            const { folhaCategoriaId: anterior, ...historico } = config.historico;
+            void anterior;
+            setConfig({ ...config, historico: { ...historico, ...(e.target.value ? { folhaCategoriaId: e.target.value, semFolha: false } : {}) } });
+          }}>
+          <option value="">Histórico manual / declaração sem folha</option>
+          {classesFolha.map(c => <option key={c.id} value={c.id}>{c.name} — todas as subclasses</option>)}
+        </select>
+        <p className="text-xs text-slate-600">Na fonte automática, entram somente despesas pagas da classe e suas subclasses nos 12 meses anteriores. Registre salários/pró-labore BRUTOS e encargos elegíveis separadamente; não inclua novamente retenções já contidas no bruto. Data ausente ou duplicidade bloqueia o cálculo.</p>
+      </div>
       <div className="flex items-center gap-2 text-sm">
-        <input id={`${formId}-folha`} type="checkbox" checked={config.historico.semFolha} onChange={e => setConfig({ ...config, historico: { ...config.historico, semFolha: e.target.checked } })} />
+        <input id={`${formId}-folha`} type="checkbox" disabled={!!config.historico.folhaCategoriaId} checked={config.historico.semFolha} onChange={e => setConfig({ ...config, historico: { ...config.historico, semFolha: e.target.checked } })} />
         <label htmlFor={`${formId}-folha`}>
         Não há folha, pró-labore nem encargos pagos. Atualizar antes de emitir se isso mudar.
         </label>
@@ -97,12 +113,12 @@ export default function NfseProducaoNacional() {
             <span>{mes}</span>
             <input aria-label={`Receita externa ${mes}`} type="number" min="0" step="0.01" disabled={config.historico.semReceitasExternas} className="min-w-0 rounded border p-2 disabled:opacity-50" value={config.historico.semReceitasExternas ? config.historico.receitasExternas[mes] ?? 0 : Number.isFinite(config.historico.receitasExternas[mes]) ? config.historico.receitasExternas[mes] : ''}
               onChange={e => setConfig({ ...config, historico: { ...config.historico, receitasExternas: { ...config.historico.receitasExternas, [mes]: e.target.value === '' ? NaN : Number(e.target.value) } } })} />
-            <input aria-label={`Folha paga ${mes}`} type="number" min="0" step="0.01" disabled={config.historico.semFolha} className="min-w-0 rounded border p-2 disabled:opacity-50" value={config.historico.semFolha ? config.historico.folha[mes] ?? 0 : Number.isFinite(config.historico.folha[mes]) ? config.historico.folha[mes] : ''}
+            <input aria-label={`Folha paga ${mes}`} type="number" min="0" step="0.01" disabled={config.historico.semFolha || !!config.historico.folhaCategoriaId} className="min-w-0 rounded border p-2 disabled:opacity-50" value={config.historico.folhaCategoriaId ? apuracao?.folhaFinanceira?.meses[mes] ?? '' : config.historico.semFolha ? config.historico.folha[mes] ?? 0 : Number.isFinite(config.historico.folha[mes]) ? config.historico.folha[mes] : ''}
               onChange={e => setConfig({ ...config, historico: { ...config.historico, folha: { ...config.historico.folha, [mes]: e.target.value === '' ? NaN : Number(e.target.value) } } })} />
           </div>)}
         </div>
       </details>
-      <p className="text-xs text-slate-600">O percentual é informação aproximada na NFS-e, não uma apuração ou envio do DAS/PGDAS-D. O cálculo usa os 12 meses anteriores, sem incluir o mês atual. Não há atualização automática de folhas/receitas externas. Excedentes ConsultFlex e competências de 2027 exigem parametrização própria.</p>
+      <p className="text-xs text-slate-600">O percentual é informação aproximada na NFS-e, não uma apuração ou envio do DAS/PGDAS-D. O cálculo usa os 12 meses anteriores, sem incluir o mês atual. A folha financeira é automática quando selecionada; receitas externas continuam exigindo declaração. Excedentes ConsultFlex e competências de 2027 exigem parametrização própria.</p>
       <button type="button" disabled={busy} onClick={salvar} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Salvando…' : 'Salvar configuração nacional'}</button>
       {mensagem && <p role="status" className="text-sm text-emerald-700">{mensagem}</p>}
     </>}

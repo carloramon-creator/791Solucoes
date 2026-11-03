@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { supabaseServer } from '@/lib/supabase-server';
-import { calcularSimples, mesesAnteriores } from '@/services/nfse/simples-nacional';
-import { receitasFiscais, type ConfigNacional } from '@/services/nfse/emissao-nacional';
+import { mesesAnteriores } from '@/services/nfse/simples-nacional';
+import { apurarSimples, receitasFiscais, type ConfigNacional } from '@/services/nfse/emissao-nacional';
 import { dataHoraNacional } from '@/services/nfse/data-hora';
 
 function objeto(value: unknown): Record<string, unknown> {
@@ -33,6 +33,8 @@ function validar(value: unknown): ConfigNacional {
     throw new Error('Configure licenciamento (010501/111032200), série de 1 a 49999, município IBGE e histórico por competência.');
   }
   mesesAnteriores(historico.historicoConfirmadoAte);
+  if (historico.folhaCategoriaId !== undefined && (typeof historico.folhaCategoriaId !== 'string'
+    || !/^[0-9a-f-]{36}$/i.test(historico.folhaCategoriaId))) throw new Error('Classe da folha inválida.');
   if (config.enabled && !config.enquadramentoConfirmado) throw new Error('Confirme o enquadramento e a base fiscal antes de ativar produção.');
   return {
     enabled: config.enabled, enquadramentoConfirmado: config.enquadramentoConfirmado, serie: config.serie, municipioEmissao: config.municipioEmissao,
@@ -40,6 +42,7 @@ function validar(value: unknown): ConfigNacional {
     historico: {
       inicioAtividade: historico.inicioAtividade, apuracao: 'competencia', semFolha: historico.semFolha,
       semReceitasExternas: historico.semReceitasExternas,
+      ...(typeof historico.folhaCategoriaId === 'string' ? { folhaCategoriaId: historico.folhaCategoriaId } : {}),
       historicoConfirmadoAte: historico.historicoConfirmadoAte,
       receitasExternas: valoresMensais(historico.receitasExternas), folha: valoresMensais(historico.folha),
     },
@@ -54,15 +57,17 @@ export async function GET(req: Request) {
     if (error) throw error;
     const competencia = dataHoraNacional().slice(0, 7);
     const config = data.value.nacional ? validar(data.value.nacional) : null;
-    const receitas = await receitasFiscais(supabaseServer, competencia);
+    let receitas = {};
     let apuracao = null, apuracaoErro = '';
     if (config) {
-      try { apuracao = calcularSimples(competencia, config.historico, receitas); }
+      try { ({ apuracao, receitas } = await apurarSimples(supabaseServer, competencia, config.historico)); }
       catch (err) { apuracaoErro = err instanceof Error ? err.message : String(err); }
-    }
+    } else receitas = await receitasFiscais(supabaseServer, competencia);
+    const { data: categorias, error: categoriasError } = await supabaseServer.from('system_finance_categories').select('id, name, type, parent_id');
+    if (categoriasError) throw categoriasError;
     return NextResponse.json({
       config, competencia, receitasSistema: receitas,
-      apuracao, apuracaoErro,
+      apuracao, apuracaoErro, classesFolha: (categorias || []).filter(c => c.type === 'expense' && !c.parent_id),
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (err) {
     console.error('[NFS-e configuração nacional]', err);
@@ -76,7 +81,7 @@ export async function POST(req: Request) {
   try {
     const config = validar(await req.json());
     const competencia = dataHoraNacional().slice(0, 7);
-    const apuracao = calcularSimples(competencia, config.historico, await receitasFiscais(supabaseServer, competencia));
+    const { apuracao } = await apurarSimples(supabaseServer, competencia, config.historico);
     const { data, error } = await supabaseServer.from('system_settings').select('value, updated_at').eq('id', 'nfse_config').single();
     if (error) throw error;
     if (config.enabled && (data.value.environment !== 'producao' || !data.value.pfxBase64 || !data.value.passphrase)) {

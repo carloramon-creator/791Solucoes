@@ -25,6 +25,46 @@ function load(path, mocks = {}) {
 }
 
 const simples = load('src/services/nfse/simples-nacional.ts');
+test('folha financeira inclui subclasses pagas, data real em Brasília, centavos e falhas explícitas', async () => {
+  const folha = load('src/services/nfse/folha-financeira.ts');
+  const cats=[{id:'root',parent_id:null,type:'expense',name:'Folha'},{id:'salary',parent_id:'root',type:'expense',name:'Salários'},{id:'fgts',parent_id:'root',type:'expense',name:'FGTS'},{id:'other',type:'expense',name:'Cloud'}];
+  const rows=[
+    {id:'1',type:'expense',status:'paid',value:280,metadata:{category_subcategory_id:'salary',fator_r_data_pagamento:'2026-10-31'}},
+    {id:'2',type:'expense',status:'paid',value:20,metadata:{category_subcategory_id:'fgts',settlement:{settled_at:'2026-11-01T01:00:00Z'}}},
+    {id:'3',type:'expense',status:'pending',value:999,metadata:{category_parent_id:'root'}},
+    {id:'4',type:'expense',status:'paid',value:999,metadata:{category_parent_id:'other'}},
+    {id:'5',type:'expense',status:'paid',value:999,metadata:{category_parent_id:'root',fator_r_data_pagamento:'2026-11-01'}},
+  ];
+  const sb={from(table){let range=[0,499];return {
+    select(){return this;},eq(){return this;},order(){return this;},range(a,b){range=[a,b];return this;},
+    then(resolve){return Promise.resolve({data:table==='system_finance_categories'?cats:rows.slice(range[0],range[1]+1),error:null}).then(resolve);},
+  };}};
+  const result=await folha.folhaFinanceira(sb,'2026-11','root');
+  assert.equal(result.meses['2026-10'],300);assert.equal(result.lancamentos.length,2);
+  rows.push({id:'missing',type:'expense',status:'paid',value:10,metadata:{category_parent_id:'root'}});
+  await assert.rejects(folha.folhaFinanceira(sb,'2026-11','root'),/data real/);
+  rows.pop();
+  rows[0].metadata.bank_tx_id='same';rows[1].metadata.bank_tx_id='same';
+  await assert.rejects(folha.folhaFinanceira(sb,'2026-11','root'),/duplicado/);
+  delete rows[0].metadata.bank_tx_id;delete rows[1].metadata.bank_tx_id;
+  await assert.rejects(folha.folhaFinanceira(sb,'2026-11','missing'),/não existe/);
+  rows[0].value=NaN;
+  await assert.rejects(folha.folhaFinanceira(sb,'2026-11','root'),/Valor inválido/);
+});
+
+test('apuracao automática substitui folha manual e muda o anexo exatamente em 28%', async () => {
+  const service=load('src/services/nfse/emissao-nacional.ts',{
+    './folha-financeira':{folhaFinanceira:async()=>({meses:Object.fromEntries(simples.mesesAnteriores('2026-11').map(m=>[m,m==='2026-10'?280:0])),lancamentos:[{id:'paid',valor:280}],categoriaId:'root'})},
+  });
+  const sb={from(table){return {
+    select(){return this;},order(){return this;},range(){return this;},like(){return this;},
+    then(resolve){return Promise.resolve({data:table==='system_invoices'?[{id:'invoice',status:'authorized',value:1000,metadata:{mes_ref:'2026-10'}}]:[],error:null}).then(resolve);},
+  };}};
+  const base={inicioAtividade:'2024-01-01',apuracao:'competencia',semFolha:true,semReceitasExternas:true,folhaCategoriaId:'root',historicoConfirmadoAte:'2026-01',folha:{'2026-10':99999},receitasExternas:{}};
+  const {apuracao}=await service.apurarSimples(sb,'2026-11',base);
+  assert.equal(apuracao.anexo,'III');assert.equal(apuracao.percentual,6);assert.equal(apuracao.fs12,280);
+  assert.equal(apuracao.folhaFinanceira.lancamentos[0].id,'paid');
+});
 const meses = simples.mesesAnteriores('2026-11');
 const historico = {
   inicioAtividade: '2024-01-15', apuracao: 'competencia', semFolha: true, semReceitasExternas: false,
@@ -231,7 +271,7 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
       let atual = { ...config, auto_emit:true, nacional: { ...config.nacional, enabled:false, enquadramentoConfirmado:false } };
       let autorizado=true, conflito=false, writes=0;
       let updatedAt = '2026-11-03T10:00:00.000Z';
-      const supabaseServer = { from() {
+      const supabaseServer = { from(table) {
         let update;
         const filters = {};
         return {
@@ -239,6 +279,7 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
           eq(key,value) { assert.notEqual(key,'value','Não incluir A1/configuração no URL'); filters[key]=value; return this; },
           is(key,value) { filters[key]=value; return this; },
           update(value) { update=value; return this; },
+          then(resolve) { return Promise.resolve({data:table==='system_finance_categories'?[]:null,error:null}).then(resolve); },
           single: async () => {
             if (update) {
               if (conflito || filters.updated_at !== updatedAt) return {error:{message:'conflito'}};
@@ -253,7 +294,7 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
       const mocks = {
         '@/lib/supabase-server':{supabaseServer},
         '@/lib/holding-admin-auth': {authenticateHoldingAdmin:async()=> autorizado?{ok:true}:{ok:false,status:403,error:'Proibido'}},
-        '@/services/nfse/emissao-nacional': {receitasFiscais: async()=>({'2026-06':100})},
+        '@/services/nfse/emissao-nacional': {receitasFiscais: async()=>({'2026-06':100}), apurarSimples: async(_sb, mes, base)=>({receitas:{'2026-06':100},apuracao:simples.calcularSimples(mes,base,{'2026-06':100})})},
         '@/services/nfse/data-hora': {dataHoraNacional:()=> '2026-11-03T10:00:00-03:00'},
       };
       const api = load('src/app/api/system/nfse-nacional/route.ts', mocks);
@@ -322,7 +363,7 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
           const mocks={
             '@/lib/supabase-server':{supabaseServer},
             '@/lib/holding-admin-auth':{authenticateHoldingAdmin:async()=>({ok:true})},
-            '@/services/nfse/emissao-nacional':{receitasFiscais:async()=>({})},
+            '@/services/nfse/emissao-nacional':{receitasFiscais:async()=>({}),apurarSimples:async(_sb,mes,base)=>({receitas:{},apuracao:simples.calcularSimples(mes,base,{})})},
             '@/services/nfse/data-hora':{dataHoraNacional:()=> '2026-11-03T10:00:00-03:00'},
           };
           const req=body=>new Request('https://example.test/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

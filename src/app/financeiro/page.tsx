@@ -254,6 +254,7 @@ export default function FinancePage() {
     sourceId: "",
     status: "paid" as FinanceStatus,
     date: toDateInput(new Date()),
+    payrollPaymentDate: "",
     is_recurring: false,
     recurring_period: "monthly",
   });
@@ -636,6 +637,7 @@ export default function FinancePage() {
       sourceId: "",
       status: "paid",
       date: toDateInput(new Date()),
+      payrollPaymentDate: "",
       is_recurring: false,
       recurring_period: "monthly",
     });
@@ -666,6 +668,7 @@ export default function FinancePage() {
       sourceId: record.source_id || (record.bank_id ? `external:${record.bank_id}` : ""),
       status: record.status,
       date: toDateInput(new Date(record.created_at)),
+      payrollPaymentDate: String(recordMetadata.fator_r_data_pagamento || ""),
       is_recurring: Boolean(record.is_recurring),
       recurring_period: record.recurring_period || "monthly",
     });
@@ -798,6 +801,7 @@ export default function FinancePage() {
         recurring_period: form.is_recurring ? form.recurring_period : null,
         metadata: {
           ...previousMetadata,
+          fator_r_data_pagamento: form.payrollPaymentDate || null,
           category_parent_id: selectedSubcategory ? selectedSubcategory.parent_id : selectedRoot?.id || null,
           category_parent_name: selectedSubcategory ? (categories.find((category) => category.id === selectedSubcategory.parent_id)?.name || null) : selectedRoot?.name || null,
           category_subcategory_id: selectedSubcategory?.id || null,
@@ -1394,6 +1398,11 @@ export default function FinancePage() {
                 <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Data</label>
                 <input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm" />
               </div>
+              {form.type === "expense" && <div>
+                <label htmlFor="finance-payroll-payment-date" className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Pagamento real da folha (fator R)</label>
+                <input id="finance-payroll-payment-date" type="date" value={form.payrollPaymentDate} onChange={(e) => setForm((p) => ({ ...p, payrollPaymentDate: e.target.value }))} className="w-full h-[38px] rounded-lg border border-slate-200 px-3 text-sm" />
+                <p className="text-xs text-slate-500">Para folha paga, informe a data efetiva. Não é a competência nem o vencimento.</p>
+              </div>}
 
               <div>
                 <label className="block text-[10px] uppercase tracking-widest font-black text-slate-500 mb-1">Status</label>

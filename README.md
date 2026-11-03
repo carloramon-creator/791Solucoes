@@ -2,6 +2,61 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Comprovante REP-P centralizado (somente homologacao)
+
+O servidor precisa de Node.js 22 ou superior (dependencias de assinatura).
+
+O A1 existente em `system_settings/nfse_config` (`pfxBase64`, `passphrase`,
+`prestador_cnpj`) e reutilizado **somente no servidor da holding** para
+assinar os novos PDFs. Nao e duplicado no Glass, nos tenants ou na tabela
+de comprovantes. O cadastro fiscal e seu formato de armazenamento nao foram
+alterados nesta entrega. A substituicao do certificado nesse cadastro passa
+a valer nas novas emissoes; PDFs ja persistidos sao devolvidos sem reemitir
+ou substituir sua assinatura. Os A1 fiscais dos tenants sao independentes.
+
+`GET /api/rep-p/homologacao/[id]` aceita o JWT do proprio trabalhador no
+Glass, valida a sessao e chama `rh_ponto_comprovante_snapshot` **com esse JWT**.
+O banco do Glass resolve empresa, pessoa, usuario e permissao; a holding nao
+aceita PDF, CPF, empregador ou hash fornecidos pelo chamador. Suporte e
+outros trabalhadores/tenants nao recebem o original. GPS nao integra o PDF.
+
+O PDF contem os campos do art. 79, inclusive INPI, NSR e hash original,
+e a faixa **HOMOLOGACAO - SEM VALIDADE COMO PONTO OFICIAL**. A assinatura
+CMS usa SHA-256, atributo SigningCertificateV2 e subfilter
+`ETSI.CAdES.detached`; os testes verificam ByteRange, integridade e assinatura
+com OpenSSL, usando A1 sintetico. Valida-se senha, correspondencia entre
+chave/certificado, titular CNPJ, validade e uso digitalSignature.
+**Isso nao comprova cadeia ICP-Brasil, revogacao ou conformidade integral
+PAdES/politica brasileira.** Essas verificacoes independentes, politica de
+assinatura e requisitos de preservacao a longo prazo continuam pendentes.
+O certificado real cadastrado nao foi lido nem usado em testes.
+
+Requisitos antes de um teste controlado (nao foram aplicados em producao):
+
+- Aplicar com autorizacao a migration
+  `20261103173000_rep_p_comprovantes_homologacao.sql` na holding e as migrations
+  do ponto, incluindo `20261103173000_rh_ponto_comprovante_snapshot.sql`, no Glass.
+- Definir `REP_P_INPI` com 17 digitos, conferidos contra o registro do software.
+- Definir `REP_P_HOMOLOGACAO_ENABLED=true` **em ambos** os servidores e
+  `REP_P_HOLDING_URL=https://dominio-da-holding` no Glass.
+- Manter `finance_api` apontando para o projeto Glass correto; o helper existente
+  preserva suas chamadas administrativas sem JWT, mas a rota de comprovante
+  fornece explicitamente o JWT do trabalhador (nunca cai para service role).
+
+Por padrao a rota retorna 503; nao existe flag de operacao oficial. Os
+comprovantes de homologacao sao gravados atomicamente com chave unica por
+marcacao na tabela privada `rep_p_comprovantes_homologacao`. Falha ao persistir
+nao entrega um PDF como se tivesse sido emitido. Emissao concorrente recupera
+o primeiro original persistido. Leitura e insercao sao somente service role
+da holding, apos autorizacao da marcacao no Glass; alteracao/exclusao/truncate
+sao bloqueados. Nenhuma alteracao em emissao NFS-e, financeiro ou A1 dos tenants.
+
+Testes: `node --test scripts/tests/rep-p.test.mjs`.
+Banco nativo descartavel, com cluster `791glass-rh-isolated`, usuario
+`ponto_test`, banco vazio `holding_repp_test` e socket Unix privado:
+`RH_TEST_PG_SOCKET=/caminho/socket node scripts/tests/rep-p-db.integration.mjs /caminho/node_modules/pg`.
+Nao apontar esses testes para producao.
+
 ## Extrato do Inter
 
 A importacao do Inter permanece bloqueada enquanto o acesso e a conciliacao nao

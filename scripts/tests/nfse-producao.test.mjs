@@ -230,18 +230,23 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
     test('API de configuração protege classificação, certificado, segredos e atualizações concorrentes', async () => {
       let atual = { ...config, auto_emit:true, nacional: { ...config.nacional, enabled:false, enquadramentoConfirmado:false } };
       let autorizado=true, conflito=false, writes=0;
+      let updatedAt = '2026-11-03T10:00:00.000Z';
       const supabaseServer = { from() {
         let update;
+        const filters = {};
         return {
-          select() { return this; }, eq() { return this; },
+          select() { return this; },
+          eq(key,value) { assert.notEqual(key,'value','Não incluir A1/configuração no URL'); filters[key]=value; return this; },
+          is(key,value) { filters[key]=value; return this; },
           update(value) { update=value; return this; },
           single: async () => {
             if (update) {
-              if (conflito) return {error:{message:'conflito'}};
+              if (conflito || filters.updated_at !== updatedAt) return {error:{message:'conflito'}};
               atual=update.value; writes++;
+              updatedAt=update.updated_at;
               return {data:{id:'nfse_config'},error:null};
             }
-            return {data:{value:structuredClone(atual)},error:null};
+            return {data:{value:structuredClone(atual),updated_at:updatedAt},error:null};
           },
         };
       } };
@@ -293,6 +298,38 @@ test('assinatura automática encaminha novembro ao nacional, outubro à IPM e ma
             nacional++;return {result,metadata:{provider:'nacional'}};
           },
         },
+      });
+
+      test('certificado grande nunca aumenta o URL do salvamento; CAS usa versão, inclusive nula', async () => {
+        const {createClient}=require('@supabase/supabase-js');
+        for(const updated_at of ['2026-11-03T10:00:00.000Z',null]){
+          const patches=[];
+          const supabaseServer=createClient('https://example.supabase.co','test-key',{
+            auth:{persistSession:false,autoRefreshToken:false},
+            global:{fetch:async (url,init)=>{
+              assert.ok(String(url).length<1024,`URL deve permanecer curto, recebeu ${String(url).length} caracteres`);
+              if(init?.method==='PATCH'){
+                const query=new URL(String(url));
+                assert.equal(query.searchParams.has('value'),false);
+                assert.equal(query.searchParams.get('updated_at'),updated_at===null?'is.null':`eq.${updated_at}`);
+                assert.equal(JSON.parse(init.body).value.pfxBase64.length,50000);
+                patches.push(query);
+                return new Response(JSON.stringify({id:'nfse_config'}),{headers:{'Content-Type':'application/json'}});
+              }
+              return new Response(JSON.stringify({value:{...config,pfxBase64:'X'.repeat(50000)},updated_at}),{headers:{'Content-Type':'application/json'}});
+            }},
+          });
+          const mocks={
+            '@/lib/supabase-server':{supabaseServer},
+            '@/lib/holding-admin-auth':{authenticateHoldingAdmin:async()=>({ok:true})},
+            '@/services/nfse/emissao-nacional':{receitasFiscais:async()=>({})},
+            '@/services/nfse/data-hora':{dataHoraNacional:()=> '2026-11-03T10:00:00-03:00'},
+          };
+          const req=body=>new Request('https://example.test/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+          assert.equal((await load('src/app/api/system/nfse-nacional/route.ts',mocks).POST(req(config.nacional))).status,200);
+          assert.equal((await load('src/app/api/system/nfse-config/route.ts',mocks).POST(req({auto_emit:false}))).status,200);
+          assert.equal(patches.length,2);
+        }
       });
       const send=body=>api.POST(new Request('https://example.test/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vidracaria_id:tenant.id,valor:5,...body})}));
       const preview=await send({competencia:'2026-11-01',previsualizar:true});

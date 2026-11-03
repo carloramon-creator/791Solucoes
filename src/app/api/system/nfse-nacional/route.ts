@@ -50,7 +50,7 @@ export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   try {
-    const { data, error } = await supabaseServer.from('system_settings').select('value').eq('id', 'nfse_config').single();
+    const { data, error } = await supabaseServer.from('system_settings').select('value, updated_at').eq('id', 'nfse_config').single();
     if (error) throw error;
     const competencia = dataHoraNacional().slice(0, 7);
     const config = data.value.nacional ? validar(data.value.nacional) : null;
@@ -77,14 +77,17 @@ export async function POST(req: Request) {
     const config = validar(await req.json());
     const competencia = dataHoraNacional().slice(0, 7);
     const apuracao = calcularSimples(competencia, config.historico, await receitasFiscais(supabaseServer, competencia));
-    const { data, error } = await supabaseServer.from('system_settings').select('value').eq('id', 'nfse_config').single();
+    const { data, error } = await supabaseServer.from('system_settings').select('value, updated_at').eq('id', 'nfse_config').single();
     if (error) throw error;
     if (config.enabled && (data.value.environment !== 'producao' || !data.value.pfxBase64 || !data.value.passphrase)) {
       throw new Error('Produção e certificado A1 precisam estar configurados antes de ativar.');
     }
-    const { error: saveError } = await supabaseServer.from('system_settings').update({
+    const query = supabaseServer.from('system_settings').update({
       value: { ...data.value, nacional: config }, updated_at: new Date().toISOString(),
-    }).eq('id', 'nfse_config').eq('value', JSON.stringify(data.value)).select('id').single();
+    }).eq('id', 'nfse_config');
+    const versionada = data.updated_at == null
+      ? query.is('updated_at', null) : query.eq('updated_at', data.updated_at);
+    const { error: saveError } = await versionada.select('id').single();
     if (saveError) throw new Error(`Configuração não salva; recarregue e tente novamente: ${saveError.message}`);
     return NextResponse.json({ success: true, config, apuracao });
   } catch (err) {

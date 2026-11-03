@@ -29,7 +29,13 @@ chave/certificado, titular CNPJ, validade e uso digitalSignature.
 **Isso nao comprova cadeia ICP-Brasil, revogacao ou conformidade integral
 PAdES/politica brasileira.** Essas verificacoes independentes, politica de
 assinatura e requisitos de preservacao a longo prazo continuam pendentes.
-O certificado real cadastrado nao foi lido nem usado em testes.
+O A1 real foi usado em 03/11/2026, com autorizacao, exclusivamente pelo
+servidor da holding em um teste integrado do tenant de homologacao.
+PFX, senha e chave privada nao foram exportados para testar. Somente o PDF
+assinado foi verificado independentemente com Node e OpenSSL: assinatura,
+digest e vinculo ao certificado validos; adulteracao rejeitada. O proxy
+Glass recuperou os mesmos bytes persistidos. Isso nao valida a cadeia
+ICP-Brasil nem substitui verificacao de revogacao/politica PAdES.
 
 Requisitos antes de um teste controlado:
 
@@ -54,9 +60,10 @@ da holding, apos autorizacao da marcacao no Glass; alteracao/exclusao/truncate
 sao bloqueados. Nenhuma alteracao em emissao NFS-e, financeiro ou A1 dos tenants.
 
 As migrations acima foram aplicadas com autorizacao em 03/11/2026.
-A habilitacao das variaveis e o teste integrado com A1 real ainda dependem
-da configuracao dos servidores; aplicar a migration nao habilita assinaturas
-nem marcacoes.
+As variaveis de homologacao foram configuradas nos dois servidores em
+03/11/2026 e o teste integrado com A1 real passou. O registro de teste no Glass
+continua restrito a uma allowlist administrativa e a operacao oficial segue
+bloqueada; nao ha autoliberacao de outros tenants.
 
 Testes: `node --test scripts/tests/rep-p.test.mjs`.
 Banco nativo descartavel, com cluster `791glass-rh-isolated`, usuario

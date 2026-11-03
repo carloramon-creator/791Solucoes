@@ -170,7 +170,13 @@ de processamento devolvido pelo Sefin. A rejeicao explicita E0008 da mesma
 DPS em homologacao fica como `rejeitada` e permite um novo envio manual com
 o mesmo numero/serie, protegido por reserva atomica. O registro antigo
 `verificar_no_portal` so e liberado quando contem a resposta estruturada
-E0008 correspondente. Timeout, retorno incerto e nota autorizada continuam
+E0008 ou E0239 correspondente. A DPS inclui o endereco nacional do tomador
+do cadastro Glass (rua, numero, complemento, bairro e CEP). O municipio e
+identificado na lista publica do IBGE da UF cadastrada, sem enviar dados
+do cliente ao IBGE e sem presumir o municipio da prestacao. Cadastro
+incompleto ou municipio nao identificado bloqueia o envio antes da reserva.
+A rejeicao E0239 tambem permite corrigir o cadastro e repetir a mesma DPS.
+Timeout, retorno incerto e nota autorizada continuam
 bloqueando reenvios; nao ha repeticao automatica.
 
 O fluxo IPM atual, inclusive emissao automatica, NAO foi migrado para producao

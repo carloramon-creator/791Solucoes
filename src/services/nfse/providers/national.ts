@@ -29,18 +29,18 @@ export class NfseJaCanceladaError extends Error {
 
 type ErroSefin = { Codigo?: string; codigo?: string; Descricao?: string; descricao?: string; xMotivo?: string; Complemento?: string };
 
-export function rejeicaoHorarioConfirmada(resposta: unknown, dpsId: string): boolean {
+export function rejeicaoCorrigivelConfirmada(resposta: unknown, dpsId: string): boolean {
     if (!resposta || typeof resposta !== 'object') return false;
     const r = resposta as Record<string, unknown>;
     return r.tipoAmbiente === 2 && r.idDPS === dpsId
         && Array.isArray(r.erros) && r.erros.length > 0
         && r.erros.every((erro: unknown) => erro !== null && typeof erro === 'object'
-            && 'Codigo' in erro && erro.Codigo === 'E0008');
+            && 'Codigo' in erro && (erro.Codigo === 'E0008' || erro.Codigo === 'E0239'));
 }
 
-export class DpsHorarioRejeitadoError extends Error {
+export class DpsRejeitadaError extends Error {
     constructor(public readonly resposta: unknown) {
-        super('O Emissor Nacional rejeitou a data/hora de emissão (E0008), sem autorizar a nota. A mesma DPS pode ser reenviada após corrigir o horário.');
+        super(`DPS rejeitada, sem autorização da nota: ${JSON.stringify(resposta)}. Corrija os dados antes de reenviar a mesma DPS.`);
     }
 }
 
@@ -89,8 +89,8 @@ export class NationalProvider implements NfseProvider {
         } catch (err) {
             if (axios.isAxiosError(err)) {
                 const resposta = err.response?.data;
-                if (err.response?.status === 400 && rejeicaoHorarioConfirmada(resposta, id)) {
-                    throw new DpsHorarioRejeitadoError(resposta);
+                if (err.response?.status === 400 && rejeicaoCorrigivelConfirmada(resposta, id)) {
+                    throw new DpsRejeitadaError(resposta);
                 }
                 throw new Error(`Homologação nacional: ${resposta ? JSON.stringify(resposta) : err.message}. Consulte a DPS ${id} antes de reenviar.`);
             }

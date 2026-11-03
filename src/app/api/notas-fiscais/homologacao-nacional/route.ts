@@ -3,21 +3,22 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 import { getGlassClient } from '@/lib/glass-client';
 import xmlService, { type DPSData } from '@/services/nfse/xml-service';
-import nationalProvider, { DpsHorarioRejeitadoError, rejeicaoHorarioConfirmada } from '@/services/nfse/providers/national';
+import nationalProvider, { DpsRejeitadaError, rejeicaoCorrigivelConfirmada } from '@/services/nfse/providers/national';
 import { lerDocumentoOficial } from '@/services/nfse/documento-oficial';
 import { dataHoraNacional } from '@/services/nfse/data-hora';
+import { enderecoTomadorNacional } from '@/services/nfse/endereco-tomador';
 
-function permiteReenviarHorario(value: unknown, dpsId: string): boolean {
+function permiteReenviarRejeitada(value: unknown, dpsId: string): boolean {
   if (!value || typeof value !== 'object') return false;
   const registro = value as Record<string, unknown>;
   if (registro.ambiente !== 'homologacao' || registro.dpsId !== dpsId) return false;
-  if (registro.status === 'rejeitada') return rejeicaoHorarioConfirmada(registro.rejeicao, dpsId);
+  if (registro.status === 'rejeitada') return rejeicaoCorrigivelConfirmada(registro.rejeicao, dpsId);
   if (registro.status !== 'verificar_no_portal' || typeof registro.erro !== 'string') return false;
   const prefixo = 'Homologação nacional: ';
   const sufixo = `. Consulte a DPS ${dpsId} antes de reenviar.`;
   if (!registro.erro.startsWith(prefixo) || !registro.erro.endsWith(sufixo)) return false;
   try {
-    return rejeicaoHorarioConfirmada(JSON.parse(registro.erro.slice(prefixo.length, -sufixo.length)), dpsId);
+    return rejeicaoCorrigivelConfirmada(JSON.parse(registro.erro.slice(prefixo.length, -sufixo.length)), dpsId);
   } catch (err) {
     console.warn('[Homologação nacional] Rejeição antiga ilegível; reenvio bloqueado:', err);
     return false;
@@ -58,7 +59,8 @@ export async function POST(req: Request) {
     const config = settings.value;
     const glass = await getGlassClient();
     const { data: tenant, error: erroTenant } = await glass.from('vidracarias')
-      .select('nome, cnpj, email').eq('id', texto('vidracaria_id')).single();
+      .select('nome, cnpj, email, endereco, endereco_completo, numero, complemento, bairro, cep, cidade, estado')
+      .eq('id', texto('vidracaria_id')).single();
     if (erroTenant || !tenant) return NextResponse.json({ error: 'Tenant não encontrado.' }, { status: 404 });
     const documento = String(tenant.cnpj || '').replace(/\D/g, '');
     const data: DPSData = {
@@ -68,6 +70,7 @@ export async function POST(req: Request) {
       tomador: {
         ...(documento.length === 11 ? { cpf: documento } : { cnpj: documento }),
         razaoSocial: tenant.nome, email: tenant.email || undefined,
+        endereco: await enderecoTomadorNacional(tenant),
       },
       servico: {
         valorServicos: typeof body.valor === 'number' ? body.valor : NaN,
@@ -106,7 +109,7 @@ export async function POST(req: Request) {
       const { data: anterior, error: erroConsulta } = await supabaseServer.from('system_settings')
         .select('value').eq('id', registroId).maybeSingle();
       if (erroConsulta) throw erroConsulta;
-      if (!anterior || !permiteReenviarHorario(anterior.value, dpsId)) {
+      if (!anterior || !permiteReenviarRejeitada(anterior.value, dpsId)) {
         return NextResponse.json({ error: 'Esta DPS já foi enviada ou está em processamento. Consulte o resultado no portal nacional antes de qualquer nova tentativa; não troque o número apenas para repetir a mesma operação.' }, { status: 409 });
       }
       const { data: retomada, error: erroRetomada } = await supabaseServer.from('system_settings')
@@ -129,12 +132,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ ...value, enviado: true }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : 'Falha na homologação.';
-      const horarioRejeitado = err instanceof DpsHorarioRejeitadoError;
+      const rejeitada = err instanceof DpsRejeitadaError;
       const { error: erroSalvar } = await supabaseServer.from('system_settings').update({
         value: {
-          ambiente: 'homologacao', status: horarioRejeitado ? 'rejeitada' : 'verificar_no_portal', dpsId, erro: mensagem,
+          ambiente: 'homologacao', status: rejeitada ? 'rejeitada' : 'verificar_no_portal', dpsId, erro: mensagem,
           xml, dataEmissao: data.dataEmissao, tenant_id: texto('vidracaria_id'),
-          ...(horarioRejeitado ? { rejeicao: err.resposta } : {}),
+          ...(rejeitada ? { rejeicao: err.resposta } : {}),
         },
         updated_at: new Date().toISOString(),
       }).eq('id', registroId);

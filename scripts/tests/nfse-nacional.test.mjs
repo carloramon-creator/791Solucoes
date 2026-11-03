@@ -26,10 +26,18 @@ const xmlModule = load('src/services/nfse/xml-service.ts');
 const oficial = load('src/services/nfse/documento-oficial.ts');
 const horario = load('src/services/nfse/data-hora.ts');
 const nacionalModule = load('src/services/nfse/providers/national.ts');
+const enderecoModule = load('src/services/nfse/endereco-tomador.ts');
+const tenantEndereco = {
+  endereco: 'Rua Teste & Exemplo', numero: '10', bairro: 'Centro', cep: '88103-000',
+  cidade: 'São José', estado: 'SC', complemento: 'Sala 2',
+};
 const dados = {
   numero: '123', serie: '1', dataEmissao: '2026-10-21T12:00:00+00:00',
   prestador: { cnpj: '11222333000181', inscricaoMunicipal: '1234' },
-  tomador: { cnpj: '11222333000181', razaoSocial: 'EMPRESA & TESTE', email: 'teste@example.com' },
+  tomador: {
+    cnpj: '11222333000181', razaoSocial: 'EMPRESA & TESTE', email: 'teste@example.com',
+    endereco: { codigoMunicipio: '4216602', cep: '88103000', logradouro: 'Rua Teste & Exemplo', numero: '10', bairro: 'Centro', complemento: 'Sala 2' },
+  },
   servico: { codigoItemListaServico: '010501', valorServicos: 5.09, discriminacao: 'Assinatura <teste>' },
   nacional: {
     municipioEmissao: '4216602', municipioPrestacao: '4216602', competencia: '2026-10-21',
@@ -63,6 +71,7 @@ test('DPS 1.01 tem identificador completo, sequência, tomador e valores correto
   assert.match(xml, /<vServ>5.09<\/vServ>/);
   assert.match(xml, /<pTotTribSN>6.00<\/pTotTribSN>/);
   assert.match(xml, /EMPRESA &amp; TESTE/);
+  assert.match(xml, /<endNac>\s*<cMun>4216602<\/cMun>\s*<CEP>88103000<\/CEP>\s*<\/endNac>\s*<xLgr>Rua Teste &amp; Exemplo<\/xLgr>\s*<nro>10<\/nro>\s*<xCpl>Sala 2<\/xCpl>\s*<xBairro>Centro<\/xBairro>/);
   assert.match(xml, /Assinatura &lt;teste&gt;/);
   const compacto = xml.replace(/>\s+</g, '><');
   assert.match(compacto, /<cTribNac>010501<\/cTribNac><cNBS>111032200<\/cNBS><xDescServ>/);
@@ -72,6 +81,14 @@ test('DPS 1.01 tem identificador completo, sequência, tomador e valores correto
 test('DPS recusa parâmetros ausentes, número textual, código antigo e ano não suportado', () => {
   for (const invalid of [
     { ...dados, nacional: undefined },
+    ...[
+      undefined,
+      { ...dados.tomador.endereco, codigoMunicipio: '8303' },
+      { ...dados.tomador.endereco, cep: '88103-000' },
+      { ...dados.tomador.endereco, logradouro: '' },
+      { ...dados.tomador.endereco, numero: '' },
+      { ...dados.tomador.endereco, bairro: '' },
+    ].map(endereco => ({ ...dados, tomador: { ...dados.tomador, endereco } })),
     { ...dados, nacional: { ...dados.nacional, codigoNbs: undefined } },
     { ...dados, numero: 'HOLD-123' },
     { ...dados, serie: '90000' },
@@ -149,11 +166,12 @@ test('HTTP 200 sem autorização ou com XML de outra DPS nunca vira sucesso', as
   }
 });
 
-test('somente rejeição HTTP 400 E0008 da mesma DPS e ambiente permite corrigir o horário', async () => {
+test('somente rejeição HTTP 400 E0008/E0239 da mesma DPS e ambiente permite corrigir dados', async () => {
   const idDPS = xmlModule.default.generateDPS(dados).match(/Id="([^"]+)"/)[1];
   const rejeicao = { tipoAmbiente: 2, idDPS, erros: [{ Codigo: 'E0008' }] };
   for (const [status, resposta, recuperavel] of [
     [400, rejeicao, true],
+    [400, { ...rejeicao, erros: [{ Codigo: 'E0239' }] }, true],
     [500, rejeicao, false],
     [400, { ...rejeicao, tipoAmbiente: 1 }, false],
     [400, { ...rejeicao, idDPS: 'DPS-outra' }, false],
@@ -170,8 +188,8 @@ test('somente rejeição HTTP 400 E0008 da mesma DPS e ambiente permite corrigir
       } },
     });
     await assert.rejects(mod.default.emit(dados, 'fake', 'fake'), err => {
-      assert.equal(err instanceof mod.DpsHorarioRejeitadoError, recuperavel);
-      if (recuperavel) assert.deepEqual(err.resposta, rejeicao);
+      assert.equal(err instanceof mod.DpsRejeitadaError, recuperavel);
+      if (recuperavel) assert.deepEqual(err.resposta, resposta);
       return true;
     });
   }
@@ -237,12 +255,16 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
       '@/lib/supabase-server': { supabaseServer: supabase },
       '@/lib/glass-client': { getGlassClient: async () => ({
         from: () => ({
-          select() { return this; }, eq() { return this; },
-          single: async () => ({ data: { nome: 'TENANT TESTE', cnpj: '11222333000181' }, error: null }),
+          select(campos) { assert.ok(campos.includes('endereco') && campos.includes('cidade')); return this; }, eq() { return this; },
+          single: async () => ({ data: { nome: 'TENANT TESTE', cnpj: '11222333000181', ...tenantEndereco }, error: null }),
         }),
       }) },
       '@/services/nfse/xml-service': xmlModule,
       '@/services/nfse/data-hora': horario,
+      '@/services/nfse/endereco-tomador': { enderecoTomadorNacional: async tenant => {
+        assert.equal(tenant.endereco, tenantEndereco.endereco);
+        return dados.tomador.endereco;
+      } },
       '@/services/nfse/documento-oficial': oficial,
       '@/services/nfse/providers/national': { ...nacionalModule, __esModule: true, default: { async emit() {
         emissoes++;
@@ -279,16 +301,18 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
     assert.equal(emissoes, 1);
 });
 
-test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserva atômica', async () => {
+test('API retoma somente E0008/E0239 confirmadas, inclusive registro antigo, com reserva atômica', async () => {
   const dpsId = xmlModule.default.generateDPS(dados).match(/Id="([^"]+)"/)[1];
   const rejeicao = { tipoAmbiente: 2, idDPS: dpsId, erros: [{ Codigo: 'E0008' }] };
   const erroAntigo = resposta => `Homologação nacional: ${JSON.stringify(resposta)}. Consulte a DPS ${dpsId} antes de reenviar.`;
   const base = { ambiente: 'homologacao', dpsId };
   const casos = [
+    { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, erros: [{ Codigo: 'E0239' }] }) }, esperado: 200 },
     { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo(rejeicao) }, esperado: 200 },
     { anterior: { ...base, status: 'rejeitada', rejeicao }, esperado: 200 },
     { anterior: { ...base, status: 'rejeitada', rejeicao }, concorrente: true, esperado: 200 },
     { anterior: { ...base, status: 'rejeitada', rejeicao }, corrida: true, esperado: 409 },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, enderecoIncompleto: true, esperado: 502 },
     { anterior: { ...base, status: 'authorized' }, esperado: 409 },
     { anterior: { ...base, status: 'enviando' }, esperado: 409 },
     { anterior: { ...base, status: 'verificar_no_portal', erro: 'timeout E0008' }, esperado: 409 },
@@ -296,7 +320,7 @@ test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserv
     { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, erros: [{ Codigo: 'E9999' }] }) }, esperado: 409 },
     { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, tipoAmbiente: 1 }) }, esperado: 409 },
     { anterior: { ...base, status: 'rejeitada', rejeicao }, falha: new Error('timeout'), esperado: 502, salvo: 'verificar_no_portal' },
-    { anterior: { ...base, status: 'rejeitada', rejeicao }, falha: new nacionalModule.DpsHorarioRejeitadoError(rejeicao), esperado: 502, salvo: 'rejeitada' },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, falha: new nacionalModule.DpsRejeitadaError(rejeicao), esperado: 502, salvo: 'rejeitada' },
   ];
   for (const caso of casos) {
     let emissoes = 0;
@@ -341,6 +365,10 @@ test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserv
       }) },
       '@/services/nfse/xml-service': xmlModule,
       '@/services/nfse/data-hora': horario,
+      '@/services/nfse/endereco-tomador': { enderecoTomadorNacional: async () => {
+        if (caso.enderecoIncompleto) throw new Error('Complete o endereço do cliente no Glass.');
+        return dados.tomador.endereco;
+      } },
       '@/services/nfse/documento-oficial': oficial,
       '@/services/nfse/providers/national': {
         ...nacionalModule, __esModule: true,
@@ -363,7 +391,11 @@ test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserv
       ? await Promise.all([route.POST(request()), route.POST(request())])
       : [await route.POST(request())];
     assert.deepEqual(respostas.map(resposta => resposta.status).sort(), caso.concorrente ? [200, 409] : [caso.esperado]);
-    assert.equal(emissoes, caso.esperado === 409 ? 0 : 1);
+    assert.equal(emissoes, caso.esperado === 409 || caso.enderecoIncompleto ? 0 : 1);
+    if (caso.enderecoIncompleto) {
+      assert.equal(reserva, false);
+      assert.deepEqual(registro, caso.anterior);
+    }
     if (caso.salvo) {
       assert.equal(registro.status, caso.salvo);
       assert.deepEqual(registro.rejeicao, caso.salvo === 'rejeitada' ? rejeicao : undefined);
@@ -372,6 +404,34 @@ test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserv
       assert.equal(registro.tenant_id, 'tenant-teste');
     }
   }
+});
+
+test('endereço usa cadastro e município IBGE da UF, sem enviar dados do cliente nem presumir local da prestação', async t => {
+  const chamadas = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    chamadas.push(url);
+    return Response.json([{ id: 4216602, nome: 'São José' }, { id: 4205407, nome: 'Florianópolis' }]);
+  });
+  const endereco = await enderecoModule.enderecoTomadorNacional(tenantEndereco);
+  assert.deepEqual(endereco, dados.tomador.endereco);
+  const outro = await enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: 'florianopolis' });
+  assert.equal(outro.codigoMunicipio, '4205407');
+  const porCodigo = await enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: '4216602' });
+  assert.equal(porCodigo.codigoMunicipio, '4216602');
+  const alternativo = await enderecoModule.enderecoTomadorNacional({
+    ...tenantEndereco, endereco: '', endereco_completo: 'Rua Alternativa', complemento: '',
+  });
+  assert.equal(alternativo.logradouro, 'Rua Alternativa');
+  assert.equal(alternativo.complemento, undefined);
+  for (const url of chamadas) assert.equal(url, 'https://servicodados.ibge.gov.br/api/v1/localidades/estados/SC/municipios');
+  for (const campo of ['endereco', 'numero', 'bairro', 'cep', 'cidade', 'estado']) {
+    await assert.rejects(enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, [campo]: '' }), /Complete o endereço/);
+  }
+  await assert.rejects(enderecoModule.enderecoTomadorNacional({ ...tenantEndereco, cidade: 'Cidade inexistente' }), /não encontrado/);
+  globalThis.fetch = async () => Response.json({}, { status: 503 });
+  await assert.rejects(enderecoModule.enderecoTomadorNacional(tenantEndereco), /HTTP 503/);
+  globalThis.fetch = async () => Response.json({});
+  await assert.rejects(enderecoModule.enderecoTomadorNacional(tenantEndereco), /Resposta inválida/);
 });
 
 test('sincronização mantém cancelamento mesmo quando a consulta IPM não traz XML completo', async () => {

@@ -14,6 +14,14 @@ export interface DPSData {
         cpf?: string;
         razaoSocial: string;
         email?: string;
+        endereco?: {
+            codigoMunicipio: string;
+            cep: string;
+            logradouro: string;
+            numero: string;
+            complemento?: string;
+            bairro: string;
+        };
     };
     servico: {
         codigoItemListaServico: string;
@@ -82,6 +90,17 @@ export class XmlService {
         if (data.tomador.cnpj) validar(data.tomador.cnpj, /^\d{14}$/, 'CNPJ do tomador');
         if (data.tomador.cpf) validar(data.tomador.cpf, /^\d{11}$/, 'CPF do tomador');
         if (!data.tomador.razaoSocial.trim()) throw new Error('Nome do tomador obrigatório.');
+        const endereco = data.tomador.endereco;
+        if (!endereco) throw new Error('Endereço nacional do tomador obrigatório para IBS/CBS.');
+        validar(endereco.codigoMunicipio, /^\d{7}$/, 'Município do tomador (IBGE)');
+        validar(endereco.cep, /^\d{8}$/, 'CEP do tomador');
+        for (const [nome, valor, limite] of [
+            ['Logradouro', endereco.logradouro, 255], ['Número', endereco.numero, 60],
+            ['Bairro', endereco.bairro, 60],
+        ] as const) {
+            if (!valor.trim() || valor.length > limite) throw new Error(`${nome} do tomador inválido.`);
+        }
+        if (endereco.complemento && endereco.complemento.length > 156) throw new Error('Complemento do tomador inválido.');
         const id = `DPS${nacional.municipioEmissao}2${data.prestador.cnpj}${data.serie.padStart(5, '0')}${data.numero.padStart(15, '0')}`;
         const dpsObject = {
             DPS: {
@@ -106,6 +125,13 @@ export class XmlService {
                         CNPJ: data.tomador.cnpj ? data.tomador.cnpj.replace(/\D/g, '') : undefined,
                         CPF: data.tomador.cpf ? data.tomador.cpf.replace(/\D/g, '') : undefined,
                         xNome: data.tomador.razaoSocial,
+                        end: {
+                            endNac: { cMun: endereco.codigoMunicipio, CEP: endereco.cep },
+                            xLgr: endereco.logradouro,
+                            nro: endereco.numero,
+                            xCpl: endereco.complemento || undefined,
+                            xBairro: endereco.bairro,
+                        },
                         email: data.tomador.email || undefined,
                     },
                     serv: {

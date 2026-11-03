@@ -31,12 +31,14 @@ PAdES/politica brasileira.** Essas verificacoes independentes, politica de
 assinatura e requisitos de preservacao a longo prazo continuam pendentes.
 O certificado real cadastrado nao foi lido nem usado em testes.
 
-Requisitos antes de um teste controlado (nao foram aplicados em producao):
+Requisitos antes de um teste controlado:
 
 - Aplicar com autorizacao a migration
   `20261103173000_rep_p_comprovantes_homologacao.sql` na holding e as migrations
   do ponto, incluindo `20261103173000_rh_ponto_comprovante_snapshot.sql`, no Glass.
-- Definir `REP_P_INPI` com 17 digitos, conferidos contra o registro do software.
+- Definir `REP_P_INPI` no formato original `BR51XXXXXXXXXX-X`, conferido
+  contra o registro do software. O PDF preserva esse identificador; o campo
+  numerico de 17 posicoes do AFD nao define o formato do comprovante PDF.
 - Definir `REP_P_HOMOLOGACAO_ENABLED=true` **em ambos** os servidores e
   `REP_P_HOLDING_URL=https://dominio-da-holding` no Glass.
 - Manter `finance_api` apontando para o projeto Glass correto; o helper existente
@@ -50,6 +52,11 @@ nao entrega um PDF como se tivesse sido emitido. Emissao concorrente recupera
 o primeiro original persistido. Leitura e insercao sao somente service role
 da holding, apos autorizacao da marcacao no Glass; alteracao/exclusao/truncate
 sao bloqueados. Nenhuma alteracao em emissao NFS-e, financeiro ou A1 dos tenants.
+
+As migrations acima foram aplicadas com autorizacao em 03/11/2026.
+A habilitacao das variaveis e o teste integrado com A1 real ainda dependem
+da configuracao dos servidores; aplicar a migration nao habilita assinaturas
+nem marcacoes.
 
 Testes: `node --test scripts/tests/rep-p.test.mjs`.
 Banco nativo descartavel, com cluster `791glass-rh-isolated`, usuario

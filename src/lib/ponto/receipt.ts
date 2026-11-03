@@ -153,7 +153,9 @@ export function carregarAssinante(config: unknown, now = new Date()) {
 }
 
 export async function gerarComprovanteHomologacao(snapshot: SnapshotPonto, inpi: string, config: unknown) {
-  if (!/^\d{17}$/.test(inpi)) throw new Error('Configure o número INPI do REP-P (17 dígitos).');
+  if (inpi.length !== 16 || !/^BR51\d{10}-\d$/.test(inpi)) {
+    throw new Error('Configure o registro INPI do programa no formato BR51XXXXXXXXXX-X.');
+  }
   const now = new Date();
   const certificate = carregarAssinante(config, now);
   const pdf = await PDFDocument.create();

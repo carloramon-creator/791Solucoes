@@ -67,11 +67,11 @@ test('homologation PDF has ETSI subfilter, complete ByteRange, bound certificate
   const drawn = [];
   PDFPage.prototype.drawText = function(text, options) { drawn.push(text); return originalDraw.call(this, text, options); };
   let result;
-  try { result = await receipt.gerarComprovanteHomologacao(receipt.validarSnapshot(raw, id), '12345678901234567', firstConfig); }
+  try { result = await receipt.gerarComprovanteHomologacao(receipt.validarSnapshot(raw, id), 'BR512026000001-0', firstConfig); }
   finally { PDFPage.prototype.drawText = originalDraw; }
   const rendered = drawn.join('\n');
   for (const required of ['Comprovante de Registro de Ponto do Trabalhador', '000000001', raw.nome, raw.cpf,
-    raw.empregador.nome, raw.empregador.documento, raw.empregador.endereco, '123456789012', '12345678901234567', raw.hash,
+    raw.empregador.nome, raw.empregador.documento, raw.empregador.endereco, '123456789012', 'BR512026000001-0', raw.hash,
     '03/11/2026', '10:00:00', 'HOMOLOGAÇÃO - SEM VALIDADE COMO PONTO OFICIAL']) assert.ok(rendered.includes(required), required);
   assert.equal(result.operacao_oficial, false);
   const doc = await PDFDocument.load(result.pdf);
@@ -114,12 +114,14 @@ test('homologation PDF has ETSI subfilter, complete ByteRange, bound certificate
 });
 test('a replaced holding certificate is read for new PDFs; old signed bytes remain unchanged', async () => {
   const snapshot = receipt.validarSnapshot(raw, id);
-  const first = await receipt.gerarComprovanteHomologacao(snapshot, '12345678901234567', firstConfig);
+  const first = await receipt.gerarComprovanteHomologacao(snapshot, 'BR512026000001-0', firstConfig);
   const digest = createHash('sha256').update(first.pdf).digest('hex');
-  const replacement = await receipt.gerarComprovanteHomologacao(snapshot, '12345678901234567', config({ serial: '02' }));
+  const replacement = await receipt.gerarComprovanteHomologacao(snapshot, 'BR512026000001-0', config({ serial: '02' }));
   assert.notEqual(replacement.fingerprint, first.fingerprint);
   assert.equal(createHash('sha256').update(first.pdf).digest('hex'), digest);
-  await assert.rejects(receipt.gerarComprovanteHomologacao(snapshot, '', firstConfig), /INPI/);
+  for (const invalid of ['', '12345678901234567', '5120260000010', 'BR512026000001', 'BR512026000001-0\n']) {
+    await assert.rejects(receipt.gerarComprovanteHomologacao(snapshot, invalid, firstConfig), /INPI/);
+  }
 });
 
 function routeHarness({ enabled = true, snapshotError = null, cached = null, failSave = false, duplicate = false } = {}) {

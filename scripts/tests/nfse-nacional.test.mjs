@@ -24,6 +24,8 @@ function load(path, mocks = {}) {
 
 const xmlModule = load('src/services/nfse/xml-service.ts');
 const oficial = load('src/services/nfse/documento-oficial.ts');
+const horario = load('src/services/nfse/data-hora.ts');
+const nacionalModule = load('src/services/nfse/providers/national.ts');
 const dados = {
   numero: '123', serie: '1', dataEmissao: '2026-10-21T12:00:00+00:00',
   prestador: { cnpj: '11222333000181', inscricaoMunicipal: '1234' },
@@ -34,6 +36,16 @@ const dados = {
     codigoTributacaoNacional: '010501', codigoNbs: '111032200', percentualTributosSimples: 6, regimeConfirmado: 'simples-me-epp',
   },
 };
+
+test('horário nacional mantém o instante UTC com folga de 30 segundos, inclusive na virada do dia', () => {
+  for (const instante of ['2026-11-03T17:20:40.555Z', '2026-11-03T00:00:10.999Z']) {
+    const agora = new Date(instante);
+    const resultado = horario.dataHoraNacional(agora);
+    assert.match(resultado, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
+    const diferenca = agora.getTime() - Date.parse(resultado);
+    assert.ok(diferenca >= 30_000 && diferenca < 31_000);
+  }
+});
 
 test('DPS 1.01 tem identificador completo, sequência, tomador e valores corretos', () => {
   const xml = xmlModule.default.generateDPS(dados);
@@ -130,6 +142,34 @@ test('HTTP 200 sem autorização ou com XML de outra DPS nunca vira sucesso', as
   }
 });
 
+test('somente rejeição HTTP 400 E0008 da mesma DPS e ambiente permite corrigir o horário', async () => {
+  const idDPS = xmlModule.default.generateDPS(dados).match(/Id="([^"]+)"/)[1];
+  const rejeicao = { tipoAmbiente: 2, idDPS, erros: [{ Codigo: 'E0008' }] };
+  for (const [status, resposta, recuperavel] of [
+    [400, rejeicao, true],
+    [500, rejeicao, false],
+    [400, { ...rejeicao, tipoAmbiente: 1 }, false],
+    [400, { ...rejeicao, idDPS: 'DPS-outra' }, false],
+    [400, { ...rejeicao, erros: [] }, false],
+    [400, { ...rejeicao, erros: [{ Codigo: 'E0008' }, { Codigo: 'E9999' }] }, false],
+  ]) {
+    const mod = load('src/services/nfse/providers/national.ts', {
+      axios: {
+        isAxiosError: e => e.isAxiosError === true,
+        post: async () => { throw { isAxiosError: true, response: { status, data: resposta } }; },
+      },
+      '../signature-service': { __esModule: true, default: {
+        extractFromPfx: () => ({ privateKey: 'fake', certificate: 'fake' }), signXML: xml => xml,
+      } },
+    });
+    await assert.rejects(mod.default.emit(dados, 'fake', 'fake'), err => {
+      assert.equal(err instanceof mod.DpsHorarioRejeitadoError, recuperavel);
+      if (recuperavel) assert.deepEqual(err.resposta, rejeicao);
+      return true;
+    });
+  }
+});
+
 test('assinatura é verificável e DPS assinada passa no XSD oficial 1.01', { skip: !process.env.NFSE_XSD_DIR }, () => {
   const forge = require('node-forge');
   const keys = forge.pki.rsa.generateKeyPair(1024);
@@ -179,6 +219,7 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
             return this;
           },
           single: async () => ({ data: { value: config }, error: null }),
+          maybeSingle: async () => ({ data: { value: { status: 'authorized' } }, error: null }),
           insert: async registro => { registros.push(registro); return { error: duplicada ? { code: '23505' } : null }; },
           update(value) { update = value; return this; },
         };
@@ -194,8 +235,9 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
         }),
       }) },
       '@/services/nfse/xml-service': xmlModule,
+      '@/services/nfse/data-hora': horario,
       '@/services/nfse/documento-oficial': oficial,
-      '@/services/nfse/providers/national': { __esModule: true, default: { async emit() {
+      '@/services/nfse/providers/national': { ...nacionalModule, __esModule: true, default: { async emit() {
         emissoes++;
         return { status: 'authorized', xml: '<NFSe><infNFSe><nNFSe>12</nNFSe></infNFSe></NFSe>' };
       } } },
@@ -211,7 +253,10 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
     });
     const preview = await route.POST(request(false));
     assert.equal(preview.status, 200);
-    assert.equal((await preview.json()).enviado, false);
+    const previa = await preview.json();
+    assert.equal(previa.enviado, false);
+    const emissao = previa.xml.match(/<dhEmi>([^<]+)<\/dhEmi>/)[1];
+    assert.ok(Date.now() - Date.parse(emissao) >= 30_000);
     assert.equal(emissoes, 0);
     assert.equal(registros.length, 0);
     const enviada = await route.POST(request(true));
@@ -224,6 +269,98 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
     const repetida = await route.POST(request(true));
     assert.equal(repetida.status, 409);
     assert.equal(emissoes, 1);
+});
+
+test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserva atômica', async () => {
+  const dpsId = xmlModule.default.generateDPS(dados).match(/Id="([^"]+)"/)[1];
+  const rejeicao = { tipoAmbiente: 2, idDPS: dpsId, erros: [{ Codigo: 'E0008' }] };
+  const erroAntigo = resposta => `Homologação nacional: ${JSON.stringify(resposta)}. Consulte a DPS ${dpsId} antes de reenviar.`;
+  const base = { ambiente: 'homologacao', dpsId };
+  const casos = [
+    { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo(rejeicao) }, esperado: 200 },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, esperado: 200 },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, concorrente: true, esperado: 200 },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, corrida: true, esperado: 409 },
+    { anterior: { ...base, status: 'authorized' }, esperado: 409 },
+    { anterior: { ...base, status: 'enviando' }, esperado: 409 },
+    { anterior: { ...base, status: 'verificar_no_portal', erro: 'timeout E0008' }, esperado: 409 },
+    { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, idDPS: 'DPS-outra' }) }, esperado: 409 },
+    { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, erros: [{ Codigo: 'E9999' }] }) }, esperado: 409 },
+    { anterior: { ...base, status: 'verificar_no_portal', erro: erroAntigo({ ...rejeicao, tipoAmbiente: 1 }) }, esperado: 409 },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, falha: new Error('timeout'), esperado: 502, salvo: 'verificar_no_portal' },
+    { anterior: { ...base, status: 'rejeitada', rejeicao }, falha: new nacionalModule.DpsHorarioRejeitadoError(rejeicao), esperado: 502, salvo: 'rejeitada' },
+  ];
+  for (const caso of casos) {
+    let emissoes = 0;
+    let reserva = false;
+    let registro = caso.anterior;
+    const supabase = { from(table) {
+      assert.equal(table, 'system_settings');
+      let payload;
+      const filtros = {};
+      return {
+        select() { return this; },
+        eq(campo, valor) { filtros[campo] = valor; return this; },
+        single: async () => ({ data: { value: { prestador_cnpj: dados.prestador.cnpj, pfxBase64: 'fake', passphrase: 'fake' } }, error: null }),
+        insert: async () => ({ error: { code: '23505' } }),
+        update(value) { payload = value; return this; },
+        maybeSingle: async () => {
+          if (!payload) return { data: { value: registro }, error: null };
+          assert.equal(filtros.id, `nfse_homologacao_${dpsId}`);
+          assert.equal(filtros.value, JSON.stringify(caso.anterior));
+          assert.equal(payload.value.status, 'enviando');
+          assert.ok(Date.now() - Date.parse(payload.value.xml.match(/<dhEmi>([^<]+)<\/dhEmi>/)[1]) >= 30_000);
+          if (caso.corrida || filtros.value !== JSON.stringify(registro)) return { data: null, error: null };
+          registro = payload.value;
+          reserva = true;
+          return { data: { id: filtros.id }, error: null };
+        },
+        then(resolve) {
+          assert.ok(payload);
+          registro = payload.value;
+          return Promise.resolve({ error: null }).then(resolve);
+        },
+      };
+    } };
+    const route = load('src/app/api/notas-fiscais/homologacao-nacional/route.ts', {
+      '@/lib/holding-admin-auth': { authenticateHoldingAdmin: async () => ({ ok: true }) },
+      '@/lib/supabase-server': { supabaseServer: supabase },
+      '@/lib/glass-client': { getGlassClient: async () => ({
+        from: () => ({
+          select() { return this; }, eq() { return this; },
+          single: async () => ({ data: { nome: 'TENANT TESTE', cnpj: dados.prestador.cnpj }, error: null }),
+        }),
+      }) },
+      '@/services/nfse/xml-service': xmlModule,
+      '@/services/nfse/data-hora': horario,
+      '@/services/nfse/documento-oficial': oficial,
+      '@/services/nfse/providers/national': {
+        ...nacionalModule, __esModule: true,
+        default: { async emit() {
+          assert.equal(reserva, true);
+          emissoes++;
+          if (caso.falha) throw caso.falha;
+          return { status: 'authorized', xml: '<NFSe><infNFSe><nNFSe>12</nNFSe></infNFSe></NFSe>' };
+        } },
+      },
+    });
+    const request = () => new Request('https://holding.example/api/notas-fiscais/homologacao-nacional', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        vidracaria_id: 'tenant-teste', numero: dados.numero, serie: dados.serie, valor: 5,
+        descricao: 'Teste', ...dados.nacional, regimeConfirmado: true, confirmarHomologacao: true,
+      }),
+    });
+    const respostas = caso.concorrente
+      ? await Promise.all([route.POST(request()), route.POST(request())])
+      : [await route.POST(request())];
+    assert.deepEqual(respostas.map(resposta => resposta.status).sort(), caso.concorrente ? [200, 409] : [caso.esperado]);
+    assert.equal(emissoes, caso.esperado === 409 ? 0 : 1);
+    if (caso.salvo) {
+      assert.equal(registro.status, caso.salvo);
+      assert.deepEqual(registro.rejeicao, caso.salvo === 'rejeitada' ? rejeicao : undefined);
+    }
+  }
 });
 
 test('sincronização mantém cancelamento mesmo quando a consulta IPM não traz XML completo', async () => {

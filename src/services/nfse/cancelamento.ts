@@ -66,8 +66,4 @@ export function extrairDadosNfseNacional(xml: unknown): DadosNfseNacional | null
   };
 }
 
-/** Data/hora no formato exigido pelo leiaute (sem milissegundos, com fuso). */
-export function dataHoraEvento(agora: Date = new Date()): string {
-  // Pequena folga para não ser recusado por relógio adiantado em relação ao Sefin.
-  return new Date(agora.getTime() - 30_000).toISOString().replace(/\.\d{3}Z$/, '+00:00');
-}
+export { dataHoraNacional as dataHoraEvento } from './data-hora';

@@ -3,8 +3,26 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 import { getGlassClient } from '@/lib/glass-client';
 import xmlService, { type DPSData } from '@/services/nfse/xml-service';
-import nationalProvider from '@/services/nfse/providers/national';
+import nationalProvider, { DpsHorarioRejeitadoError, rejeicaoHorarioConfirmada } from '@/services/nfse/providers/national';
 import { lerDocumentoOficial } from '@/services/nfse/documento-oficial';
+import { dataHoraNacional } from '@/services/nfse/data-hora';
+
+function permiteReenviarHorario(value: unknown, dpsId: string): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const registro = value as Record<string, unknown>;
+  if (registro.ambiente !== 'homologacao' || registro.dpsId !== dpsId) return false;
+  if (registro.status === 'rejeitada') return rejeicaoHorarioConfirmada(registro.rejeicao, dpsId);
+  if (registro.status !== 'verificar_no_portal' || typeof registro.erro !== 'string') return false;
+  const prefixo = 'Homologação nacional: ';
+  const sufixo = `. Consulte a DPS ${dpsId} antes de reenviar.`;
+  if (!registro.erro.startsWith(prefixo) || !registro.erro.endsWith(sufixo)) return false;
+  try {
+    return rejeicaoHorarioConfirmada(JSON.parse(registro.erro.slice(prefixo.length, -sufixo.length)), dpsId);
+  } catch (err) {
+    console.warn('[Homologação nacional] Rejeição antiga ilegível; reenvio bloqueado:', err);
+    return false;
+  }
+}
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
@@ -45,7 +63,7 @@ export async function POST(req: Request) {
     const documento = String(tenant.cnpj || '').replace(/\D/g, '');
     const data: DPSData = {
       numero: texto('numero'), serie: texto('serie'),
-      dataEmissao: new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00'),
+      dataEmissao: dataHoraNacional(),
       prestador: { cnpj: String(config.prestador_cnpj || '').replace(/\D/g, ''), inscricaoMunicipal: String(config.inscricao_municipal || '') },
       tomador: {
         ...(documento.length === 11 ? { cpf: documento } : { cnpj: documento }),
@@ -79,14 +97,27 @@ export async function POST(req: Request) {
     const dpsId = xml.match(/Id="(DPS\d{42})"/)?.[1];
     if (!dpsId) throw new Error('DPS sem identificador.');
     const registroId = `nfse_homologacao_${dpsId}`;
-    const { error: erroReserva } = await supabaseServer.from('system_settings').insert({
+    const reserva = {
       id: registroId, value: { ambiente: 'homologacao', status: 'enviando', dpsId, xml, tenant_id: texto('vidracaria_id') },
       updated_at: new Date().toISOString(),
-    });
+    };
+    const { error: erroReserva } = await supabaseServer.from('system_settings').insert(reserva);
     if (erroReserva?.code === '23505') {
-      return NextResponse.json({ error: 'Esta DPS já foi enviada ou está em processamento. Consulte o resultado no portal nacional antes de qualquer nova tentativa; não troque o número apenas para repetir a mesma operação.' }, { status: 409 });
+      const { data: anterior, error: erroConsulta } = await supabaseServer.from('system_settings')
+        .select('value').eq('id', registroId).maybeSingle();
+      if (erroConsulta) throw erroConsulta;
+      if (!anterior || !permiteReenviarHorario(anterior.value, dpsId)) {
+        return NextResponse.json({ error: 'Esta DPS já foi enviada ou está em processamento. Consulte o resultado no portal nacional antes de qualquer nova tentativa; não troque o número apenas para repetir a mesma operação.' }, { status: 409 });
+      }
+      const { data: retomada, error: erroRetomada } = await supabaseServer.from('system_settings')
+        .update({ value: reserva.value, updated_at: reserva.updated_at })
+        .eq('id', registroId).eq('value', JSON.stringify(anterior.value)).select('id').maybeSingle();
+      if (erroRetomada) throw erroRetomada;
+      if (!retomada) {
+        return NextResponse.json({ error: 'A situação desta DPS mudou. Consulte o resultado salvo antes de tentar novamente.' }, { status: 409 });
+      }
     }
-    if (erroReserva) throw erroReserva;
+    else if (erroReserva) throw erroReserva;
     try {
       const result = await nationalProvider.emit(data, config.pfxBase64, config.passphrase);
       const oficial = result.xml ? lerDocumentoOficial(result.xml) : null;
@@ -98,8 +129,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ ...value, enviado: true }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (err) {
       const mensagem = err instanceof Error ? err.message : 'Falha na homologação.';
+      const horarioRejeitado = err instanceof DpsHorarioRejeitadoError;
       const { error: erroSalvar } = await supabaseServer.from('system_settings').update({
-        value: { ambiente: 'homologacao', status: 'verificar_no_portal', dpsId, erro: mensagem },
+        value: {
+          ambiente: 'homologacao', status: horarioRejeitado ? 'rejeitada' : 'verificar_no_portal', dpsId, erro: mensagem,
+          ...(horarioRejeitado ? { rejeicao: err.resposta } : {}),
+        },
         updated_at: new Date().toISOString(),
       }).eq('id', registroId);
       if (erroSalvar) console.error('[Homologação nacional] Falha ao registrar erro:', erroSalvar.message);

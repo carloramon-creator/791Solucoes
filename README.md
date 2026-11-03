@@ -161,6 +161,14 @@ reservadas antes do envio para impedir duplicacao concorrente. Uma falha de
 rede pode esconder autorizacao: consultar no portal antes de tentar novamente,
 sem mudar numero apenas para repetir a mesma operacao. O resultado salvo
 pode ser recuperado pelo painel com municipio, serie e numero.
+O horario de emissao usa UTC com fuso explicito e uma folga de 30 segundos,
+como os eventos de cancelamento, para tolerar pequenas diferencas de relogio
+com o Sefin. Nao altera a competencia. A rejeicao explicita E0008 da mesma
+DPS em homologacao fica como `rejeitada` e permite um novo envio manual com
+o mesmo numero/serie, protegido por reserva atomica. O registro antigo
+`verificar_no_portal` so e liberado quando contem a resposta estruturada
+E0008 correspondente. Timeout, retorno incerto e nota autorizada continuam
+bloqueando reenvios; nao ha repeticao automatica.
 
 O fluxo IPM atual, inclusive emissao automatica, NAO foi migrado para producao
 nacional nesta etapa. A ativacao antes de 01/11/2026 depende de homologacao

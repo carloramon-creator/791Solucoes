@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (error || !invoice) return NextResponse.json({ error: 'Nota não encontrada.' }, { status: 404 });
     const metadata = invoice.metadata || {};
     if (metadata.documento_oficial?.formato === 'nacional') {
-      return NextResponse.json({ error: 'Esta nota é nacional. Consulte o documento pelo portal nacional, não pela IPM.' }, { status: 422 });
+      return NextResponse.json({ success: true, documento: metadata.documento_oficial, aviso: 'XML nacional autorizado já armazenado. Situação atual e eventos devem ser consultados no portal nacional.' });
     }
     const codigo = metadata.danfse?.retorno?.codigo_verificacao
       || lerRetornoIpm(metadata.xml, invoice.access_link).codigo_verificacao;

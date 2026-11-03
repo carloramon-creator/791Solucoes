@@ -167,6 +167,28 @@ test('HTTP 200 sem autorização ou com XML de outra DPS nunca vira sucesso', as
   }
 });
 
+test('produção usa somente Sefin de produção e exige XML autorizado no ambiente 1', async () => {
+  const producao = { ...dados, ambiente: 1 };
+  const id = xmlModule.default.generateDPS(producao).match(/Id="([^"]+)"/)[1];
+  let url;
+  const provider = load('src/services/nfse/providers/national.ts', {
+    axios: { isAxiosError: () => false, post: async (endpoint, payload) => {
+      url = endpoint;
+      const xml = gunzipSync(Buffer.from(payload.dpsXmlGZipB64, 'base64')).toString();
+      assert.match(xml, /<tpAmb>1<\/tpAmb>/);
+      const retorno = `<NFSe><infNFSe Id="NFS${'1'.repeat(50)}"><nNFSe>12</nNFSe><DPS><infDPS Id="${id}"><tpAmb>1</tpAmb><prest><CNPJ>${dados.prestador.cnpj}</CNPJ></prest></infDPS></DPS></infNFSe></NFSe>`;
+      return { data: { chaveAcesso: '1'.repeat(50), nfseXmlGZipB64: gzipSync(retorno).toString('base64') } };
+    } },
+    '../signature-service': { __esModule: true, default: {
+      extractFromPfx: () => ({ privateKey: 'fake', certificate: 'fake' }), signXML: xml => xml,
+    } },
+  }).default;
+  const result = await provider.emit(producao, 'fake', 'fake');
+  assert.equal(url, 'https://sefin.nfse.gov.br/SefinNacional/nfse');
+  assert.equal(result.accessLink, `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=${'1'.repeat(50)}`);
+  assert.match(result.message, /produção/);
+});
+
 test('somente rejeição HTTP 400 E0008/E0239 da mesma DPS e ambiente permite corrigir dados', async () => {
   const idDPS = xmlModule.default.generateDPS(dados).match(/Id="([^"]+)"/)[1];
   const rejeicao = { tipoAmbiente: 2, idDPS, erros: [{ Codigo: 'E0008' }] };

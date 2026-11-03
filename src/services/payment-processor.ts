@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
+import { emitirNacionalProducao, usaNacional } from '@/services/nfse/emissao-nacional';
 
 // Configurações globais
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -1158,9 +1159,9 @@ export async function emitirNFeExcedentePago({
 /**
  * Emite NF-e para assinatura SaaS 791glass após pagamento confirmado.
  * Busca dados da vidraçaria no Glass, configurações do prestador na Holding,
- * emite via IPM e salva em system_invoices.
+ * emite pelo canal da competência e salva em system_invoices.
  */
-async function emitirNFeSaas({
+export async function emitirNFeSaas({
   holdingSupabase,
   glassSupabase,
   vidracariaId,
@@ -1257,6 +1258,17 @@ async function emitirNFeSaas({
     },
   };
 
+  const competencia = `${mesRef}-01`;
+  if (usaNacional(competencia) && ciclo === 'overage') {
+    throw new Error('Excedentes ConsultFlex exigem classificação fiscal própria antes da emissão nacional. Não serão enviados como licenciamento nem pela IPM.');
+  }
+  if (!config.auto_emit) throw new Error('Emissão automática desativada em Configurações NFS-e.');
+  if (usaNacional(competencia)) {
+    await emitirNacionalProducao({
+      supabase: holdingSupabase, config, dados: dpsData, tenant: { ...vidracaria, id: vidracariaId },
+      competencia, operacao: `asaas_${paymentId}`, previsualizar: true,
+    });
+  }
   const reserved = await reserveNfsePayment({
     holdingSupabase,
     asaasPaymentId: paymentId,
@@ -1267,8 +1279,18 @@ async function emitirNFeSaas({
   if (!reserved) return;
 
   let result: Awaited<ReturnType<typeof ipmProvider.emit>>;
+  let metadataNacional: Record<string, unknown> = {};
   try {
-    result = await ipmProvider.emit(
+    if (usaNacional(competencia)) {
+      const emissao = await emitirNacionalProducao({
+        supabase: holdingSupabase, config, dados: dpsData, tenant: { ...vidracaria, id: vidracariaId },
+        competencia, operacao: `asaas_${paymentId}`,
+      });
+      if (!emissao.result) throw new Error('Emissão nacional retornou apenas prévia.');
+      result = emissao.result;
+      metadataNacional = emissao.metadata;
+    } else {
+      result = await ipmProvider.emit(
       dpsData as any,
       config.pfxBase64,
       config.passphrase,
@@ -1278,7 +1300,8 @@ async function emitirNFeSaas({
         municipal_code: config.municipal_code,
         isTest: config.environment === 'homologacao',
       }
-    );
+      );
+    }
   } catch (emissionError) {
     const message = emissionError instanceof Error ? emissionError.message : String(emissionError);
     const { error: updateError } = await holdingSupabase
@@ -1336,6 +1359,7 @@ async function emitirNFeSaas({
       danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink }),
       origem: 'webhook_asaas',
       ...(invoiceMetadata || {}),
+      ...metadataNacional,
     },
   });
 

@@ -301,6 +301,8 @@ export default function AssinaturasPage() {
   const [isEmitModalOpen, setIsEmitModalOpen] = useState(false);
   const [vidracariaToEmit, setVidracariaToEmit] = useState<Vidracaria | null>(null);
   const [emitData, setEmitData] = useState({ valor: '', descricao: '' });
+  const [emitReferencia, setEmitReferencia] = useState('');
+  const [emitCompetencia, setEmitCompetencia] = useState('');
   const [isEmitting, setIsEmitting] = useState(false);
 
   const formatCurrency = (value: number) => {
@@ -648,7 +650,9 @@ export default function AssinaturasPage() {
         body: JSON.stringify({
           vidracaria_id: vidracariaToEmit.id,
           valor: parseFloat(emitData.valor),
-          descricao: emitData.descricao
+          descricao: emitData.descricao,
+          competencia: emitCompetencia,
+          referencia: emitReferencia,
         })
       });
 
@@ -1303,6 +1307,8 @@ export default function AssinaturasPage() {
                               valor: valorTotal.toFixed(2),
                               descricao: desc
                             });
+                            setEmitReferencia(crypto.randomUUID());
+                            setEmitCompetencia(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }));
                             setIsEmitModalOpen(true);
                           }}
                           className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-purple-50 hover:text-purple-600"
@@ -1469,6 +1475,11 @@ export default function AssinaturasPage() {
 
               <div className="space-y-4">
                 <div>
+                  <label htmlFor="emit-competencia" className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2">Competência do serviço</label>
+                  <input id="emit-competencia" type="date" value={emitCompetencia} onChange={e => setEmitCompetencia(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 h-[48px] text-sm" />
+                </div>
+                <div>
                   <label className="block text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2">Valor da Nota (R$)</label>
                   <input 
                     type="number" 
@@ -1490,7 +1501,7 @@ export default function AssinaturasPage() {
               <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3">
                 <AlertCircle size={18} className="text-amber-500 shrink-0" />
                 <p className="text-[10px] text-amber-700 uppercase leading-relaxed font-bold">
-                  Atenção: Esta ação enviará os dados para a prefeitura em modo {vidracariaToEmit.ativa ? 'Produção' : 'Homologação'}.
+                  Competências desde 01/11/2026 são enviadas ao Emissor Nacional em produção quando habilitado. Não emita manualmente uma assinatura que já teve nota automática. Não repita uma operação de resultado incerto.
                 </p>
               </div>
             </div>

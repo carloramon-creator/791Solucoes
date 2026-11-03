@@ -42,6 +42,8 @@ export async function POST(req: Request) {
     const body = (await req.json()) as Record<string, unknown>;
     const atual = await lerConfig();
     const novo: Record<string, unknown> = { ...atual, ...body };
+    // A produção nacional tem validação e edição próprias; o formulário IPM não pode sobrescrevê-la.
+    novo.nacional = atual.nacional;
     for (const k of INDICADORES) delete novo[k];
     // Campo de segredo vazio significa "manter o que já está salvo".
     for (const k of SEGREDOS) {
@@ -50,10 +52,12 @@ export async function POST(req: Request) {
     }
     novo.certificate_uploaded = !!novo.pfxBase64;
 
-    const { error } = await supabaseServer
-      .from('system_settings')
-      .upsert({ id: 'nfse_config', value: novo, updated_at: new Date().toISOString() });
-    if (error) throw error;
+    const registro = { id: 'nfse_config', value: novo, updated_at: new Date().toISOString() };
+    const { error } = Object.keys(atual).length
+      ? await supabaseServer.from('system_settings').update(registro)
+        .eq('id', 'nfse_config').eq('value', JSON.stringify(atual)).select('id').single()
+      : await supabaseServer.from('system_settings').insert(registro);
+    if (error) throw new Error(`Configuração não salva; recarregue antes de tentar novamente: ${error.message}`);
 
     return NextResponse.json({ success: true, config: semSegredos(novo) });
   } catch (err) {

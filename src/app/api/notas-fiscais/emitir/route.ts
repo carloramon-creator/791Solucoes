@@ -5,6 +5,8 @@ import { getGlassClient } from '@/lib/glass-client';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { DPSData } from '@/lib/nfse/types';
 import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
+import { emitirNacionalProducao, usaNacional } from '@/services/nfse/emissao-nacional';
+import { dataHoraNacional } from '@/services/nfse/data-hora';
 
 function getLocalIsoTimestamp() {
   const now = new Date();
@@ -15,9 +17,14 @@ export async function POST(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
   try {
-    const { vidracaria_id, valor, descricao } = await req.json();
+    const { vidracaria_id, valor, descricao, competencia: competenciaInformada, referencia, previsualizar } = await req.json();
+    if (previsualizar !== undefined && typeof previsualizar !== 'boolean') throw new Error('Pré-visualização deve ser um valor booleano.');
+    const competencia = competenciaInformada ?? dataHoraNacional().slice(0, 10);
+    if (typeof competencia !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(competencia)
+      || !Number.isFinite(Date.parse(competencia))
+      || new Date(competencia).toISOString().slice(0, 10) !== competencia) throw new Error('Competência inválida.');
 
-    if (!vidracaria_id || !valor) {
+    if (!vidracaria_id || typeof valor !== 'number' || !Number.isFinite(valor) || valor <= 0) {
       return NextResponse.json({ error: 'ID da vidraçaria e valor são obrigatórios.' }, { status: 400 });
     }
 
@@ -25,7 +32,7 @@ export async function POST(req: Request) {
     const glassSupabase = await getGlassClient();
     const { data: vidracaria, error: glassError } = await glassSupabase
       .from('vidracarias')
-      .select('nome, cnpj, email, endereco, numero, bairro, cep, cidade, estado, inscricao_municipal')
+      .select('nome, cnpj, email, endereco, endereco_completo, complemento, numero, bairro, cep, cidade, estado, inscricao_municipal')
       .eq('id', vidracaria_id)
       .single();
 
@@ -89,12 +96,24 @@ export async function POST(req: Request) {
     // Validação básica de dados obrigatórios
     if (!dpsData.prestador.cnpj) throw new Error('Seu CNPJ (Prestador) não está configurado.');
     if (!dpsData.tomador.cnpj) throw new Error('A vidraçaria (Tomador) não possui CNPJ cadastrado.');
-    if (!dpsData.tomador.endereco?.logradouro) throw new Error('O endereço da vidraçaria está incompleto.');
+    if (!dpsData.tomador.endereco?.logradouro && !vidracaria.endereco_completo) throw new Error('O endereço da vidraçaria está incompleto.');
 
-    console.log('[NFSe] Dados preparados:', JSON.stringify(dpsData, null, 2));
-
-    // 4. Chamar Provider IPM para emissão
-    const result = await ipmProvider.emit(
+    let result: Awaited<ReturnType<typeof ipmProvider.emit>>;
+    let metadataNacional: Record<string, unknown> = {};
+    if (usaNacional(competencia)) {
+      if (previsualizar !== true && (typeof referencia !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(referencia))) {
+        throw new Error('Informe uma referência única da operação para impedir duplicidade.');
+      }
+      const emissao = await emitirNacionalProducao({
+        supabase: supabaseServer, config, dados: dpsData, tenant: { ...vidracaria, id: vidracaria_id },
+        competencia, operacao: `manual_${referencia}`, previsualizar: previsualizar === true,
+      });
+      if (!emissao.result) return NextResponse.json({ success: true, enviado: false, ...emissao });
+      result = emissao.result;
+      metadataNacional = emissao.metadata;
+    } else {
+      if (previsualizar === true) throw new Error('Prévia IPM não disponível neste endpoint.');
+      result = await ipmProvider.emit(
       dpsData,
       config.pfxBase64,
       config.passphrase,
@@ -104,7 +123,8 @@ export async function POST(req: Request) {
         municipal_code: config.municipal_code,
         isTest: config.environment === 'homologacao'
       }
-    );
+      );
+    }
 
     // 5. Salvar na tabela system_invoices da Holding
     const { error: invoiceError } = await supabaseServer
@@ -120,22 +140,23 @@ export async function POST(req: Request) {
         metadata: {
             vidracaria_id,
             xml: result.xml,
-            danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink })
+            danfse: montarSnapshotDanfse({ dpsData, config, retornoXml: result.xml, accessLink: result.accessLink }),
+            ...metadataNacional, competencia, mes_ref: competencia.slice(0, 7)
         }
       }]);
 
     if (invoiceError) {
         console.error('Erro ao salvar fatura no banco:', invoiceError);
-        throw new Error('Nota enviada para prefeitura, mas erro ao salvar histórico: ' + invoiceError.message);
+        throw new Error('Nota enviada ao emissor fiscal, mas houve erro ao salvar histórico. Não reenvie: ' + invoiceError.message);
     }
 
     return NextResponse.json(result);
 
-  } catch (err: any) {
+  } catch (err) {
     console.error('Erro na emissão de nota:', err);
     return NextResponse.json({ 
         success: false, 
-        error: err.message 
+        error: err instanceof Error ? err.message : 'Falha na emissão fiscal.'
     }, { status: 500 });
   }
 }

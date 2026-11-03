@@ -50,6 +50,7 @@ async function executar(): Promise<ResultadoSincronizacao> {
   const credentials = { username: config.ipm_username, password: config.ipm_password, municipal_code: config.municipal_code };
 
   for (const inv of notas || []) {
+    if (inv.metadata?.provider === 'nacional' || inv.metadata?.documento_oficial?.formato === 'nacional') continue;
     const codigo = codigoAutenticidade(inv);
     if (!codigo) continue;
 

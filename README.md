@@ -185,10 +185,54 @@ sem exibir HTML do servidor como documento fiscal. Consultar o resultado salvo
 preserva a mensagem da tentativa atual e identifica o registro como historico,
 para nao confundir uma rejeicao antiga com uma nova tentativa.
 
-O fluxo IPM atual, inclusive emissao automatica, NAO foi migrado para producao
-nacional nesta etapa. A ativacao antes de 01/11/2026 depende de homologacao
-real com A1 e de tratar separadamente as notas historicas IPM. Passar no XSD
-e nos testes locais nao comprova autorizacao pelo fisco.
+### Producao nacional e Simples nas assinaturas
+
+Competencias desde 01/11/2026 sao encaminhadas ao Emissor Nacional de producao
+pela emissao automatica do pagamento Asaas e pela emissao manual. Se a configuracao
+nacional estiver desativada ou o enquadramento nao confirmado, a operacao falha
+explicitamente, fica visivel no historico e NAO retorna a IPM. A assinatura paga
+continua sendo ativada. Competencias anteriores conservam a IPM.
+Em Configuracoes > NFS-e, "Emissao nacional de producao" permite confirmar
+o enquadramento, habilitar o emissor e editar receitas externas e folha por mes.
+Nao ativar enquanto houver divergencia fiscal (por exemplo, Anexo III versus V).
+
+O escopo automatico e licenciamento (010501/111032200), Simples ME/EPP,
+ISS dentro do regime, sem retencao, em 2026, com pelo menos 12 meses de atividade.
+O local da prestacao e o estabelecimento do emissor configurado; o endereco
+nacional do tomador e informado separadamente para a tributacao IBS/CBS.
+Excedentes ConsultFlex, receita proporcionalizada de inicio de atividade,
+regime de caixa, outros enquadramentos, sublimite superior a R$ 3.600.000
+e competencias de 2027 sao bloqueados para parametrizacao especifica.
+
+O percentual aproximado usa a aliquota efetiva dos Anexos III/V:
+`(RBT12 * aliquota nominal - parcela a deduzir) / RBT12`.
+O fator R usa receita dos 12 meses anteriores e folha/encargos efetivamente pagos;
+sem folha a simulacao de licenciamento segue o Anexo V, nao presume 6%.
+Notas reais autorizadas do sistema entram por competencia; homologacao,
+canceladas e duplicatas nao entram. Resultados nacionais persistidos fora do
+historico visual tambem entram sem dupla contagem. Receitas sem nota/externas
+e folha precisam ser declaradas no historico; aportes/emprestimos nao sao receita.
+Se forem declaradas ausencia de folha e de receitas externas, a janela avanca
+mensalmente sem preenchimento manual de zeros; a declaracao deve ser atualizada
+se a realidade mudar. Caso contrario, o historico exige valores completos e
+confirmacao ate o ultimo mes da janela, sem presumir receita/folha zero.
+Cancelamento que nao extinguiu receita exige ajuste fiscal no historico.
+Os dados e o calculo usados ficam congelados em cada emissao.
+Isso NAO apura/transmite PGDAS-D, DAS, folha nem substitui a apuracao fiscal.
+
+Sequencia de DPS por serie e ambiente de producao usa reserva atomica em
+`system_settings/nfse_sequencia_producao_*`. Cada operacao tem reserva unica
+`nfse_producao_*`, alem da reserva Asaas existente. Resultado incerto bloqueia
+reenvio; numero nunca e inventado para repetir uma operacao. A previa nao reserva
+numero, nao envia nem grava receita. Emissao manual exige referencia unica.
+As telas Holding/Glass recebem `nfse_oficial_xml` e `documento_oficial`,
+mantendo a representacao interna e o download do XML; o original e o nacional.
+Notas antigas nao sao convertidas ou reemitidas. A consulta IPM ignora notas
+nacionais; o botao oficial informa quando usa XML ja salvo, sem alegar nova consulta.
+
+Validacao: `node --test scripts/tests/nfse-producao.test.mjs scripts/tests/nfse-nacional.test.mjs scripts/tests/nfse-cancelamento.test.mjs scripts/tests/nfse-homologacao-form.test.mjs`.
+Referencias fiscais: [diretriz do emissor nacional](https://www.gov.br/nfse/pt-br/noticias/nfs-e-informa-diretrizes-sobre-a-obrigatoriedade-da-emissao-da-nfs-e-nacional-para-optantes-do-simples-nacional)
+e [Portal do Simples Nacional](https://www8.receita.fazenda.gov.br/SimplesNacional/).
 
 ### Cancelamento de NFS-e (evento nacional e101101)
 

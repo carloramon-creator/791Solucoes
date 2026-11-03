@@ -52,7 +52,10 @@ function errosDaResposta(dados: unknown): ErroSefin[] {
 }
 
 export class NationalProvider implements NfseProvider {
-    public async emit(data: DPSData, pfxBase64: string, passphrase: string): Promise<EmitResult> {
+    public async emit(data: DPSData, pfxBase64: string, passphrase: string): Promise<EmitResult & { invoiceId: string; message: string }> {
+        const ambiente = data.ambiente ?? 2;
+        if (ambiente !== 1 && ambiente !== 2) throw new Error('Ambiente nacional inválido.');
+        const base = ambiente === 1 ? SEFIN_PRODUCAO : SEFIN_HOMOLOGACAO;
         const xml = xmlService.generateDPS(data);
         const id = xml.match(/Id="(DPS\d{42})"/)?.[1];
         if (!id) throw new Error('Identificador nacional da DPS inválido.');
@@ -63,7 +66,7 @@ export class NationalProvider implements NfseProvider {
             const response = await axios.post<{
                 chaveAcesso?: string; nfseXmlGZipB64?: string;
                 erros?: { Codigo?: string; Descricao?: string; Complemento?: string }[];
-            }>(`${SEFIN_HOMOLOGACAO}/nfse`, {
+            }>(`${base}/nfse`, {
                 dpsXmlGZipB64: gzipSync(xmlParaEnvio(signedXml)).toString('base64'),
             }, { httpsAgent, timeout: 30_000, maxRedirects: 0, maxContentLength: 4_000_000 });
             if (response.data.erros?.length) throw new Error(JSON.stringify(response.data.erros));
@@ -76,15 +79,15 @@ export class NationalProvider implements NfseProvider {
             const doc = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false }).parse(officialXml);
             const nfse = doc.NFSe?.infNFSe;
             if (!/^\d{1,13}$/.test(nfse?.nNFSe || '') || nfse['@_Id'] !== `NFS${chave}`
-                || nfse.DPS?.infDPS?.['@_Id'] !== id || nfse.DPS?.infDPS?.tpAmb !== '2'
+                || nfse.DPS?.infDPS?.['@_Id'] !== id || nfse.DPS?.infDPS?.tpAmb !== String(ambiente)
                 || nfse.DPS?.infDPS?.prest?.CNPJ !== data.prestador.cnpj) {
                 throw new Error('XML de retorno não corresponde à DPS/emitente de homologação. Confira no portal antes de repetir.');
             }
             return {
                 success: true, status: 'authorized', invoiceId: nfse.nNFSe,
-                message: 'NFS-e de homologação autorizada pelo Emissor Nacional — sem validade fiscal.',
+                message: ambiente === 1 ? 'NFS-e de produção autorizada pelo Emissor Nacional.' : 'NFS-e de homologação autorizada pelo Emissor Nacional — sem validade fiscal.',
                 xml: officialXml,
-                accessLink: `https://www.producaorestrita.nfse.gov.br/ConsultaPublica/?tpc=1&chave=${chave}`,
+                accessLink: `https://${ambiente === 1 ? 'www.nfse.gov.br' : 'www.producaorestrita.nfse.gov.br'}/ConsultaPublica/?tpc=1&chave=${chave}`,
             };
         } catch (err) {
             if (axios.isAxiosError(err)) {

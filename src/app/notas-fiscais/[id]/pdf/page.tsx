@@ -97,7 +97,7 @@ export default function InvoicePdfPage() {
             <p className="mt-2 text-sm">Representação do sistema — não substitui o documento oficial.</p>
             <p className="mt-1 text-xs">Valores e campos transcritos do XML oficial, sem cálculos ou preenchimentos presumidos.</p>
           </header>
-          {cancelada && <div className="border-b border-red-300 bg-red-50 p-4 font-bold text-red-700"><strong className="block text-xl">CANCELADA</strong>NFS-e cancelada na prefeitura — sem validade fiscal</div>}
+          {cancelada && <div className="border-b border-red-300 bg-red-50 p-4 font-bold text-red-700"><strong className="block text-xl">CANCELADA</strong>NFS-e cancelada no emissor fiscal — sem validade fiscal</div>}
           {!documento && <div className="p-6 text-amber-800">
             O XML oficial completo ainda não foi recuperado. Consulte o original no portal ou use “Consultar documento oficial”.
             Dados enviados na emissão não serão usados para preencher esta representação.

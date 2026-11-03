@@ -2,6 +2,7 @@ import { XMLBuilder } from 'fast-xml-parser';
 import { validarPedidoCancelamento, type MotivoCancelamento } from './cancelamento';
 
 export interface DPSData {
+    ambiente?: 1 | 2;
     numero: string;
     serie: string;
     dataEmissao: string;
@@ -108,7 +109,7 @@ export class XmlService {
                 "@_versao": "1.01",
                 infDPS: {
                     "@_Id": id,
-                    tpAmb: 2, // 1-Produção, 2-Homologação
+                    tpAmb: data.ambiente ?? 2,
                     dhEmi: data.dataEmissao,
                     verAplic: "791holding_1.0",
                     serie: data.serie,

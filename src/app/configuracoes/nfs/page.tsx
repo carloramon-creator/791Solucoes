@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { ConfigTabs } from '@/components/ConfigTabs';
 import NfseHomologacaoNacional from '@/components/NfseHomologacaoNacional';
+import NfseProducaoNacional from '@/components/NfseProducaoNacional';
 
 export default function NfseConfigPage() {
   const [loading, setLoading] = useState(true);
@@ -183,6 +184,7 @@ export default function NfseConfigPage() {
       </div>
 
       <ConfigTabs />
+      <NfseProducaoNacional />
       <NfseHomologacaoNacional cnpj={config.prestador_cnpj} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -376,7 +378,7 @@ export default function NfseConfigPage() {
               <div className="p-3 bg-purple-50 border border-purple-100 rounded-xl flex items-center gap-3">
                 <Shield className="text-purple-400 shrink-0" size={16} />
                 <p className="text-[11px] text-purple-700 leading-relaxed uppercase tracking-tight">
-                  São José/SC detectado. O provedor **IPM Fiscal (Atende.Net)** será usado para emissão.
+                  São José/SC. A IPM é mantida para competências anteriores a 01/11/2026. As novas assinaturas usam a configuração nacional acima.
                 </p>
               </div>
             )}

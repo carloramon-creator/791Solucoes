@@ -161,9 +161,12 @@ reservadas antes do envio para impedir duplicacao concorrente. Uma falha de
 rede pode esconder autorizacao: consultar no portal antes de tentar novamente,
 sem mudar numero apenas para repetir a mesma operacao. O resultado salvo
 pode ser recuperado pelo painel com municipio, serie e numero.
-O horario de emissao usa UTC com fuso explicito e uma folga de 30 segundos,
-como os eventos de cancelamento, para tolerar pequenas diferencas de relogio
-com o Sefin. Nao altera a competencia. A rejeicao explicita E0008 da mesma
+O horario de emissao usa Brasilia (`-03:00`, holding em Sao Jose/SC em 2026),
+como os eventos de cancelamento, preservando o instante com uma folga de
+30 segundos para pequenas diferencas de relogio com o Sefin, independentemente
+do fuso do servidor. Nao altera a competencia. O XML e a data de emissao
+enviados sao preservados tambem nas falhas, para comparar com o horario
+de processamento devolvido pelo Sefin. A rejeicao explicita E0008 da mesma
 DPS em homologacao fica como `rejeitada` e permite um novo envio manual com
 o mesmo numero/serie, protegido por reserva atomica. O registro antigo
 `verificar_no_portal` so e liberado quando contem a resposta estruturada

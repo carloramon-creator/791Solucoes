@@ -37,13 +37,20 @@ const dados = {
   },
 };
 
-test('horário nacional mantém o instante UTC com folga de 30 segundos, inclusive na virada do dia', () => {
-  for (const instante of ['2026-11-03T17:20:40.555Z', '2026-11-03T00:00:10.999Z']) {
+test('horário nacional usa Brasília e preserva o instante com folga de 30 segundos', () => {
+  for (const [instante, esperado] of [
+    ['2026-11-03T17:34:01.169Z', '2026-11-03T14:33:31-03:00'],
+    ['2026-11-03T00:00:10.999Z', '2026-11-02T20:59:40-03:00'],
+    ['2026-11-03T03:00:10.999Z', '2026-11-02T23:59:40-03:00'],
+    ['2026-01-01T03:00:30.000Z', '2026-01-01T00:00:00-03:00'],
+  ]) {
     const agora = new Date(instante);
     const resultado = horario.dataHoraNacional(agora);
-    assert.match(resultado, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
+    assert.equal(resultado, esperado);
     const diferenca = agora.getTime() - Date.parse(resultado);
     assert.ok(diferenca >= 30_000 && diferenca < 31_000);
+    const xml = xmlModule.default.generateDPS({ ...dados, dataEmissao: resultado });
+    assert.ok(xml.includes(`<dhEmi>${esperado}</dhEmi>`));
   }
 });
 
@@ -256,6 +263,7 @@ test('API nacional: prévia não envia; teste exige reserva persistente e nunca 
     const previa = await preview.json();
     assert.equal(previa.enviado, false);
     const emissao = previa.xml.match(/<dhEmi>([^<]+)<\/dhEmi>/)[1];
+    assert.match(emissao, /-03:00$/);
     assert.ok(Date.now() - Date.parse(emissao) >= 30_000);
     assert.equal(emissoes, 0);
     assert.equal(registros.length, 0);
@@ -359,6 +367,9 @@ test('API retoma somente E0008 confirmada, inclusive registro antigo, com reserv
     if (caso.salvo) {
       assert.equal(registro.status, caso.salvo);
       assert.deepEqual(registro.rejeicao, caso.salvo === 'rejeitada' ? rejeicao : undefined);
+      assert.match(registro.dataEmissao, /-03:00$/);
+      assert.ok(registro.xml.includes(`<dhEmi>${registro.dataEmissao}</dhEmi>`));
+      assert.equal(registro.tenant_id, 'tenant-teste');
     }
   }
 });

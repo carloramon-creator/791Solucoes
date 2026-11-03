@@ -133,6 +133,7 @@ export async function POST(req: Request) {
       const { error: erroSalvar } = await supabaseServer.from('system_settings').update({
         value: {
           ambiente: 'homologacao', status: horarioRejeitado ? 'rejeitada' : 'verificar_no_portal', dpsId, erro: mensagem,
+          xml, dataEmissao: data.dataEmissao, tenant_id: texto('vidracaria_id'),
           ...(horarioRejeitado ? { rejeicao: err.resposta } : {}),
         },
         updated_at: new Date().toISOString(),

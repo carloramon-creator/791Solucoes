@@ -76,7 +76,7 @@ test('prazo de 7 dias e formato de data do evento', () => {
   assert.equal(p.diasDesdeEmissao, 6);
   assert.equal(regras.calcularPrazoCancelamento('2026-10-14T12:00:00Z', new Date('2026-10-21T12:00:01Z')).dentroDoPrazo, false);
   assert.equal(regras.calcularPrazoCancelamento('lixo'), null);
-  assert.equal(regras.dataHoraEvento(new Date('2026-10-21T15:00:30.123Z')), '2026-10-21T15:00:00+00:00');
+  assert.equal(regras.dataHoraEvento(new Date('2026-10-21T15:00:30.123Z')), '2026-10-21T12:00:00-03:00');
 });
 
 function provider(post) {
@@ -169,7 +169,7 @@ test('API: cancela nota nacional autorizada, registra autor/motivo e só toca sy
   assert.equal(chamado.p.chaveAcesso, CHAVE);
   assert.equal(chamado.p.ambiente, 1);
   assert.equal(chamado.p.cnpjAutor, CNPJ);
-  assert.match(chamado.p.dataEvento, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/);
+  assert.match(chamado.p.dataEvento, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-03:00$/);
   const salvo = supabase.updates.at(-1);
   assert.equal(salvo.value.status, 'cancelled');
   assert.equal(salvo.filtros.status, 'authorized');

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import CancelarNfseModal from '@/components/CancelarNfseModal';
 
@@ -20,6 +20,7 @@ const campos = [
 ] as const;
 
 export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
+  const formId = useId();
   const [form, setForm] = useState<Record<string, string>>({});
   const [confirmado, setConfirmado] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,12 +82,12 @@ export default function NfseHomologacaoNacional({ cnpj }: { cnpj: string }) {
     </p>
     <a className="text-sm text-sky-700 underline" href="https://www.producaorestrita.nfse.gov.br/EmissorNacional" target="_blank" rel="noopener noreferrer">Abrir ambiente oficial de testes</a>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {campos.map(([nome, label, tipo]) => <label key={nome} className="text-xs font-semibold text-slate-600">
-        {label}
-        <input type={tipo} step={tipo === 'number' ? '0.01' : undefined} value={form[nome] || ''}
+      {campos.map(([nome, label, tipo]) => <div key={nome} className="min-w-0 text-xs font-semibold text-slate-600">
+        <label htmlFor={`${formId}-${nome}`} className="block">{label}</label>
+        <input id={`${formId}-${nome}`} name={nome} type={tipo} step={tipo === 'number' ? '0.01' : undefined} value={form[nome] || ''}
           onChange={e => setForm(p => ({ ...p, [nome]: e.target.value }))}
           className="mt-1 block w-full rounded-lg border border-slate-300 p-3 text-sm" />
-      </label>)}
+      </div>)}
     </div>
     <label className="flex items-start gap-2 text-sm">
       <input type="checkbox" checked={confirmado} onChange={e => setConfirmado(e.target.checked)} className="mt-1" />

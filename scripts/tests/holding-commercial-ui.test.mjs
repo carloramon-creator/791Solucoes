@@ -467,6 +467,32 @@ test('failed and duplicate submissions retain a stable request ID and do not sil
   assert.equal(ui.calls.filter((call) => call.method === 'POST')[1].body.request_id, token);
 });
 
+test('new contract shows only its form and restores existing cards after cancel or save, retaining the form on failure', async () => {
+  const local = {
+    id: contractId, customer_snapshot: customer, plan_snapshot: plan, total_cents: 300001,
+    payment_method: 'PIX', billing_state: 'local', holding_website_installments: [], holding_website_invoices: [],
+  };
+  for (const action of ['cancel', 'save', 'failure']) {
+    const ui = harness('src/app/assinaturas/websites/page.tsx', (url, method) => {
+      if (method === 'POST') return action === 'failure'
+        ? Response.json({ error: 'Falha controlada' }, { status: 500 }) : Response.json({ id: contractId });
+      return url.endsWith('/options') ? optionsResponse() : Response.json({ contracts: [local] });
+    });
+    await ui.mount();
+    assert.equal(nodes(ui.render(), (node) => node.type === 'article').length, 1);
+    ui.button('Nova contratação').props.onClick();
+    assert.equal(nodes(ui.render(), (node) => node.type === 'article').length, 0);
+    assert.equal(nodes(ui.render(), (node) => node.type === 'form').length, 1);
+    if (action === 'cancel') ui.button('Cancelar').props.onClick();
+    else {
+      ui.fill('Cliente', customerId); ui.fill('Produto', planId); ui.fill('Primeiro vencimento', '2026-11-20');
+      await ui.submit();
+    }
+    assert.equal(nodes(ui.render(), (node) => node.type === 'article').length, action === 'failure' ? 0 : 1);
+    assert.equal(nodes(ui.render(), (node) => node.type === 'form').length, action === 'failure' ? 1 : 0);
+  }
+});
+
 test('provider generation requires explicit confirmation and consult uses only the sync action', async () => {
   const local = {
     id: contractId, customer_snapshot: customer, plan_snapshot: plan, total_cents: 300001,

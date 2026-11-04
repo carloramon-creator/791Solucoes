@@ -318,7 +318,7 @@ export default function WebsiteContractsPage() {
           </fieldset>
         </form>
       )}
-      {loading ? <p role="status" className="py-8 text-center text-slate-500">Carregando contratações...</p> : !loadError && (
+      {loading ? <p role="status" className="py-8 text-center text-slate-500">Carregando contratações...</p> : !form && !loadError && (
         contracts.length ? contracts.map((contract) => (
           <article key={contract.id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap justify-between gap-3">

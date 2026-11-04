@@ -102,6 +102,10 @@ export class XmlService {
             if (!valor.trim() || valor.length > limite) throw new Error(`${nome} do tomador inválido.`);
         }
         if (endereco.complemento && endereco.complemento.length > 156) throw new Error('Complemento do tomador inválido.');
+        // NT009 release 1: já em homologação; produção a partir de 01/12/2026.
+        const leiauteNt009 = (data.ambiente ?? 2) === 2
+            || Date.parse(data.dataEmissao) >= Date.parse('2026-12-01T00:00:00-03:00');
+        const classificacao = { CST: '000', cClassTrib: '000001' };
         const id = `DPS${nacional.municipioEmissao}2${data.prestador.cnpj}${data.serie.padStart(5, '0')}${data.numero.padStart(15, '0')}`;
         const dpsObject = {
             DPS: {
@@ -116,7 +120,7 @@ export class XmlService {
                     nDPS: data.numero,
                     dCompet: nacional.competencia,
                     tpEmit: 1,
-                    finNFSe: 0,
+                    finNFSe: leiauteNt009 ? 0 : undefined,
                     cLocEmi: nacional.municipioEmissao,
                     prest: {
                         CNPJ: data.prestador.cnpj,
@@ -140,8 +144,9 @@ export class XmlService {
                         cServ: {
                             cTribNac: nacional.codigoTributacaoNacional,
                             cTribMun: nacional.codigoTributacaoMunicipal || undefined,
-                            cNBS: nacional.codigoNbs || undefined,
-                            xDescServ: data.servico.discriminacao,
+                            ...(leiauteNt009
+                                ? { cNBS: nacional.codigoNbs, xDescServ: data.servico.discriminacao }
+                                : { xDescServ: data.servico.discriminacao, cNBS: nacional.codigoNbs }),
                         },
                     },
                     valores: {
@@ -154,10 +159,11 @@ export class XmlService {
                     // Obrigatório para competência a partir de 01/10/2026 (E0855). 100301: demais serviços
                     // onerosos, local do domicílio do adquirente (Anexo C IndOp). CST 000/000001: tributação integral.
                     IBSCBS: {
+                        finNFSe: leiauteNt009 ? undefined : 0,
                         indFinal: data.tomador.cpf ? 1 : 0,
                         cIndOp: '100301',
                         indDest: 0,
-                        valores: { trib: { CST: '000', cClassTrib: '000001' } },
+                        valores: { trib: leiauteNt009 ? classificacao : { gIBSCBS: classificacao } },
                     },
                 }
             }

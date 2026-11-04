@@ -101,6 +101,40 @@ test('DPS recusa parâmetros ausentes, número textual, código antigo e ano nã
   ]) assert.throws(() => xmlModule.default.generateDPS(invalid));
 });
 
+test('produção separa NT004 e NT009 pela emissão em Brasília, não pela competência', () => {
+  for (const [ambiente, dataEmissao, novo] of [
+    [1, '2026-11-30T23:59:59-03:00', false],
+    [1, '2026-12-01T02:59:59+00:00', false],
+    [1, '2026-12-01T00:00:00-03:00', true],
+    [1, '2026-12-01T03:00:00+00:00', true],
+    [2, '2026-11-04T10:00:00-03:00', true],
+  ]) {
+    const xml = xmlModule.default.generateDPS({ ...dados, ambiente, dataEmissao }).replace(/>\s+</g, '><');
+    assert.equal((xml.match(/<finNFSe>/g) || []).length, 1);
+    assert.equal(xml.includes('<tpEmit>1</tpEmit><finNFSe>0</finNFSe><cLocEmi>'), novo);
+    assert.equal(xml.includes('<IBSCBS><finNFSe>0</finNFSe><indFinal>'), !novo);
+    assert.equal(xml.includes('<trib><CST>000</CST><cClassTrib>000001</cClassTrib></trib>'), novo);
+    assert.equal(xml.includes('<trib><gIBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib></gIBSCBS></trib>'), !novo);
+    assert.equal(xml.includes('<cNBS>111032200</cNBS><xDescServ>'), novo);
+    assert.equal(xml.includes('</xDescServ><cNBS>111032200</cNBS>'), !novo);
+    assert.match(xml, /<dCompet>2026-10-21<\/dCompet>/);
+  }
+});
+
+test('2027 permanece bloqueado nos dois ambientes, inclusive para competência de 2026', () => {
+  for (const ambiente of [1, 2]) {
+    for (const competencia of ['2026-12-31', '2027-01-01']) {
+      assert.throws(() => xmlModule.default.generateDPS({
+        ...dados, ambiente, dataEmissao: '2027-01-01T10:00:00-03:00',
+        nacional: { ...dados.nacional, competencia },
+      }), /IBS\/CBS.*2027/);
+    }
+    assert.throws(() => xmlModule.default.generateDPS({
+      ...dados, ambiente, nacional: { ...dados.nacional, competencia: '2027-01-01' },
+    }), /IBS\/CBS.*2027/);
+  }
+});
+
 test('parser oficial preserva zeros, precisão, entidades, campos extras e itens repetidos', () => {
   const doc = oficial.lerDocumentoOficial(`<nfse><nf><numero_nfse>0004</numero_nfse><valor_total>5,09</valor_total></nf>
     <itens><lista><descritivo>A &amp; B</descritivo></lista><lista><descritivo>C</descritivo></lista></itens>
@@ -243,12 +277,18 @@ test('assinatura é verificável e DPS assinada passa no XSD oficial 1.01', { sk
     input: signed, stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  const comCodigos = xmlModule.default.generateDPS({
-    ...dados, nacional: { ...dados.nacional, codigoTributacaoMunicipal: '001', codigoNbs: '122051100' },
-  });
-  execFileSync('/usr/bin/xmllint', ['--noout', '--schema', `${process.env.NFSE_XSD_DIR}/DPS_v1.01.xsd`, '-'], {
-    input: comCodigos, stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  for (const fixture of [
+    { ...dados, nacional: { ...dados.nacional, codigoTributacaoMunicipal: '001', codigoNbs: '122051100' } },
+    { ...dados, ambiente: 1, dataEmissao: '2026-12-01T00:00:00-03:00' },
+    {
+      ...dados, ambiente: 1, dataEmissao: '2026-12-01T00:00:00-03:00',
+      tomador: { ...dados.tomador, cnpj: undefined, cpf: '52998224725' },
+    },
+  ]) {
+    execFileSync('/usr/bin/xmllint', ['--noout', '--schema', `${process.env.NFSE_XSD_DIR}/DPS_v1.01.xsd`, '-'], {
+      input: xmlModule.default.generateDPS(fixture), stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
 });
 
 test('API nacional: prévia não envia; teste exige reserva persistente e nunca grava no financeiro', async () => {

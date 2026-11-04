@@ -220,6 +220,38 @@ nao foi abolido: preencher o complemento de 3 digitos somente quando exigido.
 Fonte oficial: [documentacao atual da NFS-e nacional](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual),
 pacote `nfse-esquemas_xsd-v1-01-20260209.zip`.
 
+### Transicao de leiaute nacional e bloqueio de 2027
+
+O gerador compartilhado seleciona o leiaute pelo **ambiente e instante de
+emissao**, nao pela competencia: producao usa NT004 ate 30/11/2026 e NT009
+release 1 a partir de 01/12/2026, 00:00 em Brasilia. Homologacao ja usa NT009.
+Isso corrige tres diferencas do XML: posicao de `finNFSe`, ordem de
+`xDescServ`/`cNBS` e classificacao `CST`/`cClassTrib` dentro ou fora de
+`gIBSCBS`. Nao altera codigos fiscais, enquadramento, cobrancas, regras de
+provisionamento ou calculo do Simples dos produtos existentes.
+
+**2027 permanece bloqueado**, inclusive emissao em 2027 para competencia de
+2026. A NT009 v1.01 preve `regApIBSCBSSN` (apuracao de IBS/CBS) e `cAtvSN`
+(atividade no Simples), alem de outras alteracoes. Esses dois campos ainda
+nao constam no XSD de homologacao de 20/10/2026 consultado nesta revisao.
+Nao adicionar campos de minuta ao leiaute vigente nem presumir apuracao no
+Simples ou regime regular. A liberacao depende de definicao da contabilidade
+por atividade, revisao do pacote oficial efetivamente implantado e testes
+em producao restrita, com autorizacao antes de usar certificado real.
+Contratos ja salvos nao recebem novas regras fiscais silenciosamente.
+
+Validacao local: o XML passa no XSD original de homologacao de 20/10/2026.
+O pacote de producao de 09/02/2026 tem o pattern de serie
+`^0{0,4}\d{1,5}$`, rejeitado pelo `xmllint` para a serie numerica `1`.
+Essa limitacao do schema/validador nao e contornada alterando o XML ou o
+XSD oficial; por isso, o teste estrutural local nao certifica autorizacao
+em producao. Nenhuma nota ou cobranca real e necessaria para estes testes.
+
+Fontes oficiais:
+- [Implantacao gradual da NT009 e data de producao](https://www.gov.br/nfse/pt-br/noticias/cgnfs-e-informa-disponibilizadas-no-ambiente-de-testes-o-release-1-das-evolucoes-da-nota-tecnica-009).
+- [NT009 v1.01, secao 2.4: evolucoes para o Simples](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nota-tecnica-009-se-cgnfs-e-v-1-01.pdf).
+- [Pacotes oficiais de producao restrita](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/producao-restrita).
+
 ### Assinaturas recorrentes Websites e precos personalizados
 
 Aplicar **uma vez, somente na Holding**, depois das tres migrations acima:

@@ -181,12 +181,15 @@ export default function WebsiteContractsPage() {
             onClick={newContract}><Plus size={16} /> Nova contratação</button>
         </div>
       </header>
-      <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+      <details className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+        <summary className="cursor-pointer font-semibold text-slate-700">Orientações de contratação e cobrança</summary>
+        <div className="mt-3 space-y-2">
         <p>1. Cadastre o cliente em <Link href="/clientes" className="font-bold underline">Clientes</Link>. 2. Escolha um produto de cobrança única. 3. Confira as parcelas e salve. 4. Gere no Asaas somente quando desejar cobrar.</p>
         <p>Pix e boleto: parcelas mensais por vencimento. Cartão: uma compra parcelada para o saldo, com preenchimento do cartão na página segura do Asaas. Com entrada, haverá um pagamento separado para ela.</p>
         <p>Projetos: NFS-e nacional somente pelo botão, no valor total e independentemente do pagamento. Entradas bancárias, empréstimos, aportes e transferências não geram nota. Para hospedagem/manutenção, use Assinaturas recorrentes acima.</p>
         <p>O acompanhamento das cobranças é por consulta explícita ao Asaas, sem baixa automática no financeiro e sem encaminhar Websites ao processamento SaaS.</p>
-      </div>
+        </div>
+      </details>
       {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}
       {loadError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
       {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}

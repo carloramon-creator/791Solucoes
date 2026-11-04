@@ -105,6 +105,16 @@ function harness(path, request, confirm = true) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('contract guidance is collapsed by default and remains available on demand', async () => {
+  const ui = harness('src/app/assinaturas/websites/page.tsx', (url) => url.endsWith('/options') ? optionsResponse() : contractResponse());
+  await ui.mount();
+  const guidance = nodes(ui.render(), (node) => node.type === 'details'
+    && text(node).includes('Orientações de contratação e cobrança'))[0];
+  assert.ok(guidance);
+  assert.ok(!guidance.props.open);
+  assert.match(text(guidance), /Gere no Asaas somente quando desejar cobrar/);
+  assert.match(text(guidance), /empréstimos, aportes e transferências não geram nota/);
+});
 const optionsResponse = () => Response.json({ customers: [customer], plans: [plan] });
 async function contractForm(request = (url) => url.endsWith('/options') ? optionsResponse() : contractResponse()) {
   const ui = harness('src/app/assinaturas/websites/page.tsx', request);

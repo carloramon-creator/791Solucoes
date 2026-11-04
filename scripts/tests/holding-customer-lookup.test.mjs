@@ -83,3 +83,33 @@ test('CEP lookup returns address fields but never replaces building number/compl
     assert.equal((await harness(options).post({ kind: 'cep', value: '01001000' })).status, 502);
   }
 });
+
+test('lookup response reader validates JSON and whitelists fields without relying on browser Response.json errors', async () => {
+  const response = Response.json({ fields: { name: 'Empresa ficticia', active: true, document: 'ignored' }, source: 'BrasilAPI' });
+  response.json = async () => { throw new SyntaxError('The string did not match the expected pattern.'); };
+  assert.deepEqual(await customers.readHoldingCustomerLookup(response), { fields: { name: 'Empresa ficticia' }, source: 'BrasilAPI' });
+  for (const payload of [null, [], {}, { fields: {}, source: 'Test' }, { fields: { name: 123 }, source: 'Test' }, { fields: [], source: 'Test' }]) {
+    await assert.rejects(customers.readHoldingCustomerLookup(Response.json(payload)), /inválid|Nenhum dado|não retornou dados cadastrais válidos/);
+  }
+});
+
+test('lookup response reader gives actionable Portuguese errors for expired sessions, blocked requests, HTML, redirects and malformed JSON', async () => {
+  for (const [status, message] of [[401, /sessão expirou/], [403, /bloqueada/], [429, /Muitas consultas/]]) {
+    await assert.rejects(customers.readHoldingCustomerLookup(new Response('<html>error</html>', { status })), message);
+  }
+  for (const status of [200, 404, 502]) {
+    await assert.rejects(customers.readHoldingCustomerLookup(new Response('<!doctype html>', {
+      status, headers: { 'Content-Type': 'text/html' },
+    })), /servidor não retornou os dados/);
+  }
+  for (const body of ['', '{"fields":']) {
+    await assert.rejects(customers.readHoldingCustomerLookup(new Response(body, {
+      headers: { 'Content-Type': 'application/json' },
+    })), /resposta incompleta ou inválida/);
+  }
+  const redirected = Response.json({ fields: { name: 'Wrong' }, source: 'Test' });
+  Object.defineProperty(redirected, 'redirected', { value: true });
+  await assert.rejects(customers.readHoldingCustomerLookup(redirected), /servidor não retornou os dados/);
+  await assert.rejects(customers.readHoldingCustomerLookup(Response.json({ error: 'Cadastro não encontrado.' }, { status: 404 })), /Cadastro não encontrado/);
+  await assert.rejects(customers.readHoldingCustomerLookup(Response.json({}, { status: 502 })), /Não foi possível consultar/);
+});

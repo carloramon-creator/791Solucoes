@@ -224,6 +224,34 @@ test('customer lookup keeps manual data on cancellation or failure, disables edi
   assert.equal(ui.field('Nome / razão social').props.value, 'Manual');
 });
 
+test('CNPJ lookup never exposes Safari pattern errors or clears manual fields on invalid responses or network failure', async () => {
+  const failures = [
+    () => new Response('<!doctype html><title>Error</title>', { status: 502, headers: { 'Content-Type': 'text/html' } }),
+    () => new Response('{"fields":', { headers: { 'Content-Type': 'application/json' } }),
+    () => new Response('', { status: 401 }),
+    () => { throw new SyntaxError('The string did not match the expected pattern.'); },
+    () => { throw new DOMException('The string did not match the expected pattern.', 'SyntaxError'); },
+    () => { throw new TypeError('Load failed'); },
+  ];
+  for (const failure of failures) {
+    const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+      ? Response.json({ customers: [] }) : failure());
+    await ui.mount(); ui.button('Novo cliente').props.onClick();
+    ui.fill('CPF / CNPJ', '11222333000181');
+    ui.fill('Nome / razão social', 'Nome manual'); ui.fill('Endereço', 'Endereco manual');
+    ui.button('Consultar CPF').props.onClick(); await settle();
+    const alert = nodes(ui.render(), (node) => node.props?.role === 'alert')[0];
+    assert.ok(alert);
+    assert.doesNotMatch(text(alert), /expected pattern|Load failed|SyntaxError/);
+    assert.match(text(alert), /consulta|sessão/);
+    assert.equal(ui.field('Nome / razão social').props.value, 'Nome manual');
+    assert.equal(ui.field('Endereço').props.value, 'Endereco manual');
+    assert.equal(nodes(ui.render(), (node) => node.type === 'fieldset')[0].props.disabled, false);
+    assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
+    assert.equal(ui.field('CPF / CNPJ').props.value, '11.222.333/0001-81');
+  }
+});
+
 test('contract UI prefills product price, previews entry and cents, and saves without any provider call', async () => {
   const ui = await contractForm((url, method) => {
     if (method === 'POST') return Response.json({ id: contractId });

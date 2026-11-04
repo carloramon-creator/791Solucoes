@@ -36,6 +36,45 @@ export function maskCustomerPhone(value: string) {
 
 export const maskCustomerCep = (value: string) => value.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 
+export async function readHoldingCustomerLookup(response: Response): Promise<{
+  fields: Partial<HoldingCustomerInput>; source: string;
+}> {
+  if (response.status === 401) throw new Error('Sua sessão expirou. Entre novamente para consultar o cadastro.');
+  if (response.status === 403) throw new Error('A consulta foi bloqueada. Confira sua permissão em Clientes; se ela estiver correta, atualize a página e tente novamente.');
+  if (response.status === 429) throw new Error('Muitas consultas em pouco tempo. Aguarde alguns instantes antes de tentar novamente.');
+  if (response.redirected || !response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
+    console.error(`[HOLDING LOOKUP] Resposta não JSON ou redirecionada; HTTP ${response.status}.`);
+    throw new Error('O servidor não retornou os dados da consulta. Atualize a página e tente novamente. Seus campos foram preservados e podem ser preenchidos manualmente.');
+  }
+  let payload: unknown;
+  try { payload = JSON.parse(await response.text()); } catch (failure) {
+    if (!(failure instanceof SyntaxError)) throw failure;
+    console.error(`[HOLDING LOOKUP] JSON inválido; HTTP ${response.status}.`);
+    throw new Error('A consulta retornou uma resposta incompleta ou inválida. Tente novamente ou preencha manualmente; seus campos foram preservados.');
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Resposta de consulta inválida. Tente novamente ou preencha manualmente.');
+  }
+  if (!response.ok) {
+    throw new Error('error' in payload && typeof payload.error === 'string' && payload.error.trim()
+      ? payload.error : 'Não foi possível consultar o cadastro. Tente novamente ou preencha manualmente.');
+  }
+  if (!('source' in payload) || typeof payload.source !== 'string' || !payload.source.trim()
+    || !('fields' in payload) || !payload.fields || typeof payload.fields !== 'object' || Array.isArray(payload.fields)) {
+    throw new Error('O serviço não retornou dados cadastrais válidos. Tente novamente ou preencha manualmente.');
+  }
+  const fields: Partial<HoldingCustomerInput> = {};
+  for (const key of ['name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
+    if (key in payload.fields) {
+      const value = Reflect.get(payload.fields, key);
+      if (typeof value !== 'string') throw new Error('O serviço retornou um campo cadastral inválido. Preencha manualmente.');
+      fields[key] = value;
+    }
+  }
+  if (!Object.keys(fields).length) throw new Error('Nenhum dado cadastral foi retornado pela consulta. Preencha manualmente.');
+  return { fields, source: payload.source };
+}
+
 export function validDocument(value: string) {
   if (!/^(?:\d{11}|\d{14})$/.test(value) || /^(\d)\1+$/.test(value)) return false;
   const digits = [...value].map(Number);

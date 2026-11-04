@@ -135,6 +135,10 @@ validados; nao existe integracao autorizada de consulta de nome/situacao
 cadastral do CPF configurada. Para CPF novo, informar o nome manualmente.
 Consultas indisponiveis/nao encontradas exibem erro e permitem preenchimento
 manual; nunca retornam um cadastro ficticio ou silenciosamente valido.
+Respostas HTML, vazias, JSON incompleto e falhas nativas do navegador sao
+tratadas sem expor mensagens tecnicas do Safari. Sessao expirada, bloqueio
+de acesso e limite de consultas recebem orientacoes especificas. A consulta
+nao limpa campos manuais nem repete requisicoes automaticamente apos falhas.
 
 Para habilitar **Excluir**, aplicar uma vez na Holding:
 `supabase/migrations/20261104230000_holding_customer_delete.sql`.

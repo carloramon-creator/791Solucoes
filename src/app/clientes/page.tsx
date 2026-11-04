@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2, Pencil, Plus, Users } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
-import { validDocument, maskCustomerDocument, maskCustomerPhone, maskCustomerCep, validateHoldingCustomer, type HoldingCustomer, type HoldingCustomerInput } from '@/lib/holding-customers';
+import { validDocument, maskCustomerDocument, maskCustomerPhone, maskCustomerCep, readHoldingCustomerLookup, validateHoldingCustomer, type HoldingCustomer, type HoldingCustomerInput } from '@/lib/holding-customers';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialSecondaryClass,
 } from '@/components/HoldingCommercialFields';
@@ -88,11 +88,10 @@ export default function HoldingCustomersPage() {
     busy.current = true; setLookingUp(true);
     try {
       const response = await holdingAuthFetch('/api/admin/holding-customers/lookup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ kind: kind === 'document' ? 'cnpj' : 'cep', value: digits }),
       });
-      const payload: { fields?: Partial<HoldingCustomerInput>; source?: string; error?: string } = await response.json();
-      if (!response.ok || !payload.fields) throw new Error(payload.error || 'Resposta de consulta inválida.');
+      const payload = await readHoldingCustomerLookup(response);
       if (version !== lookupVersion.current) return;
       const values = payload.fields;
       setForm((current) => {
@@ -106,8 +105,15 @@ export default function HoldingCustomersPage() {
       setMessage(`Dados retornados por ${payload.source}. Confira todos os campos antes de salvar. A consulta não comprova regularidade fiscal.`);
     } catch (failure) {
       if (version === lookupVersion.current) {
-        console.error('[HOLDING CUSTOMERS] Falha na consulta cadastral.');
-        setError(failure instanceof Error ? failure.message : 'Consulta indisponível. Preencha manualmente.');
+        console.error('[HOLDING CUSTOMERS] Falha na consulta cadastral.', {
+          type: failure instanceof Error ? failure.name : 'unknown',
+        });
+        const browserFailure = failure instanceof Error && (
+          failure instanceof TypeError || failure instanceof SyntaxError || failure instanceof DOMException
+        );
+        setError(browserFailure
+          ? 'Não foi possível concluir a consulta no navegador. Confira sua conexão, atualize a página e tente novamente. Seus campos foram preservados; você também pode preencher manualmente.'
+          : failure instanceof Error ? failure.message : 'Consulta indisponível. Preencha manualmente.');
       }
     } finally { busy.current = false; setLookingUp(false); }
   }

@@ -17,6 +17,25 @@ export type HoldingCustomer = HoldingCustomerInput & { id: string };
 export const isUuid = (value: unknown): value is string => typeof value === 'string'
   && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
+export function maskCustomerDocument(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 14);
+  return digits.length <= 11
+    ? digits.replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/(\d{3})(\d{1,2})$/, '$1-$2')
+    : digits.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3/$4').replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+}
+
+export function maskCustomerPhone(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 13);
+  const international = digits.length > 11;
+  const local = international ? digits.slice(2) : digits;
+  const masked = local.replace(/^(\d{2})(\d)/, '($1) $2')
+    .replace(local.length > 10 ? /(\d{5})(\d{1,4})$/ : /(\d{4})(\d{1,4})$/, '$1-$2');
+  return international ? `+${digits.slice(0, 2)} ${masked}` : masked;
+}
+
+export const maskCustomerCep = (value: string) => value.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
+
 export function validDocument(value: string) {
   if (!/^(?:\d{11}|\d{14})$/.test(value) || /^(\d)\1+$/.test(value)) return false;
   const digits = [...value].map(Number);

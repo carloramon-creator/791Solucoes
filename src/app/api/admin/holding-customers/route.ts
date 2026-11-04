@@ -48,3 +48,24 @@ async function save(req: Request, updating: boolean) {
 
 export async function POST(req: Request) { return save(req, false); }
 export async function PUT(req: Request) { return save(req, true); }
+
+export async function DELETE(req: Request) {
+  try {
+    const denied = await authorizeHoldingCommercial(req, ['menu.clientes']);
+    if (denied) return denied;
+    let body: unknown;
+    try { body = await req.json(); } catch { return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 }); }
+    const id = body && typeof body === 'object' && 'id' in body ? body.id : undefined;
+    if (!isUuid(id)) return NextResponse.json({ error: 'Cliente inválido.' }, { status: 400 });
+    // As FKs NO ACTION impedem exclusao inclusive com contratacoes concorrentes.
+    const { data, error } = await supabaseServer.from('holding_customers').delete()
+      .eq('id', id).neq('asaas_state', 'processing').select('id').maybeSingle();
+    if (error?.code === '23503') return NextResponse.json({ error: 'Este cliente possui contratação de projeto ou assinatura e não pode ser excluído. Você pode inativá-lo.' }, { status: 409 });
+    if (error) throw error;
+    if (!data) return NextResponse.json({ error: 'Cliente não encontrado ou com integração em andamento. Atualize antes de continuar.' }, { status: 409 });
+    return NextResponse.json({ deleted: true });
+  } catch {
+    console.error('[HOLDING CUSTOMERS] Falha ao excluir cliente.');
+    return NextResponse.json({ error: 'Não foi possível excluir o cliente. Confira a migração e tente novamente.' }, { status: 500 });
+  }
+}

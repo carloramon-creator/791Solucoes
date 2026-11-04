@@ -92,11 +92,13 @@ function harness(path, request, confirm = true) {
   };
   const field = (label) => {
     const container = nodes(render(), (node) => node.type === 'label' && text(node).includes(label))[0];
-    return nodes(container, (node) => ['input', 'textarea', 'select'].includes(node.type))[0];
+    return nodes(container, (node) => ['input', 'textarea', 'select'].includes(node.type))[0]
+      || nodes(render(), (node) => node.props?.id === container?.props.htmlFor)[0];
   };
   const button = (label) => nodes(render(), (node) => node.type === 'button' && text(node).includes(label))[0];
   return {
     render, calls, field, button, confirmations,
+    unmount: () => { for (const effect of effects) effect?.cleanup?.(); },
     fill: (label, value) => field(label).props.onChange({ target: { value, checked: value } }),
     submit: () => nodes(render(), (node) => node.type === 'form')[0].props.onSubmit({ preventDefault() {} }),
     async mount() { render(); await settle(); return render(); },
@@ -129,6 +131,77 @@ test('customer UI creates and edits a Holding-only customer with immutable docum
   await ui.submit();
   assert.equal(ui.calls.at(-1).body.active, false);
   assert.match(text(ui.render()), /Inativo/);
+});
+
+test('customer UI masks fields, locally validates CPF without a third-party lookup and fills corporate/address data only on explicit action', async () => {
+  const ui = harness('src/app/clientes/page.tsx', (url, method, body) => method === 'GET'
+    ? Response.json({ customers: [] }) : Response.json({ fields: body.kind === 'cnpj'
+      ? { name: 'Empresa ficticia', postal_code: '01001000', address: 'Rua ficticia', address_number: '10', city: 'Sao Paulo', state: 'SP' }
+      : { postal_code: '01001000', address: 'Praca ficticia', district: 'Centro', city: 'Sao Paulo', state: 'SP' }, source: 'Test' }));
+  await ui.mount(); ui.button('Novo cliente').props.onClick();
+  ui.fill('CPF / CNPJ', '52998224725');
+  assert.equal(ui.field('CPF / CNPJ').props.value, '529.982.247-25');
+  ui.button('Consultar CPF').props.onClick(); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
+  assert.match(text(ui.render()), /Nenhum CPF foi enviado a terceiros/);
+  ui.fill('CPF / CNPJ', '11222333000181'); ui.button('Consultar CPF').props.onClick(); await settle();
+  assert.equal(ui.field('Nome / razão social').props.value, 'Empresa ficticia');
+  assert.equal(ui.field('CEP').props.value, '01001-000');
+  ui.fill('Número', '25'); ui.fill('Complemento', 'Sala 1');
+  ui.button('Consultar CEP').props.onClick(); await settle();
+  assert.equal(ui.field('Endereço').props.value, 'Praca ficticia');
+  assert.equal(ui.field('Número').props.value, '25'); assert.equal(ui.field('Complemento').props.value, 'Sala 1');
+  ui.fill('Telefone', '11999999999'); assert.equal(ui.field('Telefone').props.value, '(11) 99999-9999');
+  assert.equal(ui.field('E-mail').props.type, 'email');
+  assert.equal(ui.field('Telefone').props.type, 'tel');
+});
+
+test('customer UI reopens an existing CPF and deletion requires confirmation, preserves contracted customers and reports errors', async () => {
+  const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'DELETE'
+    ? Response.json({ error: 'Cliente possui contratação.' }, { status: 409 }) : Response.json({ customers: [customer] }));
+  await ui.mount(); ui.button('Novo cliente').props.onClick(); ui.fill('CPF / CNPJ', customer.document);
+  ui.button('Consultar CPF').props.onClick(); await settle();
+  assert.equal(ui.field('Nome / razão social').props.value, customer.name);
+  assert.equal(ui.field('CPF / CNPJ').props.readOnly, true);
+  ui.button('Cancelar').props.onClick();
+  ui.button('Excluir').props.onClick(); await settle();
+  assert.match(text(ui.render()), /Cliente possui contratação/);
+  assert.match(text(ui.render()), /Cliente fictício/);
+  for (const confirm of [true, false]) {
+    const h = harness('src/app/clientes/page.tsx', (_url, method) => method === 'DELETE'
+      ? Response.json({ deleted: true }) : Response.json({ customers: [customer] }), confirm);
+    await h.mount(); h.button('Excluir').props.onClick(); await settle();
+    assert.equal(h.calls.filter((call) => call.method === 'DELETE').length, confirm ? 1 : 0);
+    assert.match(h.confirmations[0], /nenhum projeto ou assinatura/);
+    if (confirm) assert.match(text(h.render()), /Cliente excluído somente da Holding/);
+  }
+});
+
+test('customer lookup keeps manual data on cancellation or failure, disables edits while pending and ignores responses after unmount', async () => {
+  for (const confirm of [true, false]) {
+    const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+      ? Response.json({ customers: [] }) : Response.json({ error: 'Servico indisponivel.' }, { status: 502 }), confirm);
+    await ui.mount(); ui.button('Novo cliente').props.onClick();
+    ui.fill('CPF / CNPJ', '11222333000181'); ui.fill('Nome / razão social', 'Nome manual');
+    ui.fill('Endereço', 'Endereco manual'); ui.button('Consultar CPF').props.onClick(); await settle();
+    assert.equal(ui.calls.filter((call) => call.method === 'POST').length, confirm ? 1 : 0);
+    assert.equal(ui.field('Nome / razão social').props.value, 'Nome manual');
+    assert.equal(ui.field('Endereço').props.value, 'Endereco manual');
+    if (confirm) assert.match(text(ui.render()), /Servico indisponivel/);
+  }
+  let resolve;
+  const pending = new Promise((done) => { resolve = done; });
+  const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+    ? Response.json({ customers: [] }) : pending);
+  await ui.mount(); ui.button('Novo cliente').props.onClick(); ui.fill('CPF / CNPJ', '11222333000181');
+  ui.fill('Nome / razão social', 'Manual');
+  ui.button('Consultar CPF').props.onClick(); await settle();
+  assert.equal(nodes(ui.render(), (node) => node.type === 'fieldset')[0].props.disabled, true);
+  await ui.submit();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
+  ui.unmount();
+  resolve(Response.json({ fields: { name: 'Stale company' }, source: 'Test' })); await settle();
+  assert.equal(ui.field('Nome / razão social').props.value, 'Manual');
 });
 
 test('contract UI prefills product price, previews entry and cents, and saves without any provider call', async () => {

@@ -38,7 +38,7 @@ Estas migrations nao foram aplicadas automaticamente e nao modificam Glass/Barbe
 Ela cria `holding_customers`, `holding_website_contracts`,
 `holding_website_installments` e a RPC transacional de contratacao. RLS e
 revogacoes bloqueiam anon/authenticated; acesso somente via APIs administrativas.
-Nao ha exclusao nem provisionamento de tenants/usuarios de outros sistemas.
+Nao ha exclusao de contratos nem provisionamento de tenants/usuarios de outros sistemas.
 
 Fluxo:
 
@@ -112,6 +112,41 @@ Esse teste cria somente tabelas ficticias em memoria; nao aponta para
 producao. Fixtures visuais opcionais com markup React/CSS Tailwind reais:
 definir `WEBSITE_UI_FIXTURE_DIR` para uma pasta temporaria existente ao executar
 o teste de interface. Nenhuma cobranca real ou NFS-e e emitida pelos testes.
+
+### Mascaras, consultas cadastrais e exclusao de clientes
+
+Em **Clientes**, CPF/CNPJ, telefone (fixo/celular com DDD e opcional +55) e CEP
+possuem mascaras de apresentacao; o banco continua recebendo os digitos
+normalizados. E-mail usa campo `email` e validacao de formato no cliente e na
+API (nao comprova a existencia da caixa postal).
+
+**Consultar CPF / CNPJ** verifica os digitos localmente. Se ja existir cliente
+na Holding, abre seu cadastro para edicao em vez de duplicar. Para CNPJ,
+mediante confirmacao explicita, consulta a BrasilAPI e preenche razao social,
+endereco e contatos disponiveis. **Consultar CEP** usa o ViaCEP e preenche
+logradouro, bairro, municipio e UF, preservando numero/complemento. Confira
+os dados antes de salvar; os campos continuam editaveis, e a consulta nao
+comprova regularidade fiscal. CNPJ e CEP sao enviados apenas ao servico
+respectivo por API administrativa autenticada; nao ha consultas durante a
+digitacao nem alteracao de clientes/contratos/Asaas ao consultar.
+
+CPF nunca e enviado a estes servicos. Apenas digitos verificadores sao
+validados; nao existe integracao autorizada de consulta de nome/situacao
+cadastral do CPF configurada. Para CPF novo, informar o nome manualmente.
+Consultas indisponiveis/nao encontradas exibem erro e permitem preenchimento
+manual; nunca retornam um cadastro ficticio ou silenciosamente valido.
+
+Para habilitar **Excluir**, aplicar uma vez na Holding:
+`supabase/migrations/20261104230000_holding_customer_delete.sql`.
+Ela concede DELETE apenas ao service role. A API exige `menu.clientes`,
+confirmacao ocorre na interface e as FKs NO ACTION de contratos/assinaturas
+bloqueiam no banco qualquer cliente ja contratado, mesmo salvo sem cobrar,
+inclusive sob concorrencia. Integracao de cliente em `processing` tambem
+bloqueia a API. Pode-se inativar clientes contratados em vez de excluir.
+Exclusao e somente local: nao apaga dados no Asaas, Glass ou Barber.
+
+Testes:
+`node --test scripts/tests/holding-customer-lookup.test.mjs scripts/tests/holding-commercial-ui.test.mjs scripts/tests/website-contracts.test.mjs`.
 
 ### Enquadramento fiscal por produto Websites
 

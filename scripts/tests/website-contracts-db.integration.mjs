@@ -237,4 +237,27 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
     }
     assert.equal((await db.query('select count(*)::integer as count from public.holding_website_invoices where contract_id is not null')).rows[0].count, 2);
   });
+  await t.test('customer deletion is service-only and FKs prevent removing customers with projects or subscriptions even before billing', async () => {
+    await db.exec(await readFile('supabase/migrations/20261104230000_holding_customer_delete.sql', 'utf8'));
+    const free = '10000000-0000-4000-8000-000000000002';
+    const subscriber = '10000000-0000-4000-8000-000000000003';
+    await db.query(`insert into public.holding_customers(id,name,document,email) values
+      ($1,'Livre','00000000002','free@example.test'),($2,'Assinante','00000000003','sub@example.test')`, [free, subscriber]);
+    await db.query(`insert into public.holding_website_subscriptions(request_id,customer_id,plan_id,customer_snapshot,plan_snapshot,
+      amount_cents,payment_method,first_due_date,fiscal_confirmed)
+      select gen_random_uuid(),$1,plan_id,customer_snapshot,plan_snapshot,amount_cents,payment_method,first_due_date,true
+      from public.holding_website_subscriptions limit 1`, [subscriber]);
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`);
+      await assert.rejects(db.query('delete from public.holding_customers where id=$1', [free]), /permission denied/);
+      await db.exec('reset role');
+    }
+    await db.exec('set role service_role');
+    for (const contracted of [customer, subscriber]) {
+      await assert.rejects(db.query('delete from public.holding_customers where id=$1', [contracted]), /foreign key constraint/);
+    }
+    assert.equal((await db.query('delete from public.holding_customers where id=$1 returning id', [free])).rows.length, 1);
+    await db.exec('reset role');
+    assert.equal((await db.query('select count(*)::integer as count from public.holding_customers where id in ($1,$2)', [customer, subscriber])).rows[0].count, 2);
+  });
 });

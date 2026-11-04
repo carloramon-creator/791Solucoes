@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Loader2, Pencil, Plus, Users } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
-import { validateHoldingCustomer, type HoldingCustomer, type HoldingCustomerInput } from '@/lib/holding-customers';
+import { validDocument, maskCustomerDocument, maskCustomerPhone, maskCustomerCep, validateHoldingCustomer, type HoldingCustomer, type HoldingCustomerInput } from '@/lib/holding-customers';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialSecondaryClass,
 } from '@/components/HoldingCommercialFields';
@@ -13,8 +13,8 @@ const EMPTY: HoldingCustomerInput = {
   address_number: '', complement: '', district: '', city: '', state: '', active: true,
 };
 const fields: Array<{ key: Exclude<keyof HoldingCustomerInput, 'active'>; label: string; required?: boolean; max: number }> = [
-  { key: 'name', label: 'Nome / razão social', required: true, max: 160 },
   { key: 'document', label: 'CPF / CNPJ', required: true, max: 20 },
+  { key: 'name', label: 'Nome / razão social', required: true, max: 160 },
   { key: 'email', label: 'E-mail', required: true, max: 254 },
   { key: 'phone', label: 'Telefone com DDD', max: 25 },
   { key: 'postal_code', label: 'CEP', max: 10 },
@@ -35,7 +35,9 @@ export default function HoldingCustomersPage() {
   const [form, setForm] = useState<HoldingCustomerInput | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [lookingUp, setLookingUp] = useState(false);
   const busy = useRef(false);
+  const lookupVersion = useRef(0);
   const nameInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback((signal?: AbortSignal) => (
@@ -59,9 +61,72 @@ export default function HoldingCustomersPage() {
   useEffect(() => { if (open) nameInput.current?.focus(); }, [open, editingId]);
 
   function edit(customer?: HoldingCustomer) {
+    lookupVersion.current++;
     setEditingId(customer?.id || null);
     setForm(customer ? { ...customer } : { ...EMPTY });
     setError(''); setMessage('');
+  }
+  useEffect(() => () => { lookupVersion.current++; }, []);
+
+  async function lookup(kind: 'document' | 'cep') {
+    if (!form || busy.current) return;
+    setError(''); setMessage('');
+    const digits = (kind === 'document' ? form.document : form.postal_code).replace(/\D/g, '');
+    if (kind === 'document') {
+      if (!validDocument(digits)) { setError('Informe um CPF ou CNPJ válido antes de consultar.'); return; }
+      const existing = customers.find((customer) => customer.document === digits && customer.id !== editingId);
+      if (existing) { edit(existing); setMessage('Cliente já cadastrado na Holding. Cadastro aberto para edição, sem duplicar.'); return; }
+      if (digits.length === 11) {
+        setMessage('CPF com dígitos verificadores válidos. Não há serviço autorizado de consulta de nome/situação do CPF configurado; informe o nome manualmente. Nenhum CPF foi enviado a terceiros.');
+        return;
+      }
+    } else if (digits.length !== 8) { setError('Informe um CEP com 8 dígitos.'); return; }
+    if (!window.confirm(kind === 'document'
+      ? 'Consultar este CNPJ na BrasilAPI e preencher razão social e dados cadastrais? Os campos retornados substituirão os atuais. Confira os dados antes de salvar.'
+      : 'Consultar este CEP no ViaCEP e preencher endereço, bairro, município e UF? Confira os dados antes de salvar. Número e complemento serão preservados.')) return;
+    const version = ++lookupVersion.current;
+    busy.current = true; setLookingUp(true);
+    try {
+      const response = await holdingAuthFetch('/api/admin/holding-customers/lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: kind === 'document' ? 'cnpj' : 'cep', value: digits }),
+      });
+      const payload: { fields?: Partial<HoldingCustomerInput>; source?: string; error?: string } = await response.json();
+      if (!response.ok || !payload.fields) throw new Error(payload.error || 'Resposta de consulta inválida.');
+      if (version !== lookupVersion.current) return;
+      const values = payload.fields;
+      setForm((current) => {
+        if (!current) return current;
+        const next = { ...current };
+        for (const key of ['name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
+          if (typeof values[key] === 'string' && (kind === 'cep' || values[key])) next[key] = values[key];
+        }
+        return next;
+      });
+      setMessage(`Dados retornados por ${payload.source}. Confira todos os campos antes de salvar. A consulta não comprova regularidade fiscal.`);
+    } catch (failure) {
+      if (version === lookupVersion.current) {
+        console.error('[HOLDING CUSTOMERS] Falha na consulta cadastral.');
+        setError(failure instanceof Error ? failure.message : 'Consulta indisponível. Preencha manualmente.');
+      }
+    } finally { busy.current = false; setLookingUp(false); }
+  }
+
+  async function remove(customer: HoldingCustomer) {
+    if (busy.current || !window.confirm(`Excluir o cliente ${customer.name} da Holding?\n\nSó será permitido se não houver nenhum projeto ou assinatura contratado. O cadastro no Asaas não será excluído.`)) return;
+    busy.current = true; setSaving(true); setError(''); setMessage('');
+    try {
+      const response = await holdingAuthFetch('/api/admin/holding-customers', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: customer.id }),
+      });
+      const payload: { deleted?: boolean; error?: string } = await response.json();
+      if (!response.ok || payload.deleted !== true) throw new Error(payload.error || 'O banco não confirmou a exclusão.');
+      setCustomers((current) => current.filter((row) => row.id !== customer.id));
+      setMessage('Cliente excluído somente da Holding. Nenhum cadastro foi apagado no Asaas, Glass ou Barber.');
+    } catch (failure) {
+      console.error('[HOLDING CUSTOMERS] Falha ao excluir cliente.');
+      setError(failure instanceof Error ? failure.message : 'Não foi possível excluir o cliente.');
+    } finally { busy.current = false; setSaving(false); }
   }
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -95,31 +160,45 @@ export default function HoldingCustomersPage() {
           <p className="mt-1 text-sm text-slate-500">Cadastro próprio para projetos e serviços. Não cria tenant, usuário ou assinatura no Glass/Barber.</p>
         </div>
         <div className="flex gap-2">
-          <button type="button" className={commercialSecondaryClass} disabled={loading || open} onClick={() => {
+          <button type="button" className={commercialSecondaryClass} disabled={loading || open || saving} onClick={() => {
             setLoading(true); setLoadError(''); void load();
           }}>Atualizar</button>
-          <button type="button" className={commercialButtonClass} disabled={loading || Boolean(loadError) || open} onClick={() => edit()}><Plus size={16} /> Novo cliente</button>
+          <button type="button" className={commercialButtonClass} disabled={loading || Boolean(loadError) || open || saving} onClick={() => edit()}><Plus size={16} /> Novo cliente</button>
         </div>
       </header>
       <p className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-        Use um cadastro por CPF/CNPJ, mesmo que o cliente tenha vários websites. Complete o endereço fiscal desde já; a emissão de notas ainda não está habilitada.
+        Use um cadastro por CPF/CNPJ, mesmo que o cliente tenha vários websites. Consulte o CNPJ para trazer a razão social e consulte o CEP para preencher o endereço fiscal.
         O cliente só será vinculado ao Asaas ao gerar cobranças. Dados já existentes no Asaas não serão sobrescritos automaticamente.
       </p>
       {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}
       {loadError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
+      {error && !form && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</p>}
       {form && (
         <form onSubmit={save} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-5 text-lg font-bold text-slate-800">{editingId ? 'Editar cliente' : 'Novo cliente'}</h2>
-          <fieldset disabled={saving} className="space-y-5">
+          <fieldset disabled={saving || lookingUp} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               {fields.map((field) => (
-                <label key={field.key} className={commercialLabelClass}>
-                  <span>{field.label}{field.required ? ' *' : ''}</span>
-                  <input ref={field.key === 'name' ? nameInput : undefined} className={commercialInputClass}
-                    type={field.key === 'email' ? 'email' : 'text'} required={field.required} maxLength={field.max}
-                    readOnly={field.key === 'document' && Boolean(editingId)} value={form[field.key]}
-                    onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} />
-                </label>
+                <div key={field.key} className={commercialLabelClass}>
+                  <label htmlFor={`customer-${field.key}`}>{field.label}{field.required ? ' *' : ''}</label>
+                  <input id={`customer-${field.key}`} ref={field.key === 'name' ? nameInput : undefined} className={commercialInputClass}
+                    type={field.key === 'email' ? 'email' : field.key === 'phone' ? 'tel' : 'text'} required={field.required} maxLength={field.max}
+                    inputMode={['document', 'postal_code', 'phone'].includes(field.key) ? 'tel' : field.key === 'email' ? 'email' : undefined}
+                    autoCapitalize={field.key === 'email' ? 'none' : undefined} spellCheck={field.key === 'email' ? false : undefined}
+                    readOnly={field.key === 'document' && Boolean(editingId)}
+                    value={field.key === 'document' ? maskCustomerDocument(form.document)
+                      : field.key === 'phone' ? maskCustomerPhone(form.phone) : field.key === 'postal_code' ? maskCustomerCep(form.postal_code) : form[field.key]}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setForm({ ...form, [field.key]: field.key === 'document' ? maskCustomerDocument(value)
+                        : field.key === 'phone' ? maskCustomerPhone(value) : field.key === 'postal_code' ? maskCustomerCep(value)
+                          : field.key === 'state' ? value.toUpperCase() : value });
+                    }} />
+                  {(field.key === 'document' || field.key === 'postal_code') && <button type="button" className={commercialSecondaryClass}
+                    onClick={() => void lookup(field.key === 'document' ? 'document' : 'cep')}>
+                    {lookingUp ? 'Consultando...' : field.key === 'document' ? 'Consultar CPF / CNPJ' : 'Consultar CEP'}
+                  </button>}
+                </div>
               ))}
             </div>
             <p className="text-xs text-slate-500">O CPF/CNPJ não pode ser alterado após o cadastro. Edições não modificam os dados históricos de contratos existentes.</p>
@@ -140,11 +219,15 @@ export default function HoldingCustomersPage() {
             {customers.map((customer) => (
               <article key={customer.id} className="rounded-xl border border-slate-200 bg-white p-5">
                 <h2 className="font-bold text-slate-800">{customer.name}</h2>
-                <p className="mt-2 text-sm text-slate-500">CPF/CNPJ: {customer.document}</p>
+                <p className="mt-2 text-sm text-slate-500">CPF/CNPJ: {maskCustomerDocument(customer.document)}</p>
                 <p className="text-sm text-slate-500">{customer.email}</p>
+                {customer.phone && <p className="text-sm text-slate-500">{maskCustomerPhone(customer.phone)}</p>}
                 <div className="mt-4 flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-600">{customer.active ? 'Ativo' : 'Inativo'}</span>
-                  <button type="button" disabled={open} className={commercialSecondaryClass} onClick={() => edit(customer)}><Pencil size={14} /> Editar</button>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={open || saving} className={commercialSecondaryClass} onClick={() => edit(customer)}><Pencil size={14} /> Editar</button>
+                    <button type="button" disabled={open || saving} className={commercialSecondaryClass} onClick={() => void remove(customer)}>Excluir</button>
+                  </div>
                 </div>
               </article>
             ))}

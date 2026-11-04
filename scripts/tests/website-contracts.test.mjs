@@ -431,6 +431,7 @@ function apiHarness(path, { denied = false, customerError = null, rpcError = nul
     neq(key, value) { this.filters.push([`not:${key}`, value]); return this; }
     insert(value) { writes.push({ kind: 'insert', value }); return this; }
     update(value) { writes.push({ kind: 'update', value }); return this; }
+    delete() { writes.push({ kind: 'delete' }); return this; }
     maybeSingle() { return Promise.resolve({ data: { id: customerId, ...customer }, error: customerError }); }
     then(resolve, reject) { return Promise.resolve({ data: [], error: customerError }).then(resolve, reject); }
   }
@@ -469,6 +470,22 @@ test('customer API validates documents, whitelists editable fields, and reports 
   assert.equal((await duplicate.request('POST', customer)).status, 409);
   assert.equal((await h.request('POST', '{', true)).status, 400);
   assert.equal((await h.request('PUT', { ...customer, id: 'bad' })).status, 400);
+});
+
+test('customer DELETE requires permission and a UUID, and reports FK conflicts without deleting contracted customers', async () => {
+  const path = 'src/app/api/admin/holding-customers/route.ts';
+  const denied = apiHarness(path, { denied: true });
+  assert.equal((await denied.request('DELETE', { id: customerId })).status, 403);
+  assert.equal(denied.writes.length, 0);
+  const h = apiHarness(path);
+  assert.equal((await h.request('DELETE', { id: 'bad' })).status, 400);
+  assert.equal(h.writes.length, 0);
+  assert.equal((await h.request('DELETE', { id: customerId })).status, 200);
+  assert.equal(h.writes[0].kind, 'delete');
+  const contracted = apiHarness(path, { customerError: { code: '23503' } });
+  const response = await contracted.request('DELETE', { id: customerId });
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /projeto ou assinatura/);
 });
 
 test('contract API saves a server-calculated schedule atomically with an idempotency key and rejects tampering', async () => {

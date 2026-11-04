@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import test from 'node:test';
 import ts from 'typescript';
@@ -377,13 +378,50 @@ test('UI switches between project and recurring categories with only compatible 
   ui.button('Novo produto').props.onClick();
   assert.equal(ui.field('Modalidade').props.value, 'one_time');
   ui.fill('Categoria', 'hosting');
-  assert.equal(ui.field('Modalidade').props.value, 'monthly');
-  assert.deepEqual(nodes(ui.field('Modalidade'), (node) => node.type === 'option').map((node) => node.props.value), ['monthly', 'annual']);
-  ui.fill('Modalidade', 'annual');
+  assert.equal(ui.field('Ciclo padrão').props.value, 'monthly');
+  assert.deepEqual(nodes(ui.field('Ciclo padrão'), (node) => node.type === 'option').map((node) => node.props.value), ['monthly', 'quarterly', 'semiannual', 'annual']);
+  ui.fill('Ciclo padrão', 'annual');
   ui.fill('Categoria', 'maintenance');
-  assert.equal(ui.field('Modalidade').props.value, 'annual');
+  assert.equal(ui.field('Ciclo padrão').props.value, 'annual');
   ui.fill('Categoria', 'additional');
   assert.equal(ui.field('Modalidade').props.value, 'one_time');
+});
+
+test('one recurring product persists four total-period prices and retains them when changing the default cycle', async () => {
+  const api = loadRoute();
+  const ui = pageHarness(api.request);
+  await ui.mount(); ui.button('Novo produto').props.onClick();
+  ui.fill('Nome do produto', 'Hospedagem'); ui.fill('Escopo, limites', 'Hospedagem com backup.');
+  ui.fill('Categoria', 'hosting');
+  for (const [label, value] of [['Mensal (R$)', '100'], ['Trimestral (R$)', '285'], ['Semestral (R$)', '540'], ['Anual (R$)', '1000']]) {
+    ui.fill(label, value); assert.match(ui.field(label).props.className, /h-11/);
+  }
+  ui.fill('Ciclo padrão', 'quarterly');
+  assert.equal(ui.field('Trimestral (R$)').props.value, '285');
+  await ui.submit();
+  const saved = ui.calls.at(-1).body;
+  assert.deepEqual(saved.recurring_prices, { monthly: 10000, quarterly: 28500, semiannual: 54000, annual: 100000 });
+  assert.equal(saved.price_cents, 28500);
+  const edited = pageHarness(api.request); await edited.mount(); edited.button('Editar produto').props.onClick();
+  assert.equal(edited.field('Anual (R$)').props.value, '1000.00');
+  edited.fill('Anual (R$)', '');
+  await edited.submit();
+  assert.equal(edited.calls.at(-1).body.recurring_prices.annual, undefined);
+});
+
+test('recurring catalog visual fixture uses the actual four-price form and Tailwind styles', {
+  skip: !process.env.WEBSITE_UI_FIXTURE_DIR,
+}, async () => {
+  const { renderToStaticMarkup } = createRequire(import.meta.url)('react-dom/server');
+  const { compile } = await import('@tailwindcss/node');
+  const ui = pageHarness(loadRoute().request);
+  await ui.mount(); ui.button('Novo produto').props.onClick(); ui.fill('Categoria', 'hosting');
+  const markup = renderToStaticMarkup(ui.render());
+  const compiler = await compile('@import "tailwindcss";', { base: process.cwd(), onDependency() {} });
+  const candidates = [...markup.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1].split(' '));
+  const css = compiler.build(candidates);
+  writeFileSync(join(process.env.WEBSITE_UI_FIXTURE_DIR, 'website-recurring-plans-fixture.html'),
+    `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><body class="bg-slate-50"><main style="padding:24px">${markup}</main></body></html>`);
 });
 
 test('UI standardizes single-line fields and explains project installments without configuring recurrence', async () => {
@@ -415,7 +453,7 @@ test('UI resets accounting confirmation when fiscal data changes and does not en
   ui.fill('NBS', '123456780');
   assert.equal(ui.field('Enquadramento deste serviço').props.checked, false);
   assert.match(text(ui.render()), /emissão manual de uma NFS-e pelo valor total/);
-  assert.match(text(ui.render()), /automação fiscal de assinaturas Websites ainda não está habilitada/);
+  assert.match(text(ui.render()), /competência será a data de confirmação do pagamento/);
   ui.fill('Categoria', 'hosting');
   assert.match(text(ui.render()), /emissão automática de NFS-e após confirmação/);
 });

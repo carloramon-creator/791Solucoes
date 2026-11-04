@@ -356,7 +356,7 @@ test('customer lookup refuses duplicate remote documents and never updates a pre
   await assert.rejects((await duplicate.createWebsiteAsaas()).findCustomer(customer.document), /mais de um cliente/);
 });
 
-function webhookHarness(path, verifiedRef) {
+function webhookHarness(path, verifiedRef, recurring = false) {
   const processorCalls = [], clientCalls = [];
   const dependencies = {
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
@@ -375,6 +375,7 @@ function webhookHarness(path, verifiedRef) {
     } } },
     '@supabase/supabase-js': { createClient: (...args) => { clientCalls.push(args); return {}; } },
     '@/lib/overage-block': { releaseOverageBlock: async () => { throw new Error('Unexpected tenant access'); } },
+    '@/lib/website-subscriptions': { processWebsiteSubscriptionPayment: async () => recurring },
   };
   const route = load(path, dependencies);
   return {
@@ -407,6 +408,16 @@ test('webhook guards preserve dispatch of verified Glass and Barber payments', a
       assert.equal(h.processorCalls.length, 1);
       assert.equal(h.processorCalls[0].externalReference, ref);
     }
+  }
+});
+
+test('both webhooks route recurring Websites to their own processor before constructing tenant clients', async () => {
+  for (const path of ['src/app/api/webhooks/payments/route.ts', 'src/app/api/webhooks/asaas/route.ts']) {
+    const h = webhookHarness(path, `website-subscription|${contractId}`, true);
+    const response = await h.post();
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).provider, 'website_subscription');
+    assert.equal(h.processorCalls.length, 0); assert.equal(h.clientCalls.length, 0);
   }
 });
 

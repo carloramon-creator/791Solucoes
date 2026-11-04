@@ -8,11 +8,19 @@ export const WEBSITE_CATEGORIES = {
 export const WEBSITE_BILLING_CYCLES = {
   one_time: 'Cobrança única',
   monthly: 'Mensal',
+  quarterly: 'Trimestral',
+  semiannual: 'Semestral',
   annual: 'Anual',
 } as const;
 
 export type WebsiteCategory = keyof typeof WEBSITE_CATEGORIES;
 export type WebsiteBillingCycle = keyof typeof WEBSITE_BILLING_CYCLES;
+export type WebsiteRecurringCycle = Exclude<WebsiteBillingCycle, 'one_time'>;
+export type WebsiteRecurringPrices = Partial<Record<WebsiteRecurringCycle, number>>;
+export const WEBSITE_RECURRING_CYCLES: WebsiteRecurringCycle[] = ['monthly', 'quarterly', 'semiannual', 'annual'];
+export function websiteRecurringPrices(plan: { billing_cycle: WebsiteBillingCycle; price_cents: number; recurring_prices?: WebsiteRecurringPrices }): WebsiteRecurringPrices {
+  return plan.recurring_prices ?? (plan.billing_cycle === 'one_time' ? {} : { [plan.billing_cycle]: plan.price_cents });
+}
 
 export type WebsiteFiscalConfig = {
   national_code: string;
@@ -70,6 +78,7 @@ export type WebsitePlanInput = {
   price_cents: number;
   active: boolean;
   fiscal_config: WebsiteFiscalConfig | null;
+  recurring_prices?: WebsiteRecurringPrices;
 };
 
 export type WebsitePlan = WebsitePlanInput & {
@@ -81,7 +90,7 @@ export type WebsitePlan = WebsitePlanInput & {
 export function websiteBillingCycles(category: WebsiteCategory): WebsiteBillingCycle[] {
   return category === 'creation' || category === 'additional'
     ? ['one_time']
-    : ['monthly', 'annual'];
+    : [...WEBSITE_RECURRING_CYCLES];
 }
 
 export function validateWebsitePlan(value: unknown):
@@ -116,6 +125,25 @@ export function validateWebsitePlan(value: unknown):
   }
   const fiscal = validateWebsiteFiscalConfig(body.fiscal_config);
   if (!fiscal.ok) return fiscal;
+  let recurringPrices: WebsiteRecurringPrices | undefined = body.billing_cycle === 'one_time'
+    ? undefined : { [body.billing_cycle as WebsiteRecurringCycle]: body.price_cents };
+  if (body.recurring_prices !== undefined) {
+    if (!body.recurring_prices || typeof body.recurring_prices !== 'object' || Array.isArray(body.recurring_prices)) {
+      return { ok: false, error: 'Tabela de preços por ciclo inválida.' };
+    }
+    recurringPrices = {};
+    for (const [cycle, price] of Object.entries(body.recurring_prices)) {
+      if (!WEBSITE_RECURRING_CYCLES.some((key) => key === cycle) || typeof price !== 'number'
+        || !Number.isSafeInteger(price) || price < 1 || price > 999999999) {
+        return { ok: false, error: 'Cada ciclo habilitado deve ter um preço válido em centavos.' };
+      }
+      recurringPrices[cycle as WebsiteRecurringCycle] = price;
+    }
+    if (body.billing_cycle === 'one_time' ? Object.keys(recurringPrices).length !== 0
+      : recurringPrices[body.billing_cycle as WebsiteRecurringCycle] !== body.price_cents) {
+      return { ok: false, error: 'O preço do ciclo padrão deve corresponder à tabela de ciclos. Projetos não possuem ciclos recorrentes.' };
+    }
+  }
   return {
     ok: true,
     data: {
@@ -127,6 +155,7 @@ export function validateWebsitePlan(value: unknown):
       price_cents: body.price_cents,
       active: body.active,
       fiscal_config: fiscal.data,
+      ...(recurringPrices ? { recurring_prices: recurringPrices } : {}),
     },
   };
 }

@@ -171,6 +171,7 @@ export default function WebsiteContractsPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><Globe size={24} /> Websites — contratações</h1>
           <p className="mt-1 text-sm text-slate-500">Projetos e parcelas da Holding, sem integração operacional com Glass ou Barber.</p>
+          <Link href="/assinaturas/websites/recorrentes" className="text-sm text-blue-700 underline">Hospedagem e manutenção — assinaturas recorrentes</Link>
         </div>
         <div className="flex gap-2">
           <button type="button" className={commercialSecondaryClass} disabled={loading || Boolean(form) || Boolean(billingId) || Boolean(invoiceForm)} onClick={() => {
@@ -183,7 +184,7 @@ export default function WebsiteContractsPage() {
       <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
         <p>1. Cadastre o cliente em <Link href="/clientes" className="font-bold underline">Clientes</Link>. 2. Escolha um produto de cobrança única. 3. Confira as parcelas e salve. 4. Gere no Asaas somente quando desejar cobrar.</p>
         <p>Pix e boleto: parcelas mensais por vencimento. Cartão: uma compra parcelada para o saldo, com preenchimento do cartão na página segura do Asaas. Com entrada, haverá um pagamento separado para ela.</p>
-        <p>Projetos: NFS-e nacional somente pelo botão, no valor total e independentemente do pagamento. Entradas bancárias, empréstimos, aportes e transferências não geram nota. Hospedagem recorrente ainda não é contratada nesta etapa.</p>
+        <p>Projetos: NFS-e nacional somente pelo botão, no valor total e independentemente do pagamento. Entradas bancárias, empréstimos, aportes e transferências não geram nota. Para hospedagem/manutenção, use Assinaturas recorrentes acima.</p>
         <p>O acompanhamento das cobranças é por consulta explícita ao Asaas, sem baixa automática no financeiro e sem encaminhar Websites ao processamento SaaS.</p>
       </div>
       {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}

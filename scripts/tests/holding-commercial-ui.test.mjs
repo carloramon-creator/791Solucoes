@@ -23,6 +23,7 @@ function load(path, dependencies = {}, globals = {}) {
 }
 const customers = load('src/lib/holding-customers.ts');
 const terms = load('src/lib/website-contracts.ts', { '@/lib/holding-customers': customers });
+const catalog = load('src/lib/website-plans.ts');
 const fields = load('src/components/HoldingCommercialFields.tsx');
 const customerId = '10000000-0000-4000-8000-000000000001';
 const planId = '20000000-0000-4000-8000-000000000001';
@@ -74,6 +75,7 @@ function harness(path, request, confirm = true) {
     'next/link': { default: 'a', __esModule: true },
     '@/lib/holding-customers': customers,
     '@/lib/website-contracts': terms,
+    '@/lib/website-plans': catalog,
     '@/components/HoldingCommercialFields': fields,
     '@/lib/holding-auth-fetch': { holdingAuthFetch: async (url, init = {}) => {
       const method = init.method || 'GET';
@@ -218,6 +220,31 @@ test('manual invoice UI validates a preview before production confirmation and n
             municipal_code: '', nbs: '123456789', description: 'Site ficticio', simples_percent: 6,
           },
         });
+
+        test('recurring subscription UI picks cycle price, permits a client override and saves without billing or editing the catalog', async () => {
+          const recurring = { ...plan, billing_cycle: 'monthly', recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } };
+          const ui = harness('src/app/assinaturas/websites/recorrentes/page.tsx', (_url, method) => method === 'POST'
+            ? Response.json({ id: contractId }) : Response.json({ subscriptions: [], customers: [customer], plans: [recurring] }));
+          await ui.mount(); ui.button('Nova assinatura').props.onClick();
+          ui.fill('Cliente', customerId); ui.fill('Produto', planId);
+          assert.equal(ui.field('Valor personalizado').props.value, '100.00');
+          ui.fill('Ciclo', 'quarterly');
+          assert.equal(ui.field('Valor personalizado').props.value, '280.00');
+          ui.fill('Valor personalizado', '255.50');
+          ui.fill('Primeiro vencimento', '2026-11-20');
+          ui.fill('Confirmo o enquadramento', true);
+          for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type) && node.props.type !== 'checkbox')) {
+            assert.match(field.props.className, /h-11/);
+          }
+          await ui.submit();
+          const post = ui.calls.find((call) => call.method === 'POST');
+          assert.equal(post.url, '/api/admin/website-subscriptions');
+          assert.equal(post.body.billing_cycle, 'quarterly'); assert.equal(post.body.amount_cents, 25550);
+          assert.equal(post.body.fiscal_confirmed, true);
+          assert.equal(recurring.recurring_prices.quarterly, 28000);
+          assert.equal(ui.calls.some((call) => /billing|website-plans/.test(call.url)), false);
+          assert.match(text(ui.render()), /salva sem cobrar/);
+        });
       }
       return url.endsWith('/options') ? optionsResponse() : Response.json({ contracts: [local] });
     }, confirm);
@@ -247,7 +274,12 @@ test('rendered form fixtures retain actual React markup for visual verification'
   await clients.mount(); clients.button('Novo cliente').props.onClick();
   const contracts = await contractForm();
   contracts.fill('Produto', planId);
-  for (const [name, tree] of [['customers', clients.render()], ['contracts', contracts.render()]]) {
+  const recurring = harness('src/app/assinaturas/websites/recorrentes/page.tsx', () => Response.json({
+    subscriptions: [], customers: [customer], plans: [{ ...plan, billing_cycle: 'monthly',
+      recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } }],
+  }));
+  await recurring.mount(); recurring.button('Nova assinatura').props.onClick(); recurring.fill('Produto', planId);
+  for (const [name, tree] of [['customers', clients.render()], ['contracts', contracts.render()], ['recurring', recurring.render()]]) {
     const markup = renderToStaticMarkup(tree);
     const candidates = [...markup.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1].split(' '));
     const css = compiler.build(candidates);

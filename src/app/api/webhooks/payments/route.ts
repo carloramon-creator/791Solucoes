@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PaymentProcessor } from '@/services/payment-processor';
 import { fetchVerifiedAsaasPayment } from '@/lib/asaas-webhook-verify';
+import { processWebsiteSubscriptionPayment } from '@/lib/website-subscriptions';
+
+export const maxDuration = 120;
 
 /**
  * Webhook Universal da Holding 791 Soluções
@@ -17,6 +20,11 @@ export async function POST(req: NextRequest) {
     if (body.event && body.payment) {
       const event = body.event;
 
+      if (typeof event === 'string' && event.startsWith('PAYMENT_')
+        && typeof body.payment.externalReference === 'string' && body.payment.externalReference.startsWith('website-subscription|')
+        && await processWebsiteSubscriptionPayment(body.payment)) {
+        return NextResponse.json({ received: true, provider: 'website_subscription' });
+      }
       // Se o pagamento foi confirmado
       if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
         const verified = await fetchVerifiedAsaasPayment(body.payment?.id);
@@ -26,6 +34,9 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ received: true, ignored: verified.reason });
         }
         const payment = verified.payment;
+        if (await processWebsiteSubscriptionPayment(payment)) {
+          return NextResponse.json({ received: true, provider: 'website_subscription' });
+        }
         if (typeof payment.externalReference === 'string' && payment.externalReference.startsWith('website|')) {
           return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
         }

@@ -4,6 +4,9 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { fetchVerifiedAsaasPayment } from '@/lib/asaas-webhook-verify';
 import { createClient } from '@supabase/supabase-js';
 import { releaseOverageBlock } from '@/lib/overage-block';
+import { processWebsiteSubscriptionPayment } from '@/lib/website-subscriptions';
+
+export const maxDuration = 120;
 
 export async function POST(req: Request) {
   try {
@@ -30,6 +33,11 @@ export async function POST(req: Request) {
     let payment = payload.payment || {};
     let externalRef = payment.externalReference || '';
 
+    if (typeof event === 'string' && event.startsWith('PAYMENT_')
+      && typeof externalRef === 'string' && externalRef.startsWith('website-subscription|')
+      && await processWebsiteSubscriptionPayment(payment)) {
+      return NextResponse.json({ received: true, provider: 'website_subscription' });
+    }
     // Websites têm conciliação própria e nunca entram no fluxo SaaS/fiscal.
     if (typeof externalRef === 'string' && externalRef.startsWith('website|')) {
       return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
@@ -46,6 +54,9 @@ export async function POST(req: Request) {
       }
       payment = verified.payment;
       externalRef = payment.externalReference || '';
+      if (await processWebsiteSubscriptionPayment(payment)) {
+        return NextResponse.json({ received: true, provider: 'website_subscription' });
+      }
       if (typeof externalRef === 'string' && externalRef.startsWith('website|')) {
         return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
       }

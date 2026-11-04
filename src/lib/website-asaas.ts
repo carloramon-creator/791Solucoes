@@ -14,6 +14,9 @@ type AsaasPayment = {
   installment?: string;
   installmentNumber?: number;
   deleted?: boolean;
+  subscription?: string;
+  confirmedDate?: string;
+  paymentDate?: string;
 };
 
 function object(value: unknown): Record<string, unknown> {
@@ -32,14 +35,32 @@ export function safeAsaasInvoice(value: unknown): string {
 function payment(value: unknown): AsaasPayment {
   const row = object(value);
   if (typeof row.id !== 'string' || !/^pay_[A-Za-z0-9]+$/.test(row.id)
-    || typeof row.customer !== 'string' || typeof row.externalReference !== 'string'
+    || typeof row.customer !== 'string' || (row.externalReference != null && typeof row.externalReference !== 'string')
     || typeof row.value !== 'number' || !Number.isFinite(row.value) || row.value <= 0
     || typeof row.dueDate !== 'string' || typeof row.status !== 'string'
     || !['PIX', 'BOLETO', 'CREDIT_CARD'].includes(String(row.billingType))
     || (row.installment !== undefined && row.installment !== null && typeof row.installment !== 'string')) {
     throw new Error('Dados de pagamento incompletos no Asaas.');
   }
-  return { ...row, invoiceUrl: safeAsaasInvoice(row.invoiceUrl) } as AsaasPayment;
+  return { ...row, externalReference: row.externalReference || '', invoiceUrl: safeAsaasInvoice(row.invoiceUrl) } as AsaasPayment;
+}
+
+export type WebsiteAsaasSubscription = {
+  id: string; customer: string; externalReference: string; value: number;
+  billingType: WebsitePaymentMethod; cycle: 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUALLY' | 'YEARLY'; status: string;
+  nextDueDate: string; deleted?: boolean;
+};
+function subscription(value: unknown): WebsiteAsaasSubscription {
+  const row = object(value);
+  if (typeof row.id !== 'string' || !/^sub_[A-Za-z0-9]+$/.test(row.id)
+    || typeof row.customer !== 'string' || typeof row.externalReference !== 'string'
+    || typeof row.value !== 'number' || !Number.isFinite(row.value) || row.value <= 0
+    || !['PIX', 'BOLETO', 'CREDIT_CARD'].includes(String(row.billingType))
+    || !['MONTHLY', 'QUARTERLY', 'SEMIANNUALLY', 'YEARLY'].includes(String(row.cycle))
+    || typeof row.status !== 'string' || typeof row.nextDueDate !== 'string') {
+    throw new Error('Assinatura Asaas incompleta ou inválida.');
+  }
+  return row as WebsiteAsaasSubscription;
 }
 
 export async function createWebsiteAsaas() {
@@ -55,7 +76,7 @@ export async function createWebsiteAsaas() {
       method: body ? 'POST' : 'GET',
       headers: { access_token: key, 'Content-Type': 'application/json', 'User-Agent': '791holding-websites' },
       ...(body ? { body: JSON.stringify(body) } : {}),
-      cache: 'no-store', signal: AbortSignal.timeout(20000),
+      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(20000),
     });
     if (!response.ok) {
       console.error(`[WEBSITES ASAAS] HTTP ${response.status} em ${body ? 'POST' : 'GET'}.`);
@@ -114,6 +135,41 @@ export async function createWebsiteAsaas() {
         ...(input.count === 1 ? { value: input.total_cents / 100 }
           : { installmentCount: input.count, totalValue: input.total_cents / 100 }),
       }));
+    },
+    async findSubscriptions(reference: string) {
+      return (await list(`/subscriptions?externalReference=${encodeURIComponent(reference)}`)).map(subscription);
+    },
+    async createSubscription(input: {
+      customer: string; method: WebsitePaymentMethod; cycle: WebsiteAsaasSubscription['cycle'];
+      amount_cents: number; due_date: string; reference: string; description: string;
+    }) {
+      return subscription(await request('/subscriptions', {
+        customer: input.customer, billingType: input.method, cycle: input.cycle,
+        value: input.amount_cents / 100, nextDueDate: input.due_date,
+        externalReference: input.reference, description: input.description,
+      }));
+    },
+    async getSubscription(id: string) {
+      if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');
+      return subscription(await request(`/subscriptions/${encodeURIComponent(id)}`));
+    },
+    async subscriptionReference(id: string) {
+      if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');
+      const row = await request(`/subscriptions/${encodeURIComponent(id)}`);
+      if (row.id !== id || (row.externalReference != null && typeof row.externalReference !== 'string')) {
+        throw new Error('Referência da assinatura Asaas inválida.');
+      }
+      return typeof row.externalReference === 'string' ? row.externalReference : '';
+    },
+    async subscriptionPayments(id: string) {
+      if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');
+      return (await list(`/subscriptions/${encodeURIComponent(id)}/payments`)).map(payment);
+    },
+    async getPayment(id: string) {
+      if (!/^pay_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de pagamento Asaas inválido.');
+      const row = payment(await request(`/payments/${encodeURIComponent(id)}`));
+      if (row.id !== id) throw new Error('Pagamento retornado não corresponde ao solicitado.');
+      return row;
     },
   };
 }

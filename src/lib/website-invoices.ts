@@ -9,7 +9,7 @@ import { lerDocumentoOficial } from '@/services/nfse/documento-oficial';
 import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
 import municipios from '@/services/nfse/municipios-ibge.json';
 
-type FiscalContract = {
+export type WebsiteFiscalSource = {
   id: string;
   total_cents: number;
   customer_snapshot: Record<string, unknown>;
@@ -21,12 +21,15 @@ type Reservation = {
 };
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 
-export function websiteInvoiceData(contract: FiscalContract, config: Record<string, unknown>, competence: string): DPSData {
+export function websiteInvoiceData(
+  contract: WebsiteFiscalSource, config: Record<string, unknown>, competence: string,
+  policy: 'manual_project_total' | 'automatic_after_payment' = 'manual_project_total',
+): DPSData {
   const now = dataHoraNacional().slice(0, 10);
   if (!validDate(competence) || competence > now || competence.slice(0, 4) !== '2026') {
     throw new Error('Informe uma competência válida de 2026, não futura. Revise IBS/CBS antes de emitir para 2027.');
   }
-  if (contract.plan_snapshot.invoice_policy !== 'manual_project_total') throw new Error('Esta contratação não é um projeto com emissão manual pelo total.');
+  if (contract.plan_snapshot.invoice_policy !== policy) throw new Error('Política fiscal da contratação incompatível com esta emissão.');
   const fiscal = validateWebsiteFiscalConfig(contract.plan_snapshot.fiscal_config);
   if (!fiscal.ok || !fiscal.data?.accountant_confirmed || fiscal.data.simples_percent === null) {
     throw new Error('Contrato sem enquadramento fiscal completo e confirmado. Revise a contratação; editar o catálogo não altera o histórico.');
@@ -86,7 +89,7 @@ export async function emitWebsiteInvoice(id: string, competence: string, confirm
   if (contractResult.error || !contractResult.data || configResult.error || !configResult.data?.value) {
     throw new Error('Não foi possível carregar contrato e configuração nacional da Holding.');
   }
-  const contract: FiscalContract = contractResult.data;
+  const contract: WebsiteFiscalSource = contractResult.data;
   const config: Record<string, unknown> = configResult.data.value;
   const data = websiteInvoiceData(contract, config, competence);
   const summary = {
@@ -104,18 +107,28 @@ export async function emitWebsiteInvoice(id: string, competence: string, confirm
       ? 'Nota deste contrato já reservada/enviada. Confira o histórico e o portal nacional; não repita a emissão.'
       : 'Não foi possível reservar a operação fiscal. Nenhuma nota foi enviada.');
   }
-  const reservation: Reservation = reserved;
+  return deliverWebsiteInvoice(reserved, data, config, contract.customer_snapshot, {
+    website_contract_id: id, invoice_policy: 'manual_project_total',
+  });
+}
+
+async function deliverWebsiteInvoice(
+  reservation: Reservation, data: DPSData, config: Record<string, unknown>,
+  customer: Record<string, unknown>, origin: Record<string, string>,
+) {
+  const competence = data.nacional!.competencia;
+  const value = data.servico.valorServicos;
   data.numero = reservation.dps_number;
   let authorized = false;
   try {
     const xml = xmlService.generateDPS(data);
     const metadata = {
       ambiente: 'producao', provider: 'nacional', competencia: competence, mes_ref: competence.slice(0, 7),
-      operacao_nacional: reservation.operation, website_contract_id: id, invoice_policy: 'manual_project_total',
+      operacao_nacional: reservation.operation, ...origin,
       numero_dps: data.numero, serie_dps: data.serie, dps_xml: xml,
     };
     const { error: controlError } = await db.from('system_settings').update({
-      value: { ...metadata, status: 'enviando', competencia: competence, valor: contract.total_cents / 100 },
+      value: { ...metadata, status: 'enviando', competencia: competence, valor: value },
       updated_at: new Date().toISOString(),
     }).eq('id', reservation.operation).select('id').single();
     if (controlError) throw new Error('Não foi possível persistir o controle fiscal. Nenhuma DPS enviada.');
@@ -132,11 +145,10 @@ export async function emitWebsiteInvoice(id: string, competence: string, confirm
       .eq('id', reservation.id).select('id').single();
     if (resultError) throw new Error('Nota autorizada, mas o vínculo local falhou. Não reenvie; confira o portal nacional.');
     const { error: authorizedControlError } = await db.from('system_settings').update({
-      value: { ...metadata, status: 'authorized', competencia: competence, valor: contract.total_cents / 100, result },
+      value: { ...metadata, status: 'authorized', competencia: competence, valor: value, result },
       updated_at: new Date().toISOString(),
     }).eq('id', reservation.operation).select('id').single();
     if (authorizedControlError) throw new Error('Nota autorizada, mas o controle fiscal falhou. Não reenvie.');
-    const customer = contract.customer_snapshot;
     const { data: history, error: historyError } = await db.from('system_invoices').insert({
       invoice_number: result.invoiceId, status: 'authorized', client_name: data.tomador.razaoSocial,
       client_document: data.tomador.cnpj || data.tomador.cpf, value: data.servico.valorServicos,
@@ -157,18 +169,50 @@ export async function emitWebsiteInvoice(id: string, competence: string, confirm
     const { error: linkError } = await db.from('holding_website_invoices').update({ system_invoice_id: history.id })
       .eq('id', reservation.id).select('id').single();
     if (linkError) throw new Error('Nota autorizada e salva, mas o vínculo ao histórico falhou. Não reenvie.');
-    return { sent: true, invoice_number: result.invoiceId, message: 'NFS-e nacional autorizada pelo valor total do projeto.' };
+    return { sent: true, invoice_number: result.invoiceId, message: 'NFS-e nacional autorizada pelo valor total contratado.' };
   } catch (error) {
     if (!authorized) {
       const { error: reviewError } = await db.from('holding_website_invoices').update({ status: 'review' })
         .eq('id', reservation.id);
       if (reviewError) console.error('[WEBSITE NFS-E] Falha ao sinalizar revisão. Operação permanece bloqueada.');
       const { error: controlError } = await db.from('system_settings').update({
-        value: { status: 'verificar_no_portal', competencia: competence, valor: contract.total_cents / 100, website_contract_id: id },
+        value: { status: 'verificar_no_portal', competencia: competence, valor: value, ...origin },
         updated_at: new Date().toISOString(),
       }).eq('id', reservation.operation);
       if (controlError) console.error('[WEBSITE NFS-E] Controle fiscal pendente de revisão administrativa.');
     }
+
     throw error;
   }
+}
+
+export async function validateWebsiteSubscriptionFiscal(source: WebsiteFiscalSource) {
+  const { data, error } = await db.from('system_settings').select('value').eq('id', 'nfse_config').single();
+  if (error || !data?.value) throw new Error('Não foi possível carregar o emissor nacional da Holding.');
+  return { config: data.value as Record<string, unknown>, data: websiteInvoiceData(
+    source, data.value, dataHoraNacional().slice(0, 10), 'automatic_after_payment',
+  ) };
+}
+
+export async function emitWebsiteSubscriptionInvoice(paymentId: string, source: WebsiteFiscalSource, competence: string) {
+  const { data: configRow, error: configError } = await db.from('system_settings').select('value').eq('id', 'nfse_config').single();
+  if (configError || !configRow?.value) throw new Error('Emissor nacional indisponível.');
+  const config: Record<string, unknown> = configRow.value;
+  const data = websiteInvoiceData(source, config, competence, 'automatic_after_payment');
+  const { data: reserved, error } = await db.rpc('holding_reserve_website_subscription_invoice', {
+    p_payment_id: paymentId, p_series: data.serie, p_issuer_document: data.prestador.cnpj,
+  }).single<Reservation>();
+  if (error || !reserved) {
+    if (error?.code === '23505') {
+      const { data: existing, error: existingError } = await db.from('holding_website_invoices')
+        .select('id,status').eq('subscription_payment_id', paymentId).maybeSingle();
+      if (existingError || !existing) throw new Error('Conflito fiscal sem reserva recuperável. Revisão administrativa necessária.');
+      console.warn('[WEBSITE NFS-E] Operação recorrente já reservada; nenhum novo envio.');
+      return { sent: false, message: 'Operação já reservada. Confira o histórico e o portal nacional.' };
+    }
+    throw new Error('Falha ao reservar a NFS-e do pagamento. Nenhuma DPS enviada.');
+  }
+  return deliverWebsiteInvoice(reserved, data, config, source.customer_snapshot, {
+    website_subscription_id: source.id, website_subscription_payment_id: paymentId, invoice_policy: 'automatic_after_payment',
+  });
 }

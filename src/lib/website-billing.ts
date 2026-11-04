@@ -10,7 +10,7 @@ type Customer = HoldingCustomer & {
 };
 export const websiteReference = (id: string, kind: 'deposit' | 'balance') => `website|${id}|${kind}`;
 
-async function customerForAsaas(id: string, asaas: WebsiteAsaas, allowCreate: boolean) {
+export async function customerForAsaas(id: string, asaas: WebsiteAsaas, allowCreate: boolean) {
   const { data, error } = await db.from('holding_customers').select('*').eq('id', id).single();
   if (error) throw new Error('Não foi possível consultar o cliente da Holding.');
   const customer: Customer = data;

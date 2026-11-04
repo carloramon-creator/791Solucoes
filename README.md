@@ -8,8 +8,10 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 banco do Glass ou do Barber. Permite cadastrar, editar e inativar confeccao de
 websites, hospedagem, manutencao e alteracoes adicionais, com preco em reais,
 descricao comercial e escopo obrigatorio. Confeccao e alteracoes sao cobrancas
-unicas; hospedagem e manutencao aceitam periodicidade mensal ou anual.
-O preco anual e o total do ano, nao o equivalente mensal. O catalogo inicia
+unicas; hospedagem e manutencao possuem precos por ciclo mensal, trimestral,
+semestral e anual no mesmo produto. Os precos sao os totais do periodo,
+nao equivalentes mensais. Deixe em branco os ciclos nao oferecidos e escolha
+um ciclo padrao preenchido. O catalogo inicia
 vazio: nao ha precos comerciais presumidos.
 
 Antes de usar, aplicar no banco da Holding a migration
@@ -47,7 +49,8 @@ Fluxo:
 2. Em **Assinaturas > Websites**, selecionar cliente ativo e produto ativo de
    cobranca unica (confeccao/alteracoes), definir preco total negociado, forma
    de pagamento, entrada opcional e de 1 a 12 parcelas mensais do saldo.
-   Produtos de hospedagem/manutencao recorrente continuam somente no catalogo.
+   Produtos de hospedagem/manutencao usam a tela **Assinaturas recorrentes**,
+   acessivel na mesma pagina Websites; ver instrucoes abaixo.
 3. Conferir a previa e **Salvar sem cobrar**. A RPC grava contrato e parcelas
    atomicamente; a chave de tentativa impede duplicacao no reenvio da mesma
    solicitacao. O contrato preserva nome/documento/e-mail/endereco do cliente e
@@ -102,7 +105,7 @@ Asaas tambem exige `menu.clientes`. Administradores/bootstrap seguem a
 convencao existente; demais perfis precisam receber os novos recursos.
 
 Testes sem chamadas reais:
-`node --test scripts/tests/website-plans.test.mjs scripts/tests/website-contracts.test.mjs scripts/tests/website-invoices.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
+`node --test scripts/tests/website-plans.test.mjs scripts/tests/website-contracts.test.mjs scripts/tests/website-invoices.test.mjs scripts/tests/website-subscriptions.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
 Banco PostgreSQL descartavel:
 `PGLITE_MODULE=file:///caminho/node_modules/@electric-sql/pglite/dist/index.js node --test scripts/tests/website-contracts-db.integration.mjs`.
 Esse teste cria somente tabelas ficticias em memoria; nao aponta para
@@ -121,12 +124,11 @@ nacional, NBS, descricao e percentual. Alterar um campo desmarca a confirmacao. 
 formato dos codigos nao comprova que o enquadramento e correto.
 
 A contratacao preserva uma copia desses dados no `plan_snapshot`; editar o
-produto nao reclassifica contratos existentes. A politica prevista e manual
+produto nao reclassifica contratos existentes. A politica e manual
 pelo valor total para projetos, independente de pagamento, e automatica apos
 pagamento para servicos recorrentes. Entrada bancaria nao determina receita
 tributavel: emprestimos, aportes e transferencias nao sao gatilhos de NFS-e.
-**A automacao recorrente Websites ainda nao esta implementada.** Confirmar
-dados no catalogo nao emite nota. O emissor nacional existente de licenciamento
+Confirmar dados no catalogo nao emite nota. O emissor nacional existente de licenciamento
 nao foi alterado; nao houve mudanca em `nfse_config`, `system_plans` ou Asaas fiscal.
 
 ### NFS-e manual de projetos Websites
@@ -166,6 +168,82 @@ O campo `cTribMun` **continua no XSD nacional como opcional** (`minOccurs=0`),
 nao foi abolido: preencher o complemento de 3 digitos somente quando exigido.
 Fonte oficial: [documentacao atual da NFS-e nacional](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual),
 pacote `nfse-esquemas_xsd-v1-01-20260209.zip`.
+
+### Assinaturas recorrentes Websites e precos personalizados
+
+Aplicar **uma vez, somente na Holding**, depois das tres migrations acima:
+`supabase/migrations/20261104220000_holding_website_subscriptions.sql`.
+Ela preserva os precos existentes, convertendo cada produto recorrente para
+uma tabela inicialmente com apenas o seu ciclo/preco atual, sem presumir
+descontos ou inventar valores dos outros ciclos. Nao reaplicar o SQL anterior.
+Nao modifica planos, tabelas ou configuracoes Glass/Barber.
+
+1. Em **Planos > Websites**, preencher os precos totais dos ciclos oferecidos
+   (mensal, trimestral, semestral, anual) e o enquadramento fiscal confirmado.
+2. Em **Assinaturas > Websites > Assinaturas recorrentes**, selecionar cliente,
+   produto e ciclo. O preco do catalogo e sugerido, mas **Valor personalizado
+   por periodo** pode ser editado livremente na contratacao. Isso nao edita o
+   catalogo nem contratos de outros clientes. O ciclo, preco sugerido, preco
+   negociado, endereco e fiscal ficam preservados no contrato.
+3. Confirmar as condicoes tributarias e salvar sem cobrar. A RPC e atomica e
+   impede repetir a mesma chave de tentativa com outros dados.
+4. **Ativar no Asaas** exige confirmacao e gera uma assinatura independente
+   (`MONTHLY`, `QUARTERLY`, `SEMIANNUALLY`, `YEARLY`). Pix/boleto geram cobrancas
+   que o cliente paga a cada periodo; nao sao debito automatico nem Pix
+   Automatico. Cartao e informado na fatura hospedada do Asaas; a Holding nao
+   coleta nem armazena cartao/token. O comportamento de renovacao do cartao e
+   sujeito a autorizacao do Asaas/cliente.
+5. Os webhooks existentes `/api/webhooks/asaas` e `/api/webhooks/payments`
+   encaminham estas assinaturas para um processador Websites proprio, nunca
+   para `PaymentProcessor`. E necessario manter o webhook da Holding ativo
+   no Asaas com eventos `PAYMENT_CONFIRMED` e `PAYMENT_RECEIVED`.
+   Nao ha registro/alteracao automatica do webhook compartilhado nesta entrega.
+6. Cada pagamento e reconsultado com a chave da Holding. Exigem-se assinatura
+   vinculada, ambiente, cliente, referencia (quando presente), ciclo e valor
+   compativeis. Nao sao aceitos parcelamentos ou valores alterados no Asaas.
+   Quando a referencia nao vem na cobranca, identifica-se pelo ID da assinatura;
+   assinaturas Websites ainda sem vinculo local nao caem no fluxo SaaS.
+7. Apenas `CONFIRMED`/`RECEIVED`, nao excluidos e em producao, geram NFS-e
+   nacional automaticamente. `RECEIVED_IN_CASH` nao dispara este fluxo.
+   Competencia: primeira `confirmedDate` valida (ou `paymentDate` quando
+   ausente), preservada no banco mesmo se houver aviso posterior de recebimento.
+   Valor: **total negociado do periodo**, inclusive anual, sem deduzir taxas
+   Asaas e sem emitir notas mensais fracionadas de uma anuidade.
+8. **Consultar Asaas** nunca cria outra assinatura, mas reconsulta cobrancas e
+   pode emitir notas de pagamentos confirmados ainda sem reserva fiscal.
+   A interface avisa isso antes da consulta. Notas reservadas/em revisao jamais
+   sao reenviadas automaticamente; alertas fiscais ficam visiveis por cobranca.
+   Esta consulta tambem recupera pagamentos quando uma notificacao foi perdida.
+
+`holding_website_subscriptions` e `holding_website_subscription_payments` tem
+RLS e acesso somente por service role; APIs exigem as permissoes Websites,
+Clientes e, para criar/ativar/conciliar com emissao, Notas Fiscais.
+Referencia isolada: `website-subscription|<uuid>`. Clientes Asaas existentes
+nao sao sobrescritos. Locks compare-and-set e estados `processing`/`review`
+impedem repetir POST apos timeout; recuperacao e por leitura, nunca por nova
+criacao presumida. Interrupcao abrupta exige revisao administrativa.
+
+O mesmo emissor/certificado e sequencia da Holding sao usados com origem fiscal
+exclusiva por pagamento em `holding_website_invoices`. A chave unica impede
+notas duplicadas entre webhooks, consultas e competencias diferentes.
+Outra cobranca para o mesmo vencimento da assinatura exige revisao, evitando
+emitir duas notas do mesmo periodo. Historico/controlador fiscal continuam
+deduplicados na receita da Holding, sem lancamento bancario automatico.
+Sandbox nao emite nota real. Pagamentos de 2027 ficam com erro fiscal visivel,
+sem reserva/envio, ate a revisao IBS/CBS do emissor compartilhado.
+
+Pausa/cancelamento e feito no **painel Asaas**, nao apaga contrato/historico
+local e nao cancela notas fiscais. Pausa nao elimina cobrancas ja geradas;
+remocao pode excluir cobrancas pendentes/vencidas conforme as regras Asaas.
+Consultar depois para conferir; divergencias/remocoes podem exigir revisao.
+Estornos/chargebacks recebidos pelo webhook (se cadastrados nos eventos) ou
+detectados pela consulta geram alerta para revisar eventual nota autorizada,
+sem cancelamento/reemissao automatica.
+
+Documentacao Asaas:
+[criacao de assinatura](https://docs.asaas.com/docs/creating-a-subscription),
+[eventos de pagamento](https://docs.asaas.com/docs/payment-events),
+[FAQ de assinaturas](https://docs.asaas.com/docs/subscriptions-faq).
 
 ## Comprovante REP-P centralizado (somente homologacao)
 

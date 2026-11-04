@@ -64,6 +64,7 @@ function harness({ local = contract(), settings = config(), timeout = false, fai
     select() { return this; }
     eq(key, value) { this.filters.push([key, value]); return this; }
     single() { this.singleRow = true; return this; }
+    maybeSingle() { this.singleRow = true; return this; }
     update(value) { this.updateValue = value; return this; }
     insert(value) { this.insertValue = value; return this; }
     then(resolve, reject) {
@@ -85,12 +86,14 @@ function harness({ local = contract(), settings = config(), timeout = false, fai
   const db = {
     from: (table) => new Query(table),
     rpc: (name, args) => ({ single: async () => {
-      assert.equal(name, 'holding_reserve_website_invoice');
-      assert.equal(args.p_contract_id, id);
+      const recurring = name === 'holding_reserve_website_subscription_invoice';
+      assert.equal(name, recurring ? 'holding_reserve_website_subscription_invoice' : 'holding_reserve_website_invoice');
+      assert.equal(recurring ? args.p_payment_id : args.p_contract_id, id);
       if (tables.holding_website_invoices.length) return { error: { code: '23505' } };
       const row = {
-        id: 'reservation-id', contract_id: id, operation: `nfse_producao_website_${id}`,
-        dps_number: '42', series: args.p_series, competence: args.p_competence, status: 'preparing',
+        id: 'reservation-id', contract_id: recurring ? null : id, subscription_payment_id: recurring ? id : null,
+        operation: `nfse_producao_website_${recurring ? 'subscription_' : ''}${id}`,
+        dps_number: '42', series: args.p_series, competence: args.p_competence || '2026-11-04', status: 'preparing',
       };
       tables.holding_website_invoices.push(row);
       tables.system_settings.push({ id: row.operation, value: { status: 'preparando' } });
@@ -154,6 +157,18 @@ test('concurrent confirmations reserve and send only one DPS', async () => {
   ]);
   assert.equal(outcomes.filter((r) => r.status === 'fulfilled').length, 1);
   assert.equal(outcomes.filter((r) => r.status === 'rejected').length, 1);
+  assert.equal(h.calls.length, 1);
+});
+
+test('recurring invoices reuse the generic national pipeline with separate payment origin and idempotent reservation', async () => {
+  const source = contract(); source.plan_snapshot.invoice_policy = 'automatic_after_payment'; source.total_cents = 99000;
+  const h = harness();
+  assert.equal((await h.emitWebsiteSubscriptionInvoice(id, source, '2026-11-04')).sent, true);
+  assert.equal(h.calls[0][0].servico.valorServicos, 990);
+  assert.equal(h.tables.system_invoices[0].metadata.website_subscription_payment_id, id);
+  assert.equal(h.tables.system_invoices[0].metadata.website_contract_id, undefined);
+  assert.equal(h.tables.system_invoices[0].metadata.invoice_policy, 'automatic_after_payment');
+  assert.equal((await h.emitWebsiteSubscriptionInvoice(id, source, '2026-11-03')).sent, false);
   assert.equal(h.calls.length, 1);
 });
 

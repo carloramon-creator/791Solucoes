@@ -12,6 +12,8 @@ import {
   WEBSITE_CATEGORIES,
   validateWebsitePlan,
   websiteBillingCycles,
+  websiteRecurringPrices,
+  WEBSITE_RECURRING_CYCLES,
   type WebsiteFiscalConfig,
   type WebsiteBillingCycle,
   type WebsiteCategory,
@@ -27,6 +29,7 @@ type PlanForm = {
   price: string;
   active: boolean;
   fiscal_config: WebsiteFiscalConfig;
+  cycle_prices: Record<string, string>;
 };
 
 const EMPTY_FISCAL: WebsiteFiscalConfig = {
@@ -37,6 +40,7 @@ const EMPTY_FORM: PlanForm = {
   name: '', description: '', scope: '', category: 'creation',
   billing_cycle: 'one_time', price: '', active: true,
   fiscal_config: EMPTY_FISCAL,
+  cycle_prices: {},
 };
 const selectClass = `${inputClass} appearance-none pr-10`;
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -94,6 +98,7 @@ export default function PlanosWebsitesPage() {
       price: (plan.price_cents / 100).toFixed(2),
       active: plan.active,
       fiscal_config: plan.fiscal_config ? { ...plan.fiscal_config } : { ...EMPTY_FISCAL },
+      cycle_prices: Object.fromEntries(Object.entries(websiteRecurringPrices(plan)).map(([key, value]) => [key, (value / 100).toFixed(2)])),
     } : { ...EMPTY_FORM });
   }
 
@@ -111,6 +116,10 @@ export default function PlanosWebsitesPage() {
       price_cents: Math.round(Number(form.price) * 100),
       active: form.active,
       fiscal_config: form.fiscal_config,
+      recurring_prices: form.billing_cycle === 'one_time' ? {} : Object.fromEntries(
+        WEBSITE_RECURRING_CYCLES.filter((cycle) => (cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle])?.trim())
+          .map((cycle) => [cycle, Math.round(Number(cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle]) * 100)]),
+      ),
     });
     if (!validated.ok) {
       setSaveError(validated.error);
@@ -163,7 +172,7 @@ export default function PlanosWebsitesPage() {
       </header>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-        <strong>Catálogo comercial.</strong> Cadastre a confecção como projeto de cobrança única e a hospedagem ou manutenção como serviço mensal ou anual.
+        <strong>Catálogo comercial.</strong> Cadastre a confecção como projeto de cobrança única e a hospedagem ou manutenção com preços mensais, trimestrais, semestrais ou anuais.
         O parcelamento de projetos será definido na contratação. Este cadastro não cria assinaturas no Asaas nem emite notas fiscais.
       </div>
 
@@ -194,7 +203,10 @@ export default function PlanosWebsitesPage() {
                   <select className={selectClass} value={form.category} onChange={(event) => {
                     const category = event.target.value as WebsiteCategory;
                     const cycles = websiteBillingCycles(category);
-                    setForm({ ...form, category, billing_cycle: cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0] });
+                    const billing_cycle = cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0];
+                    setForm({ ...form, category, billing_cycle,
+                      price: billing_cycle === form.billing_cycle ? form.price : (form.cycle_prices[billing_cycle] || ''),
+                    });
                   }}>
                     {Object.entries(WEBSITE_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
@@ -202,21 +214,38 @@ export default function PlanosWebsitesPage() {
                 </span>
               </label>
               <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
-                <span>Modalidade de cobrança *</span>
+                <span>{form.billing_cycle === 'one_time' ? 'Modalidade de cobrança *' : 'Ciclo padrão do catálogo *'}</span>
                 <span className="relative block">
                   <select className={selectClass} value={form.billing_cycle}
-                    onChange={(event) => setForm({ ...form, billing_cycle: event.target.value as WebsiteBillingCycle })}>
+                    onChange={(event) => setForm({ ...form, billing_cycle: event.target.value as WebsiteBillingCycle,
+                      cycle_prices: { ...form.cycle_prices, [form.billing_cycle]: form.price },
+                      price: form.cycle_prices[event.target.value] || '',
+                    })}>
                     {websiteBillingCycles(form.category).map((cycle) => <option key={cycle} value={cycle}>{WEBSITE_BILLING_CYCLES[cycle]}</option>)}
                   </select>
                   <ChevronDown aria-hidden="true" size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
                 </span>
               </label>
-              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
-                <span>{form.billing_cycle === 'one_time' ? 'Preço total' : form.billing_cycle === 'monthly' ? 'Preço mensal' : 'Preço anual'} (R$) *</span>
+              {form.billing_cycle === 'one_time' && <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
+                <span>Preço total (R$) *</span>
                 <input type="number" inputMode="decimal" min="0.01" max="9999999.99" step="0.01" required
                   className={inputClass} value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="0,00" />
-              </label>
+              </label>}
             </div>
+            {form.billing_cycle !== 'one_time' && <section className="space-y-3">
+              <h3 className="font-bold text-slate-800">Preços por ciclo</h3>
+              <p className="text-sm text-slate-500">Informe o total do período, não o equivalente mensal. Deixe em branco os ciclos não oferecidos; preencha o ciclo padrão. O valor pode ser personalizado ao contratar, sem mudar estes preços.</p>
+              <div className="grid gap-5 md:grid-cols-2">
+                {WEBSITE_RECURRING_CYCLES.map((cycle) => <label key={cycle} className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
+                  <span>{WEBSITE_BILLING_CYCLES[cycle]} (R$){cycle === form.billing_cycle ? ' *' : ''}</span>
+                  <input className={inputClass} type="number" step="0.01" min="0.01" max="9999999.99"
+                    required={cycle === form.billing_cycle} value={cycle === form.billing_cycle ? form.price : (form.cycle_prices[cycle] || '')}
+                    onChange={(event) => setForm({ ...form, ...(cycle === form.billing_cycle ? { price: event.target.value } : {}),
+                      cycle_prices: { ...form.cycle_prices, [cycle]: event.target.value },
+                    })} />
+                </label>)}
+              </div>
+            </section>}
             {form.billing_cycle === 'one_time' && (
               <p className="text-sm text-slate-500">
                 Informe o valor total do projeto, não o valor da parcela. Cobrança única significa um projeto sem renovação recorrente:
@@ -240,10 +269,10 @@ export default function PlanosWebsitesPage() {
               <p className="text-sm text-slate-600">
                 {form.billing_cycle === 'one_time'
                   ? 'Regra: emissão manual de uma NFS-e pelo valor total do projeto, com confirmação explícita, independentemente do pagamento.'
-                  : 'Regra prevista: emissão automática de NFS-e após confirmação do pagamento da assinatura.'}
+                  : 'Regra: emissão automática de NFS-e após confirmação do pagamento da assinatura.'}
                 {' '}Entradas bancárias, empréstimos, aportes e transferências não são gatilhos fiscais.
                 Estes dados não alteram a configuração fiscal do Glass ou do Barber. Projetos podem ser emitidos pelo botão no contrato, após validação.
-                A automação fiscal de assinaturas Websites ainda não está habilitada.
+                Nas assinaturas, a competência será a data de confirmação do pagamento e a nota terá o valor integral do período.
               </p>
               <div className="grid gap-5 md:grid-cols-2">
                 {([
@@ -325,6 +354,11 @@ export default function PlanosWebsitesPage() {
                   {currency.format(plan.price_cents / 100)}
                   <span className="ml-2 text-xs font-medium text-slate-500">{WEBSITE_BILLING_CYCLES[plan.billing_cycle]}</span>
                 </p>
+                {plan.billing_cycle !== 'one_time' && <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                  {WEBSITE_RECURRING_CYCLES.filter((cycle) => websiteRecurringPrices(plan)[cycle]).map((cycle) => <li key={cycle}>
+                    {WEBSITE_BILLING_CYCLES[cycle]}: {currency.format(websiteRecurringPrices(plan)[cycle]! / 100)}
+                  </li>)}
+                </ul>}
                 {plan.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600 break-words">{plan.description}</p>}
                 <div className="mt-4 flex-1 border-t border-slate-100 pt-4">
                   <h3 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h3>

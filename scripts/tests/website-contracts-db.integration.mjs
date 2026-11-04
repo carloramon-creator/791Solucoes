@@ -178,4 +178,63 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
     const { rows } = await db.query("select value from public.system_settings where id='nfse_sequencia_producao_1'");
     assert.equal(rows[0].value.numero, 51);
   });
+  await t.test('recurring migration preserves projects and enables independent cycle prices and client-specific amounts', async () => {
+    await db.exec(await readFile('supabase/migrations/20261104220000_holding_website_subscriptions.sql', 'utf8'));
+    await db.query(`update public.holding_website_plans set category='hosting',billing_cycle='monthly',price_cents=10000,
+      recurring_prices='{"monthly":10000,"quarterly":28000,"semiannual":53000,"annual":99000}',fiscal_config=$1 where id=$2`,
+    [JSON.stringify(fiscalConfig), plan]);
+    for (const prices of ['[]', '{"monthly":10000,"quarterly":0}', '{"monthly":9999}', '{"monthly":10000,"bad":10}']) {
+      await assert.rejects(db.query('update public.holding_website_plans set recurring_prices=$1 where id=$2', [prices, plan]), /check constraint/);
+    }
+    const request = '30000000-0000-4000-8000-000000000005';
+    const createSub = (amount = 25000, cycle = 'quarterly') => db.query(
+      "select public.holding_create_website_subscription($1,$2,$3,$4,'PIX','2026-11-10',$5) as id",
+      [request, customer, plan, amount, cycle],
+    );
+    const subId = (await createSub()).rows[0].id;
+    assert.equal((await createSub()).rows[0].id, subId);
+    await assert.rejects(createSub(26000), /dados diferentes/);
+    await assert.rejects(createSub(25000, 'annual'), /dados diferentes/);
+    const { rows } = await db.query('select * from public.holding_website_subscriptions where id=$1', [subId]);
+    assert.equal(rows[0].amount_cents, 25000);
+    assert.equal(rows[0].plan_snapshot.catalog_price_cents, 28000);
+    assert.equal(rows[0].plan_snapshot.billing_cycle, 'quarterly');
+    assert.equal(rows[0].plan_snapshot.competence_policy, 'payment_confirmation');
+    await db.query("update public.holding_website_plans set recurring_prices='{\"monthly\":10000}',fiscal_config=null where id=$1", [plan]);
+    assert.deepEqual((await db.query('select plan_snapshot from public.holding_website_subscriptions where id=$1', [subId])).rows[0].plan_snapshot.fiscal_config, fiscalConfig);
+    await db.query("update public.holding_website_subscriptions set asaas_subscription_id='sub_test',asaas_customer_id='cus_test',asaas_environment='production',billing_state='issued' where id=$1", [subId]);
+    const record = (status = 'PENDING', paidOn = null, payment = 'pay_test', due = '2026-11-10') => db.query(
+      'select public.holding_record_website_subscription_payment($1,$2,25000,$3,$4,$5,$6) as id',
+      [subId, payment, due, paidOn, status, 'https://asaas.com/i/test'],
+    );
+    const paymentId = (await record()).rows[0].id;
+    const reserve = () => db.query("select * from public.holding_reserve_website_subscription_invoice($1,'1','11222333000181')", [paymentId]);
+    await assert.rejects(reserve(), /Somente pagamento confirmado/);
+    assert.equal((await record('CONFIRMED', '2026-11-04')).rows[0].id, paymentId);
+    const results = await Promise.allSettled([reserve(), reserve()]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    const invoice = results.find((result) => result.status === 'fulfilled').value.rows[0];
+    assert.equal(invoice.contract_id, null);
+    assert.equal(invoice.subscription_payment_id, paymentId);
+    assert.equal(invoice.competence.toISOString().slice(0, 10), '2026-11-04');
+    assert.equal(invoice.dps_number, '52');
+    await record('RECEIVED', '2026-11-07');
+    const date = (await db.query('select paid_on from public.holding_website_subscription_payments where id=$1', [paymentId])).rows[0].paid_on;
+    assert.equal(date.toISOString().slice(0, 10), '2026-11-04');
+    await assert.rejects(record('CONFIRMED', '2026-11-04', 'pay_duplicate'), /unique constraint/);
+    await db.query("update public.holding_website_subscriptions set asaas_environment='sandbox' where id=$1", [subId]);
+    const sandboxId = (await record('CONFIRMED', '2026-11-04', 'pay_sandbox', '2027-02-10')).rows[0].id;
+    await assert.rejects(db.query("select * from public.holding_reserve_website_subscription_invoice($1,'1','11222333000181')", [sandboxId]), /Somente pagamento confirmado/);
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`);
+      for (const table of ['holding_website_subscriptions', 'holding_website_subscription_payments']) {
+        await assert.rejects(db.query(`select * from public.${table}`), /permission denied/);
+      }
+      await assert.rejects(createSub(), /permission denied/);
+      await assert.rejects(record(), /permission denied/);
+      await assert.rejects(reserve(), /permission denied/);
+      await db.exec('reset role');
+    }
+    assert.equal((await db.query('select count(*)::integer as count from public.holding_website_invoices where contract_id is not null')).rows[0].count, 2);
+  });
 });

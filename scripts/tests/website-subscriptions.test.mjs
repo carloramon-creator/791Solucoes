@@ -1,0 +1,272 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import ts from 'typescript';
+
+function load(path, dependencies = {}, globals = {}) {
+  const source = ts.transpileModule(readFileSync(path, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  }).outputText;
+  const mod = { exports: {} };
+  new Function('require', 'module', 'exports', ...Object.keys(globals), source)((name) => {
+    assert.ok(name in dependencies, `Unexpected dependency ${name}`);
+    return dependencies[name];
+  }, mod, mod.exports, ...Object.values(globals));
+  return mod.exports;
+}
+const customers = load('src/lib/holding-customers.ts');
+const contracts = load('src/lib/website-contracts.ts', { '@/lib/holding-customers': customers });
+const catalog = load('src/lib/website-plans.ts');
+const terms = load('src/lib/website-subscription-terms.ts', {
+  '@/lib/holding-customers': customers, '@/lib/website-contracts': contracts, '@/lib/website-plans': catalog,
+});
+const id = '10000000-0000-4000-8000-000000000001';
+const paymentId = '20000000-0000-4000-8000-000000000001';
+const row = (patch = {}) => ({
+  id, customer_id: id, plan_id: id, customer_snapshot: { name: 'Cliente ficticio', document: '52998224725' },
+  plan_snapshot: { name: 'Hospedagem', scope: 'Backup', invoice_policy: 'automatic_after_payment', billing_cycle: 'quarterly' },
+  amount_cents: 25550, payment_method: 'PIX', first_due_date: '2026-11-20',
+  asaas_environment: 'production', asaas_subscription_id: 'sub_test', asaas_customer_id: 'cus_test',
+  billing_state: 'issued', remote_status: 'ACTIVE', ...patch,
+});
+const payment = (patch = {}) => ({
+  id: 'pay_test', subscription: 'sub_test', customer: 'cus_test', value: 255.5, dueDate: '2026-11-20',
+  confirmedDate: '2026-11-04', paymentDate: '2026-11-05', status: 'CONFIRMED', billingType: 'PIX',
+  externalReference: terms.websiteSubscriptionReference(id), invoiceUrl: 'https://asaas.com/i/test', ...patch,
+});
+const remote = (patch = {}) => ({
+  id: 'sub_test', customer: 'cus_test', billingType: 'PIX', cycle: 'QUARTERLY', value: 255.5,
+  externalReference: terms.websiteSubscriptionReference(id), status: 'ACTIVE', nextDueDate: '2027-02-20', ...patch,
+});
+
+function harness({ local = row(), current = payment(), environment = 'production', sendFail = false, lookupFail = false, createTimeout = false, matches = [remote()] } = {}) {
+  const tables = {
+    holding_website_subscriptions: local ? [structuredClone(local)] : [],
+    holding_website_subscription_payments: [], holding_website_invoices: [],
+  };
+  const calls = [], sends = [], writes = [];
+  class Query {
+    constructor(table) { assert.ok(table in tables, `Cross-boundary table ${table}`); this.table = table; this.filters = []; }
+    select() { return this; }
+    eq(key, value) { this.filters.push([key, value]); return this; }
+    update(value) { this.value = value; return this; }
+    single() { this.singleRow = true; return this; }
+    maybeSingle() { this.singleRow = true; return this; }
+    then(resolve, reject) {
+      if (lookupFail && this.table === 'holding_website_subscriptions') return Promise.resolve({ error: { code: 'TEST' } }).then(resolve, reject);
+      const selected = tables[this.table].filter((r) => this.filters.every(([k, v]) => r[k] === v));
+      if (this.value) {
+        writes.push({ table: this.table, value: this.value });
+        selected.forEach((r) => Object.assign(r, this.value));
+      }
+      return Promise.resolve({ data: this.singleRow ? selected[0] || null : selected, error: null }).then(resolve, reject);
+    }
+  }
+  const asaas = {
+    environment,
+    getPayment: async (id) => { calls.push(['GET payment', id]); return current; },
+    getSubscription: async () => { calls.push(['GET subscription']); return remote(); },
+    subscriptionReference: async () => remote().externalReference,
+    subscriptionPayments: async () => [current],
+    findSubscriptions: async () => { calls.push(['GET subscriptions']); return matches; },
+    createSubscription: async (input) => { calls.push(['POST subscription', input]); if (createTimeout) throw new Error('test timeout'); return remote({ nextDueDate: input.due_date }); },
+  };
+  const api = load('src/lib/website-subscriptions.ts', {
+    '@/lib/supabase-server': { supabaseServer: {
+      from: (table) => new Query(table),
+      rpc: async (name, args) => {
+        assert.equal(name, 'holding_record_website_subscription_payment');
+        let saved = tables.holding_website_subscription_payments.find((r) => r.asaas_payment_id === args.p_payment_id);
+        if (!saved) {
+          saved = { id: paymentId, asaas_payment_id: args.p_payment_id, paid_on: args.p_paid_on, fiscal_error: null };
+          tables.holding_website_subscription_payments.push(saved);
+        }
+        saved.paid_on ||= args.p_paid_on; saved.status = args.p_status;
+        return { data: saved.id, error: null };
+      },
+    } },
+    '@/lib/website-asaas': { createWebsiteAsaas: async () => asaas },
+    '@/lib/website-billing': { customerForAsaas: async () => 'cus_test' },
+    '@/lib/website-contracts': contracts,
+    '@/lib/website-subscription-terms': terms,
+    '@/services/nfse/data-hora': { dataHoraNacional: () => '2026-11-04T12:00:00-03:00' },
+    '@/lib/website-invoices': {
+      validateWebsiteSubscriptionFiscal: async () => { calls.push(['validate fiscal']); },
+      emitWebsiteSubscriptionInvoice: async (...args) => {
+        if (tables.holding_website_invoices.length) throw new Error('Already reserved');
+        tables.holding_website_invoices.push({ subscription_payment_id: paymentId, status: sendFail ? 'review' : 'authorized', system_invoice_id: sendFail ? null : id });
+        sends.push(args); if (sendFail) throw new Error('Fiscal timeout; do not resend');
+        return { sent: true };
+      },
+    },
+  });
+  return { ...api, tables, sends, calls, writes, asaas };
+}
+
+test('subscription input validates explicit fiscal consent, all four cycles and negotiated integer cents', () => {
+  const input = {
+    request_id: id, customer_id: id, plan_id: id, amount_cents: 25550, payment_method: 'PIX',
+    billing_cycle: 'quarterly', first_due_date: '2026-11-20', fiscal_confirmed: true,
+  };
+  for (const billing_cycle of catalog.WEBSITE_RECURRING_CYCLES) {
+    assert.equal(terms.validateWebsiteSubscription({ ...input, billing_cycle }).billing_cycle, billing_cycle);
+  }
+  for (const patch of [{ fiscal_confirmed: false }, { amount_cents: 1.1 }, { amount_cents: 0 }, { billing_cycle: 'one_time' },
+    { first_due_date: '2026-02-30' }, { customer_id: 'glass|id' }, { request_id: null }]) {
+    assert.throws(() => terms.validateWebsiteSubscription({ ...input, ...patch }));
+  }
+});
+
+test('paid recurring webhook re-reads Asaas, invoices one full negotiated period and preserves confirmation competence', async () => {
+  const h = harness();
+  assert.equal(await h.processWebsiteSubscriptionPayment(payment({ value: 1, status: 'PENDING' })), true);
+  assert.equal(h.calls[0][0], 'GET payment');
+  assert.equal(h.sends.length, 1);
+  assert.equal(h.sends[0][1].total_cents, 25550); assert.equal(h.sends[0][2], '2026-11-04');
+  assert.equal(await h.processWebsiteSubscriptionPayment(payment()), true);
+  assert.equal(h.sends.length, 1);
+});
+
+test('pending, cash, deleted, refunds and sandbox payments do not send a production NFS-e', async () => {
+  for (const patch of [{ status: 'PENDING' }, { status: 'OVERDUE' }, { status: 'RECEIVED_IN_CASH' }, { status: 'REFUNDED' }, { deleted: true }]) {
+    const h = harness({ current: payment(patch) });
+    await h.processWebsiteSubscriptionPayment(payment());
+    assert.equal(h.sends.length, 0);
+  }
+  const h = harness({ environment: 'sandbox', local: row({ asaas_environment: 'sandbox' }) });
+  await h.processWebsiteSubscriptionPayment(payment());
+  assert.equal(h.sends.length, 0);
+});
+
+test('strict payment matching rejects foreign customer/subscription, changed amount/method/reference and missing confirmation dates', async () => {
+  const h = harness();
+  for (const patch of [{ subscription: 'sub_other' }, { customer: 'cus_other' }, { value: 100 }, { billingType: 'BOLETO' },
+    { externalReference: 'glass|id' }, { dueDate: '2026-01-01' }, { confirmedDate: '', paymentDate: '' }, { installment: 'group' }]) {
+    assert.throws(() => h.validateSubscriptionPayment(row(), payment(patch)));
+  }
+  assert.equal(h.validateSubscriptionPayment(row(), payment({ externalReference: '' })), '2026-11-04');
+  for (const patch of [{ value: 10 }, { cycle: 'MONTHLY' }, { customer: 'cus_other' }, { deleted: true }, { externalReference: 'glass|id' }]) {
+    assert.throws(() => h.matchWebsiteSubscription(row(), remote(patch), 'cus_test'));
+  }
+});
+
+test('fiscal timeout persists a visible review alert and duplicate notifications never resend a reserved note', async () => {
+  const h = harness({ sendFail: true });
+  await h.processWebsiteSubscriptionPayment(payment());
+  assert.match(h.tables.holding_website_subscription_payments[0].fiscal_error, /timeout/);
+  await h.processWebsiteSubscriptionPayment(payment());
+  assert.equal(h.sends.length, 1);
+});
+
+test('refund after authorization flags review without canceling or reissuing a note', async () => {
+  const current = payment(); const h = harness({ current });
+  await h.processWebsiteSubscriptionPayment(payment());
+  current.status = 'REFUNDED';
+  await h.processWebsiteSubscriptionPayment(payment());
+  assert.equal(h.sends.length, 1);
+  assert.match(h.tables.holding_website_subscription_payments[0].fiscal_error, /cancelamento não é automático/);
+});
+
+test('explicit Glass/Barber/finance/project notifications bypass Websites integration and missing links cannot leak into SaaS processing', async () => {
+  const h = harness();
+  for (const externalReference of ['glass|id', 'barber|id', 'finance_record|id', `website|${id}|balance`]) {
+    assert.equal(await h.processWebsiteSubscriptionPayment({ id: 'pay_any', externalReference }), false);
+  }
+  assert.equal(h.calls.length, 0);
+  const pendingLink = harness({ local: null, current: payment({ externalReference: '' }) });
+  await assert.rejects(pendingLink.processWebsiteSubscriptionPayment(payment({ externalReference: '' })), /sem vínculo local/);
+  const fail = harness({ lookupFail: true });
+  await assert.rejects(fail.processWebsiteSubscriptionPayment(payment()), /localizar/);
+  assert.equal(fail.sends.length, 0);
+});
+
+test('activation creates one quarterly subscription at the client price, while uncertain POSTs require read-only recovery', async () => {
+  const local = row({ asaas_environment: null, asaas_subscription_id: null, asaas_customer_id: null, billing_state: 'local' });
+  const h = harness({ local, matches: [], current: payment({ status: 'PENDING' }) });
+  await h.billWebsiteSubscription(id, true);
+  const post = h.calls.find(([name]) => name === 'POST subscription')[1];
+  assert.equal(post.cycle, 'QUARTERLY'); assert.equal(post.amount_cents, 25550);
+  await assert.rejects(h.billWebsiteSubscription(id, true), /já enviada/);
+  assert.equal(h.calls.filter(([name]) => name === 'POST subscription').length, 1);
+  const failed = harness({ local, matches: [], createTimeout: true });
+  await assert.rejects(failed.billWebsiteSubscription(id, true), /timeout/);
+  assert.equal(failed.tables.holding_website_subscriptions[0].billing_state, 'review');
+  await assert.rejects(failed.billWebsiteSubscription(id, true), /já enviada/);
+  failed.asaas.findSubscriptions = async () => [remote()];
+  await failed.billWebsiteSubscription(id, false);
+  assert.equal(failed.calls.filter(([name]) => name === 'POST subscription').length, 1);
+});
+
+test('Asaas subscription transport maps all cycles, omits card data and retrieves subscription payments individually', async () => {
+  const calls = [];
+  const adapter = load('src/lib/website-asaas.ts', {
+    '@/lib/finance-config-server': { readFinanceConfig: async () => ({ asaasApiKey: 'test-only', asaasEnv: 'sandbox' }) },
+  }, { fetch: async (url, init) => {
+    calls.push({ url, init, body: init.body ? JSON.parse(init.body) : null });
+    if (url.includes('/payments/')) return Response.json(payment({ externalReference: null }));
+    return Response.json(remote({ cycle: init.body ? JSON.parse(init.body).cycle : 'QUARTERLY' }));
+  } });
+  const client = await adapter.createWebsiteAsaas();
+  for (const cycle of ['MONTHLY', 'QUARTERLY', 'SEMIANNUALLY', 'YEARLY']) {
+    await client.createSubscription({ customer: 'cus_test', method: 'CREDIT_CARD', cycle,
+      amount_cents: 25550, due_date: '2026-11-20', reference: terms.websiteSubscriptionReference(id), description: 'Site' });
+    const call = calls.at(-1);
+    assert.equal(call.body.value, 255.5); assert.equal(call.body.cycle, cycle);
+    assert.equal(call.body.creditCard, undefined); assert.equal(call.body.installmentCount, undefined);
+    assert.equal(call.init.redirect, 'error');
+  }
+  assert.equal((await client.getPayment('pay_test')).externalReference, '');
+});
+
+test('annual payment sends exactly the full annual client price, never a monthly fraction', async () => {
+  const h = harness({ local: row({ amount_cents: 99000, plan_snapshot: {
+    name: 'Hospedagem', billing_cycle: 'annual', invoice_policy: 'automatic_after_payment',
+  } }), current: payment({ value: 990 }) });
+  h.asaas.getSubscription = async () => remote({ value: 990, cycle: 'YEARLY' });
+  await h.processWebsiteSubscriptionPayment(payment());
+  assert.equal(h.sends.length, 1);
+  assert.equal(h.sends[0][1].total_cents, 99000);
+});
+
+test('all recurring cycles map to their exact Asaas frequency', () => {
+  const h = harness();
+  for (const [billing_cycle, cycle] of [['monthly', 'MONTHLY'], ['quarterly', 'QUARTERLY'], ['semiannual', 'SEMIANNUALLY'], ['annual', 'YEARLY']]) {
+    h.matchWebsiteSubscription(row({ plan_snapshot: { billing_cycle } }), remote({ cycle }), 'cus_test');
+  }
+});
+
+test('subscription APIs enforce fiscal permissions, validate input, and only persist whitelisted server RPC arguments', async () => {
+  let allowed = false; const rpcs = [], permissions = [], bills = [];
+  const deps = {
+    'next/server': { NextResponse: Response },
+    '@/lib/holding-commercial-auth': { authorizeHoldingCommercial: async (_req, resources) => {
+      permissions.push(resources);
+      return allowed ? null : Response.json({ error: 'Forbidden' }, { status: 403 });
+    } },
+    '@/lib/supabase-server': { supabaseServer: { rpc: async (name, args) => { rpcs.push({ name, args }); return { data: id, error: null }; } } },
+    '@/lib/website-subscription-terms': terms,
+    '@/lib/holding-customers': customers,
+    '@/lib/website-subscriptions': { billWebsiteSubscription: async (...args) => { bills.push(args); return { message: 'Test' }; } },
+  };
+  const route = load('src/app/api/admin/website-subscriptions/route.ts', deps);
+  const billing = load('src/app/api/admin/website-subscriptions/billing/route.ts', deps);
+  const request = (body) => new Request('https://holding.test/api', { method: 'POST', body: JSON.stringify(body) });
+  const input = {
+    request_id: id, customer_id: id, plan_id: id, amount_cents: 25550, payment_method: 'PIX',
+    billing_cycle: 'quarterly', first_due_date: '2026-11-20', fiscal_confirmed: true,
+    plan_snapshot: { name: 'forged' }, asaas_subscription_id: 'sub_untrusted',
+  };
+  assert.equal((await route.POST(request(input))).status, 403);
+  assert.equal((await billing.POST(request({ id, action: 'generate' }))).status, 403);
+  assert.equal(rpcs.length + bills.length, 0);
+  assert.ok(permissions.every((required) => required.includes('menu.notas_fiscais') && required.includes('submenu.assinaturas.websites')));
+  allowed = true;
+  assert.equal((await route.POST(request({ ...input, fiscal_confirmed: false }))).status, 400);
+  assert.equal((await route.POST(request(input))).status, 201);
+  assert.equal(rpcs[0].name, 'holding_create_website_subscription');
+  assert.equal(rpcs[0].args.p_amount_cents, 25550); assert.equal(rpcs[0].args.p_cycle, 'quarterly');
+  assert.equal(rpcs[0].args.plan_snapshot, undefined); assert.equal(rpcs[0].args.asaas_subscription_id, undefined);
+  for (const action of ['generate', 'sync']) assert.equal((await billing.POST(request({ id, action }))).status, 200);
+  assert.deepEqual(bills, [[id, true], [id, false]]);
+  assert.equal((await billing.POST(request({ id, action: 'delete' }))).status, 400);
+});

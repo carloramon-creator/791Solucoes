@@ -27,6 +27,7 @@ function mapPathToResource(path: string): string | null {
   if (path.startsWith('/suporte')) return 'menu.suporte';
   if (path.startsWith('/assinaturas')) return 'menu.assinaturas';
   if (path.startsWith('/patrocinadores')) return 'menu.patrocinadores';
+  if (path === '/planos/websites' || path.startsWith('/planos/websites/')) return 'submenu.planos.websites';
   if (path.startsWith('/planos')) return 'menu.planos';
   if (path.startsWith('/cupons')) return 'menu.cupons';
   if (path.startsWith('/configuracoes')) return 'menu.configuracoes';
@@ -129,7 +130,10 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
                     : (MENU_ORDER.find((item) => permissionCodes.has(item.resourceCode))?.path || '/');
 
                   const currentResource = mapPathToResource(pathname);
-                  const currentAllowed = unrestrictedFallback || !currentResource || permissionCodes.has(currentResource);
+                  const currentAllowed = unrestrictedFallback || !currentResource || (
+                    permissionCodes.has(currentResource)
+                    && (currentResource !== 'submenu.planos.websites' || permissionCodes.has('menu.planos'))
+                  );
 
                   if (pathname === '/login') {
                     router.replace(firstAllowedPath);

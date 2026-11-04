@@ -1,0 +1,274 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { AlertCircle, CheckCircle2, Globe, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
+import {
+  WEBSITE_BILLING_CYCLES,
+  WEBSITE_CATEGORIES,
+  validateWebsitePlan,
+  websiteBillingCycles,
+  type WebsiteBillingCycle,
+  type WebsiteCategory,
+  type WebsitePlan,
+} from '@/lib/website-plans';
+
+type PlanForm = {
+  name: string;
+  description: string;
+  scope: string;
+  category: WebsiteCategory;
+  billing_cycle: WebsiteBillingCycle;
+  price: string;
+  active: boolean;
+};
+
+const EMPTY_FORM: PlanForm = {
+  name: '', description: '', scope: '', category: 'creation',
+  billing_cycle: 'one_time', price: '', active: true,
+};
+const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20';
+const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+export default function PlanosWebsitesPage() {
+  const [plans, setPlans] = useState<WebsitePlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<PlanForm | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+
+  const loadPlans = useCallback((signal?: AbortSignal) => (
+    holdingAuthFetch('/api/admin/website-plans', { signal }).then(async (response) => {
+      const payload: { plans?: WebsitePlan[]; error?: string } = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar os produtos.');
+      if (!Array.isArray(payload.plans)) throw new Error('O catálogo retornou uma resposta inválida.');
+      return payload.plans;
+    }).then((plans) => {
+      if (!signal?.aborted) setPlans(plans);
+    }).catch((error: unknown) => {
+      if (!signal?.aborted) {
+        console.error('[WEBSITE PLANS] Erro ao carregar:', error);
+        setLoadError(error instanceof Error ? error.message : 'Erro ao carregar o catálogo.');
+      }
+    }).finally(() => {
+      if (!signal?.aborted) setLoading(false);
+    })
+  ), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadPlans(controller.signal);
+    return () => controller.abort();
+  }, [loadPlans]);
+
+  const formOpen = form !== null;
+  useEffect(() => {
+    if (formOpen) nameInput.current?.focus();
+  }, [formOpen, editingId]);
+
+  function openForm(plan?: WebsitePlan) {
+    setSaveError('');
+    setSuccess('');
+    setEditingId(plan?.id || null);
+    setForm(plan ? {
+      name: plan.name,
+      description: plan.description,
+      scope: plan.scope,
+      category: plan.category,
+      billing_cycle: plan.billing_cycle,
+      price: (plan.price_cents / 100).toFixed(2),
+      active: plan.active,
+    } : { ...EMPTY_FORM });
+  }
+
+  async function handleSave(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!form || saving) return;
+    setSaveError('');
+    setSuccess('');
+    const validated = validateWebsitePlan({
+      name: form.name,
+      description: form.description,
+      scope: form.scope,
+      category: form.category,
+      billing_cycle: form.billing_cycle,
+      price_cents: Math.round(Number(form.price) * 100),
+      active: form.active,
+    });
+    if (!validated.ok) {
+      setSaveError(validated.error);
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await holdingAuthFetch('/api/admin/website-plans', {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...validated.data, ...(editingId ? { id: editingId } : {}) }),
+      });
+      const payload: { plan?: WebsitePlan; error?: string } = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar o produto.');
+      const saved = payload.plan;
+      if (!saved?.id) throw new Error('O servidor não confirmou o produto salvo. Atualize o catálogo antes de tentar novamente.');
+      setPlans((current) => editingId
+        ? current.map((plan) => plan.id === saved.id ? saved : plan)
+        : [saved, ...current]);
+      setForm(null);
+      setEditingId(null);
+      setSuccess('Produto salvo no catálogo. Nenhuma cobrança ou nota fiscal foi gerada.');
+    } catch (error) {
+      console.error('[WEBSITE PLANS] Erro ao salvar:', error);
+      setSaveError(error instanceof Error ? error.message : 'Erro ao salvar o produto.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-[1200px] space-y-6 pb-12">
+      <header className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-800">
+            <Globe className="text-[#3b597b]" size={24} /> Planos de Websites
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">Produtos e serviços próprios da Holding, independentes do Glass e do Barber.</p>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { setLoading(true); setLoadError(''); void loadPlans(); }} disabled={loading || formOpen}
+            className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">
+            <RefreshCw size={16} /> Atualizar
+          </button>
+          <button type="button" onClick={() => openForm()} disabled={loading || Boolean(loadError) || formOpen}
+            className="flex items-center gap-2 rounded-md bg-[#3b597b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2e4763] disabled:opacity-50">
+            <Plus size={16} /> Novo produto
+          </button>
+        </div>
+      </header>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+        <strong>Catálogo comercial.</strong> Cadastre a confecção como projeto de cobrança única e a hospedagem ou manutenção como serviço mensal ou anual.
+        O parcelamento de projetos será definido na contratação. Este cadastro não cria assinaturas no Asaas nem emite notas fiscais.
+      </div>
+
+      {success && (
+        <div role="status" className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CheckCircle2 size={18} className="shrink-0" /> {success}
+        </div>
+      )}
+      {loadError && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle size={18} className="shrink-0" /> {loadError}
+        </div>
+      )}
+
+      {form && (
+        <form onSubmit={handleSave} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-labelledby="website-form-title">
+          <h2 id="website-form-title" className="mb-5 text-lg font-bold text-slate-800">{editingId ? 'Editar produto' : 'Novo produto de Websites'}</h2>
+          <fieldset disabled={saving} className="space-y-5">
+            <div className="grid gap-5 md:grid-cols-2">
+              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>Nome do produto *</span>
+                <input ref={nameInput} className={inputClass} value={form.name} required maxLength={120}
+                  onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Website institucional" />
+              </label>
+              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>Categoria *</span>
+                <select className={inputClass} value={form.category} onChange={(event) => {
+                  const category = event.target.value as WebsiteCategory;
+                  const cycles = websiteBillingCycles(category);
+                  setForm({ ...form, category, billing_cycle: cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0] });
+                }}>
+                  {Object.entries(WEBSITE_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>Modalidade de cobrança *</span>
+                <select className={inputClass} value={form.billing_cycle}
+                  onChange={(event) => setForm({ ...form, billing_cycle: event.target.value as WebsiteBillingCycle })}>
+                  {websiteBillingCycles(form.category).map((cycle) => <option key={cycle} value={cycle}>{WEBSITE_BILLING_CYCLES[cycle]}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>{form.billing_cycle === 'one_time' ? 'Preço total' : form.billing_cycle === 'monthly' ? 'Preço mensal' : 'Preço anual'} (R$) *</span>
+                <input type="number" inputMode="decimal" min="0.01" max="9999999.99" step="0.01" required
+                  className={inputClass} value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="0,00" />
+              </label>
+            </div>
+            <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
+              <span>Descrição comercial</span>
+              <textarea className={inputClass} rows={2} maxLength={2000} value={form.description}
+                onChange={(event) => setForm({ ...form, description: event.target.value })} />
+            </label>
+            <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
+              <span>Escopo, limites e condições *</span>
+              <textarea className={inputClass} rows={4} maxLength={5000} required value={form.scope}
+                onChange={(event) => setForm({ ...form, scope: event.target.value })}
+                placeholder="Defina entregas, revisões, prazo, suporte, backups e o que não está incluído." />
+            </label>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />
+              Produto ativo para novas contratações
+            </label>
+            <p className="text-xs text-slate-500">Inative produtos que não serão mais oferecidos, preservando o cadastro. Alterar o catálogo não altera contratos ou cobranças existentes.</p>
+            {saveError && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{saveError}</p>}
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => { setForm(null); setEditingId(null); setSaveError(''); }}
+                className="flex items-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">
+                <X size={16} /> Cancelar
+              </button>
+              <button type="submit" className="flex items-center gap-2 rounded-md bg-[#3b597b] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {saving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+                {saving ? 'Salvando...' : 'Salvar produto'}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      )}
+
+      {loading ? (
+        <div role="status" className="flex items-center justify-center gap-2 py-12 text-slate-500"><Loader2 className="animate-spin" size={20} /> Carregando catálogo...</div>
+      ) : !loadError && (
+        plans.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+            <Globe className="mx-auto mb-3 text-slate-400" size={32} />
+            <h2 className="font-bold text-slate-800">Nenhum produto cadastrado</h2>
+            <p className="mt-2 text-sm text-slate-500">Comece pela confecção de websites e depois cadastre seus planos de hospedagem e manutenção.</p>
+          </div>
+        ) : (
+          <section aria-label="Produtos de Websites" className="grid gap-4 md:grid-cols-2">
+            {plans.map((plan) => (
+              <article key={plan.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#3b597b]">{WEBSITE_CATEGORIES[plan.category]}</p>
+                    <h2 className="mt-1 text-lg font-bold text-slate-800 break-words">{plan.name}</h2>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${plan.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {plan.active ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+                <p className="mt-4 text-2xl font-bold text-slate-800">
+                  {currency.format(plan.price_cents / 100)}
+                  <span className="ml-2 text-xs font-medium text-slate-500">{WEBSITE_BILLING_CYCLES[plan.billing_cycle]}</span>
+                </p>
+                {plan.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600 break-words">{plan.description}</p>}
+                <div className="mt-4 flex-1 border-t border-slate-100 pt-4">
+                  <h3 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 break-words">{plan.scope}</p>
+                </div>
+                <button type="button" disabled={formOpen} onClick={() => openForm(plan)} aria-label={`Editar ${plan.name}`}
+                  className="mt-5 flex items-center justify-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  <Pencil size={15} /> Editar produto
+                </button>
+              </article>
+            ))}
+          </section>
+        )
+      )}
+    </div>
+  );
+}

@@ -2,6 +2,31 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Planos de Websites
+
+`/planos/websites` e o catalogo de produtos proprios da Holding, sem acesso ao
+banco do Glass ou do Barber. Permite cadastrar, editar e inativar confeccao de
+websites, hospedagem, manutencao e alteracoes adicionais, com preco em reais,
+descricao comercial e escopo obrigatorio. Confeccao e alteracoes sao cobrancas
+unicas; hospedagem e manutencao aceitam periodicidade mensal ou anual.
+O preco anual e o total do ano, nao o equivalente mensal. O catalogo inicia
+vazio: nao ha precos comerciais presumidos.
+
+Antes de usar, aplicar no banco da Holding a migration
+`supabase/migrations/20261104180000_holding_website_plans.sql`.
+Ela depende da migration de permissoes de 01/07/2026 e cria uma tabela com RLS,
+sem acesso direto por anon/authenticated; a API usa service role somente apos
+autenticacao administrativa e verificacao de `menu.planos` e
+`submenu.planos.websites`. Administradores e o bootstrap sem perfis seguem a
+convencao existente da Holding; outros perfis precisam das duas permissoes.
+
+Esta etapa e somente o catalogo: nao cadastra clientes/projetos/assinaturas,
+nao chama o Asaas e nao emite NFS-e. Parcelamento, recorrencia e emissao fiscal
+ficam para a etapa de contratacao. Edicoes e inativacoes nao propagam alteracoes
+a contratos ou cobrancas. Nao ha exclusao de produtos.
+
+Testes: `node --test scripts/tests/website-plans.test.mjs`.
+
 ## Comprovante REP-P centralizado (somente homologacao)
 
 O servidor precisa de Node.js 22 ou superior (dependencias de assinatura).

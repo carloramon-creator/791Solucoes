@@ -57,6 +57,7 @@ const navigationItems: NavItem[] = [
     subItems: [
       { name: 'Glass', href: '/planos/glass', resourceCode: 'submenu.planos.glass' },
       { name: 'Barber', href: '/planos/barber', resourceCode: 'submenu.planos.barber' },
+      { name: 'Websites', href: '/planos/websites', resourceCode: 'submenu.planos.websites' },
     ],
   },
   { name: 'CUPONS', href: '/cupons', icon: Percent, resourceCode: 'menu.cupons' },

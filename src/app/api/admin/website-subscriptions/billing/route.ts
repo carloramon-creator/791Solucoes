@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authorizeHoldingCommercial } from '@/lib/holding-commercial-auth';
 import { isUuid } from '@/lib/holding-customers';
-import { billWebsiteSubscription } from '@/lib/website-subscriptions';
+import { billWebsiteSubscription, changeWebsiteSubscription } from '@/lib/website-subscriptions';
 
 export const maxDuration = 300;
 export async function POST(req: Request) {
@@ -13,8 +13,13 @@ export async function POST(req: Request) {
     let body: unknown;
     try { body = await req.json(); } catch { return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 }); }
     if (!body || typeof body !== 'object' || !('id' in body) || !isUuid(body.id)
-      || !('action' in body) || !['generate', 'sync'].includes(String(body.action))) {
-      return NextResponse.json({ error: 'Informe assinatura e ação generate/sync.' }, { status: 400 });
+      || !('action' in body) || typeof body.action !== 'string' || !['generate', 'sync', 'pause', 'resume', 'cancel'].includes(body.action)) {
+      return NextResponse.json({ error: 'Informe assinatura e ação generate/sync/pause/resume/cancel.' }, { status: 400 });
+    }
+    if (body.action === 'pause' || body.action === 'resume' || body.action === 'cancel') {
+      if (!('confirmed' in body) || body.confirmed !== true) return NextResponse.json({ error: 'Confirme explicitamente a alteração da assinatura.' }, { status: 400 });
+      const date = 'next_due_date' in body && typeof body.next_due_date === 'string' ? body.next_due_date : undefined;
+      return NextResponse.json(await changeWebsiteSubscription(body.id, body.action, date));
     }
     return NextResponse.json(await billWebsiteSubscription(body.id, body.action === 'generate'));
   } catch (failure) {

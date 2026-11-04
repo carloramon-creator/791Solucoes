@@ -14,12 +14,19 @@ export type WebsiteSubscription = {
   asaas_environment: 'sandbox' | 'production' | null;
   asaas_subscription_id: string | null; asaas_customer_id: string | null; remote_status: string | null;
   last_error: string | null;
+  contract_id: string | null;
+  lifecycle_status: 'active' | 'paused' | 'cancelled';
+  pending_action: 'pause' | 'resume' | 'cancel' | null;
+  resume_due_date: string | null;
   holding_website_subscription_payments: Array<{
     id: string; asaas_payment_id: string; status: string; amount_cents: number; due_date: string;
     paid_on: string | null; invoice_url: string; fiscal_error: string | null;
     holding_website_invoices: Array<{ status: string; system_invoice_id: string | null }>;
   }>;
 };
+
+export const WEBSITE_SUBSCRIPTION_STATES = { active: 'Ativa', paused: 'Pausada', cancelled: 'Encerrada' };
+export type WebsiteSubscriptionAction = 'pause' | 'resume' | 'cancel';
 
 export const websiteSubscriptionReference = (id: string) => `website-subscription|${id}`;
 

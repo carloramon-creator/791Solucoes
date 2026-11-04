@@ -27,7 +27,7 @@ const row = (patch = {}) => ({
   plan_snapshot: { name: 'Hospedagem', scope: 'Backup', invoice_policy: 'automatic_after_payment', billing_cycle: 'quarterly' },
   amount_cents: 25550, payment_method: 'PIX', first_due_date: '2026-11-20',
   asaas_environment: 'production', asaas_subscription_id: 'sub_test', asaas_customer_id: 'cus_test',
-  billing_state: 'issued', remote_status: 'ACTIVE', ...patch,
+  billing_state: 'issued', remote_status: 'ACTIVE', lifecycle_status: 'active', pending_action: null, resume_due_date: null, ...patch,
 });
 const payment = (patch = {}) => ({
   id: 'pay_test', subscription: 'sub_test', customer: 'cus_test', value: 255.5, dueDate: '2026-11-20',
@@ -45,10 +45,12 @@ function harness({ local = row(), current = payment(), environment = 'production
     holding_website_subscription_payments: [], holding_website_invoices: [],
   };
   const calls = [], sends = [], writes = [];
+  let subscriptionState = remote();
   class Query {
     constructor(table) { assert.ok(table in tables, `Cross-boundary table ${table}`); this.table = table; this.filters = []; }
     select() { return this; }
     eq(key, value) { this.filters.push([key, value]); return this; }
+    is(key, value) { return this.eq(key, value); }
     update(value) { this.value = value; return this; }
     single() { this.singleRow = true; return this; }
     maybeSingle() { this.singleRow = true; return this; }
@@ -59,13 +61,18 @@ function harness({ local = row(), current = payment(), environment = 'production
         writes.push({ table: this.table, value: this.value });
         selected.forEach((r) => Object.assign(r, this.value));
       }
-      return Promise.resolve({ data: this.singleRow ? selected[0] || null : selected, error: null }).then(resolve, reject);
+      return Promise.resolve({ data: structuredClone(this.singleRow ? selected[0] || null : selected), error: null }).then(resolve, reject);
     }
   }
   const asaas = {
     environment,
     getPayment: async (id) => { calls.push(['GET payment', id]); return current; },
-    getSubscription: async () => { calls.push(['GET subscription']); return remote(); },
+    getSubscription: async () => { calls.push(['GET subscription']); return subscriptionState; },
+    setSubscriptionStatus: async (id, status, nextDueDate) => {
+      calls.push(['PUT subscription', id, status, nextDueDate]);
+      subscriptionState = { ...subscriptionState, status, ...(nextDueDate ? { nextDueDate } : {}) };
+      return subscriptionState;
+    },
     subscriptionReference: async () => remote().externalReference,
     subscriptionPayments: async () => [current],
     findSubscriptions: async () => { calls.push(['GET subscriptions']); return matches; },
@@ -236,7 +243,7 @@ test('all recurring cycles map to their exact Asaas frequency', () => {
 });
 
 test('subscription APIs enforce fiscal permissions, validate input, and only persist whitelisted server RPC arguments', async () => {
-  let allowed = false; const rpcs = [], permissions = [], bills = [];
+  let allowed = false; const rpcs = [], permissions = [], bills = [], changes = [];
   const deps = {
     'next/server': { NextResponse: Response },
     '@/lib/holding-commercial-auth': { authorizeHoldingCommercial: async (_req, resources) => {
@@ -246,7 +253,10 @@ test('subscription APIs enforce fiscal permissions, validate input, and only per
     '@/lib/supabase-server': { supabaseServer: { rpc: async (name, args) => { rpcs.push({ name, args }); return { data: id, error: null }; } } },
     '@/lib/website-subscription-terms': terms,
     '@/lib/holding-customers': customers,
-    '@/lib/website-subscriptions': { billWebsiteSubscription: async (...args) => { bills.push(args); return { message: 'Test' }; } },
+    '@/lib/website-subscriptions': {
+      billWebsiteSubscription: async (...args) => { bills.push(args); return { message: 'Test' }; },
+      changeWebsiteSubscription: async (...args) => { changes.push(args); return { message: 'Test' }; },
+    },
   };
   const route = load('src/app/api/admin/website-subscriptions/route.ts', deps);
   const billing = load('src/app/api/admin/website-subscriptions/billing/route.ts', deps);
@@ -258,6 +268,7 @@ test('subscription APIs enforce fiscal permissions, validate input, and only per
   };
   assert.equal((await route.POST(request(input))).status, 403);
   assert.equal((await billing.POST(request({ id, action: 'generate' }))).status, 403);
+  assert.equal((await billing.POST(request({ id, action: 'pause', confirmed: true }))).status, 403);
   assert.equal(rpcs.length + bills.length, 0);
   assert.ok(permissions.every((required) => required.includes('menu.notas_fiscais') && required.includes('submenu.assinaturas.websites')));
   allowed = true;
@@ -269,4 +280,130 @@ test('subscription APIs enforce fiscal permissions, validate input, and only per
   for (const action of ['generate', 'sync']) assert.equal((await billing.POST(request({ id, action }))).status, 200);
   assert.deepEqual(bills, [[id, true], [id, false]]);
   assert.equal((await billing.POST(request({ id, action: 'delete' }))).status, 400);
+  for (const action of ['pause', 'resume', 'cancel']) {
+    assert.equal((await billing.POST(request({ id, action }))).status, 400);
+    assert.equal((await billing.POST(request({ id, action, confirmed: false }))).status, 400);
+    assert.equal((await billing.POST(request({ id, action, confirmed: true, next_due_date: '2026-12-10', asaas_subscription_id: 'sub_foreign' }))).status, 200);
+  }
+  assert.deepEqual(changes, ['pause', 'resume', 'cancel'].map((action) => [id, action, '2026-12-10']));
+});
+
+test('pause, resume with new due date and terminal cancellation only update own subscription, never payments or invoices', async () => {
+  const h = harness();
+  await h.changeWebsiteSubscription(id, 'pause');
+  let local = h.tables.holding_website_subscriptions[0];
+  assert.equal(local.lifecycle_status, 'paused'); assert.equal(local.remote_status, 'INACTIVE');
+  assert.equal(local.pending_action, null); assert.equal(local.billing_state, 'issued');
+  assert.deepEqual(h.calls.find(([name]) => name === 'PUT subscription'), ['PUT subscription', 'sub_test', 'INACTIVE', undefined]);
+  await h.changeWebsiteSubscription(id, 'resume', '2026-12-20');
+  assert.equal(local.lifecycle_status, 'active');
+  assert.deepEqual(h.calls.at(-1), ['PUT subscription', 'sub_test', 'ACTIVE', '2026-12-20']);
+  await h.changeWebsiteSubscription(id, 'cancel');
+  assert.equal(local.lifecycle_status, 'cancelled');
+  await assert.rejects(h.changeWebsiteSubscription(id, 'resume', '2026-12-20'), /encerrada/);
+  await assert.rejects(h.billWebsiteSubscription(id, true), /já enviada/);
+  assert.equal(h.sends.length, 0);
+  assert.ok(h.writes.every((write) => write.table === 'holding_website_subscriptions'));
+});
+
+test('local lifecycle changes never call Asaas, paused/cancelled cannot generate, and reactivation validates dates', async () => {
+  const h = harness({ local: row({ billing_state: 'local', asaas_environment: null, asaas_subscription_id: null, asaas_customer_id: null }) });
+  await h.changeWebsiteSubscription(id, 'pause');
+  await assert.rejects(h.billWebsiteSubscription(id, true), /pausada/);
+  for (const date of [undefined, '2026-02-30', '2026-11-03']) await assert.rejects(h.changeWebsiteSubscription(id, 'resume', date), /vencimento/);
+  await h.changeWebsiteSubscription(id, 'resume', '2026-12-10');
+  assert.equal(h.tables.holding_website_subscriptions[0].first_due_date, '2026-12-10');
+  await h.changeWebsiteSubscription(id, 'cancel');
+  await assert.rejects(h.billWebsiteSubscription(id, true), /encerrada/);
+  assert.equal(h.calls.length, 0);
+  const future = harness({ local: row({ lifecycle_status: 'paused', first_due_date: '2027-01-10' }) });
+  await assert.rejects(future.changeWebsiteSubscription(id, 'resume', '2026-12-10'), /anteceder o início/);
+  assert.equal(future.calls.length, 0);
+});
+
+test('lifecycle controls claim atomically, deny processing/review, reject foreign remote and never repeat uncertain mutations', async () => {
+  for (const billing_state of ['processing', 'review']) {
+    const h = harness({ local: row({ billing_state }) });
+    await assert.rejects(h.changeWebsiteSubscription(id, 'pause'), /processamento\/revisão/);
+    assert.equal(h.calls.length, 0);
+  }
+  const concurrent = harness();
+  const results = await Promise.allSettled([concurrent.changeWebsiteSubscription(id, 'pause'), concurrent.changeWebsiteSubscription(id, 'cancel')]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(concurrent.calls.filter(([name]) => name === 'PUT subscription').length, 1);
+  const foreign = harness();
+  foreign.asaas.getSubscription = async () => remote({ customer: 'cus_foreign' });
+  await assert.rejects(foreign.changeWebsiteSubscription(id, 'pause'), /divergente/);
+  assert.equal(foreign.calls.filter(([name]) => name === 'PUT subscription').length, 0);
+  const uncertain = harness({ current: payment({ status: 'PENDING' }) });
+  let puts = 0;
+  uncertain.asaas.setSubscriptionStatus = async () => { puts++; throw new Error('test timeout'); };
+  await assert.rejects(uncertain.changeWebsiteSubscription(id, 'cancel'), /timeout/);
+  assert.equal(uncertain.tables.holding_website_subscriptions[0].pending_action, 'cancel');
+  assert.equal(uncertain.tables.holding_website_subscriptions[0].billing_state, 'review');
+  await assert.rejects(uncertain.changeWebsiteSubscription(id, 'cancel'), /revisão/);
+  await assert.rejects(uncertain.billWebsiteSubscription(id, false), /não foi confirmada/);
+  uncertain.asaas.getSubscription = async () => remote({ status: 'INACTIVE' });
+  await uncertain.billWebsiteSubscription(id, false);
+  assert.equal(puts, 1);
+  assert.equal(uncertain.tables.holding_website_subscriptions[0].lifecycle_status, 'cancelled');
+  assert.equal(uncertain.tables.holding_website_subscriptions[0].pending_action, null);
+});
+
+test('payments issued before interruption still invoice after confirmation and fiscal failures remain visible', async () => {
+  for (const lifecycle_status of ['paused', 'cancelled']) {
+    const h = harness({ local: row({ lifecycle_status }), sendFail: lifecycle_status === 'cancelled' });
+    h.asaas.getSubscription = async () => remote({ status: 'INACTIVE' });
+    await h.processWebsiteSubscriptionPayment(payment());
+    assert.equal(h.sends.length, 1);
+    if (lifecycle_status === 'cancelled') assert.match(h.tables.holding_website_subscription_payments[0].fiscal_error, /timeout/);
+  }
+});
+
+test('uncertain reactivation confirms the chosen due date on sync and never sends the update twice', async () => {
+  const h = harness({ local: row({ lifecycle_status: 'paused', remote_status: 'INACTIVE' }), current: payment({ status: 'PENDING' }) });
+  let state = remote({ status: 'INACTIVE' }), puts = 0;
+  h.asaas.getSubscription = async () => state;
+  h.asaas.setSubscriptionStatus = async (_id, status, nextDueDate) => {
+    puts++; state = remote({ status, nextDueDate }); throw new Error('test timeout after update');
+  };
+  await assert.rejects(h.changeWebsiteSubscription(id, 'resume', '2026-12-10'), /timeout/);
+  assert.equal(h.tables.holding_website_subscriptions[0].resume_due_date, '2026-12-10');
+  state = remote({ status: 'ACTIVE', nextDueDate: '2026-12-11' });
+  await assert.rejects(h.billWebsiteSubscription(id, false), /não foi confirmada/);
+  state.nextDueDate = '2026-12-10';
+  await h.billWebsiteSubscription(id, false);
+  assert.equal(h.tables.holding_website_subscriptions[0].lifecycle_status, 'active');
+  assert.equal(h.tables.holding_website_subscriptions[0].pending_action, null);
+  assert.equal(h.tables.holding_website_subscriptions[0].resume_due_date, null);
+  assert.equal(puts, 1);
+});
+
+test('ended subscriptions cannot be silently reactivated by a remote change and stale lifecycle claims cannot generate', async () => {
+  const ended = harness({ local: row({ lifecycle_status: 'cancelled' }), current: payment({ status: 'PENDING' }) });
+  await assert.rejects(ended.billWebsiteSubscription(id, false), /reativada fora/);
+  assert.equal(ended.tables.holding_website_subscriptions[0].lifecycle_status, 'cancelled');
+  assert.equal(ended.sends.length, 0);
+  const h = harness({ local: row({ billing_state: 'local', asaas_environment: null, asaas_subscription_id: null }) });
+  const results = await Promise.allSettled([h.changeWebsiteSubscription(id, 'pause'), h.billWebsiteSubscription(id, true)]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(h.calls.filter(([name]) => name === 'POST subscription').length, 0);
+});
+
+test('subscription status transport uses PUT, preserves pending payments, validates IDs and never exposes a DELETE', async () => {
+  const calls = [];
+  const adapter = load('src/lib/website-asaas.ts', {
+    '@/lib/finance-config-server': { readFinanceConfig: async () => ({ asaasApiKey: 'test-only', asaasEnv: 'sandbox' }) },
+  }, { fetch: async (url, init) => {
+    const body = JSON.parse(init.body); calls.push({ url, init, body });
+    return Response.json(remote({ status: body.status, nextDueDate: body.nextDueDate || '2026-12-10' }));
+  } });
+  const client = await adapter.createWebsiteAsaas();
+  await client.setSubscriptionStatus('sub_test', 'INACTIVE');
+  await client.setSubscriptionStatus('sub_test', 'ACTIVE', '2026-12-10');
+  assert.ok(calls.every(({ init, body }) => init.method === 'PUT' && body.updatePendingPayments === false));
+  assert.deepEqual(calls[0].body, { status: 'INACTIVE', updatePendingPayments: false });
+  assert.deepEqual(calls[1].body, { status: 'ACTIVE', nextDueDate: '2026-12-10', updatePendingPayments: false });
+  await assert.rejects(client.setSubscriptionStatus('glass|id', 'INACTIVE'), /inválido/);
+  assert.equal(calls.length, 2);
 });

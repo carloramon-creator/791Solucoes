@@ -267,10 +267,7 @@ deduplicados na receita da Holding, sem lancamento bancario automatico.
 Sandbox nao emite nota real. Pagamentos de 2027 ficam com erro fiscal visivel,
 sem reserva/envio, ate a revisao IBS/CBS do emissor compartilhado.
 
-Pausa/cancelamento e feito no **painel Asaas**, nao apaga contrato/historico
-local e nao cancela notas fiscais. Pausa nao elimina cobrancas ja geradas;
-remocao pode excluir cobrancas pendentes/vencidas conforme as regras Asaas.
-Consultar depois para conferir; divergencias/remocoes podem exigir revisao.
+Pausa, reativacao e encerramento sao feitos na Holding, conforme abaixo.
 Estornos/chargebacks recebidos pelo webhook (se cadastrados nos eventos) ou
 detectados pela consulta geram alerta para revisar eventual nota autorizada,
 sem cancelamento/reemissao automatica.
@@ -279,6 +276,61 @@ Documentacao Asaas:
 [criacao de assinatura](https://docs.asaas.com/docs/creating-a-subscription),
 [eventos de pagamento](https://docs.asaas.com/docs/payment-events),
 [FAQ de assinaturas](https://docs.asaas.com/docs/subscriptions-faq).
+
+### Criacao com assinatura opcional e interrupcao Websites
+
+Aplicar **uma vez, somente na Holding**, depois da migracao de recorrencias:
+`supabase/migrations/20261105000000_holding_website_bundle_lifecycle.sql`.
+Ela adiciona o vinculo entre projeto e assinatura, os estados de interrupcao
+e uma RPC de contratacao conjunta. Nao reaplicar as migracoes anteriores.
+
+Em **Assinaturas > Websites > Nova contratacao**, a criacao continua
+obrigatoria. Marcar **Incluir hospedagem / manutencao nesta contratacao**
+adiciona um produto recorrente opcional para o mesmo cliente. Escolher
+mensal/trimestral/semestral/anual dentre os ciclos oferecidos, personalizar o
+total por periodo, informar primeiro vencimento e forma de pagamento da
+assinatura e confirmar o fiscal. Ambos sao salvos na mesma transacao:
+falha na assinatura desfaz o projeto/parcelas, e repetir a mesma tentativa
+nao duplica nem permite trocar os termos. Retirar/adicionar a assinatura a uma
+tentativa ja salva tambem exige abrir uma nova contratacao.
+
+Salvar nao envia nada ao Asaas. O projeto continua com **Gerar no Asaas** e
+NFS-e manual no valor total. A assinatura aparece em **Assinaturas recorrentes**,
+com link ao projeto, ativacao explicita e NFS-e por pagamento confirmado.
+Valores, periodicidade e fiscal ficam preservados separadamente. Assinaturas
+avulsas continuam disponiveis na tela de recorrencias.
+
+Na assinatura, com confirmacao explicita e permissoes Websites/Clientes/Notas:
+
+- **Pausar**: envia somente `status: INACTIVE` ao Asaas (PUT), interrompendo
+  novas cobrancas sem cancelar pendentes/vencidas. Pode reativar depois.
+- **Reativar**: exige novo proximo vencimento atual/futuro e envia
+  `status: ACTIVE`, `nextDueDate` e `updatePendingPayments: false`.
+  Nao altera vencimentos/valores das cobrancas existentes.
+- **Encerrar assinatura**: inativa no Asaas e marca como encerrada na Holding.
+  Bloqueia reativacao pela Holding e preserva todas as cobrancas, inclusive
+  pendentes/vencidas. **Nao usa DELETE Asaas**, pois este excluiria pendencias.
+  Reativacao externa de uma assinatura encerrada e sinalizada na consulta;
+  exige inativar no painel antes de conciliar.
+
+Para assinatura ainda local, esses controles nao acessam o Asaas. Pausada ou
+encerrada nao pode ser ativada; reativar uma local apenas atualiza o primeiro
+vencimento e permite ativacao explicita posterior.
+Esses controles gerenciam a recorrencia financeira: nao desligam o site,
+dominio ou hospedagem automaticamente, nem alteram Glass/Barber.
+
+A alteracao remota e exclusiva por compare-and-set. Intencao e data de
+reativacao ficam persistidas antes do PUT. Timeout/falha deixa revisao com
+acao pendente, sem repeticao automatica. **Consultar Asaas** confirma
+status/proximo vencimento e conclui a intencao; se o remoto nao corresponder,
+permanece em revisao para acerto no painel. Interrupcao abrupta em
+`processing` exige revisao administrativa, como na geracao de cobrancas.
+Cobrancas anteriores que sejam pagas depois de pausar/encerrar continuam
+recebendo NFS-e conforme as regras fiscais existentes.
+
+Referencia de comportamento:
+[suspensao/reativacao Asaas](https://docs.asaas.com/reference/update-existing-subscription)
+e [diferenca para exclusao definitiva](https://docs.asaas.com/reference/remove-subscription).
 
 ## Comprovante REP-P centralizado (somente homologacao)
 

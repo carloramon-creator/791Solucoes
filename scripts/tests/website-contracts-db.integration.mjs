@@ -260,4 +260,51 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
     await db.exec('reset role');
     assert.equal((await db.query('select count(*)::integer as count from public.holding_customers where id in ($1,$2)', [customer, subscriber])).rows[0].count, 2);
   });
+  await t.test('combined project/subscription migration is atomic, idempotent and preserves separate fiscal snapshots and permissions', async () => {
+    await db.exec(await readFile('supabase/migrations/20261105000000_holding_website_bundle_lifecycle.sql', 'utf8'));
+    const creation = '20000000-0000-4000-8000-000000000010';
+    await db.query(`insert into public.holding_website_plans(id,name,scope,category,billing_cycle,price_cents)
+      values ($1,'Criacao','Site','creation','one_time',30001)`, [creation]);
+    await db.query('update public.holding_website_plans set fiscal_config=$1 where id=$2', [JSON.stringify(fiscalConfig), plan]);
+    const terms = { plan_id: plan, amount_cents: 9000, payment_method: 'BOLETO', first_due_date: '2026-12-10', billing_cycle: 'monthly', fiscal_confirmed: true };
+    const request = '30000000-0000-4000-8000-000000000010';
+    const bundle = (subscription = terms, req = request) => db.query(
+      'select public.holding_create_website_bundle($1,$2,$3,30001,\'PIX\',$4,$5) as bundle',
+      [req, customer, creation, JSON.stringify(schedule), subscription === null ? null : JSON.stringify(subscription)]);
+    await db.exec('set role service_role');
+    const result = (await bundle()).rows[0].bundle;
+    assert.ok(result.id); assert.ok(result.subscription_id);
+    assert.deepEqual((await bundle()).rows[0].bundle, result);
+    await assert.rejects(bundle(null), /dados diferentes/);
+    await assert.rejects(bundle({ ...terms, amount_cents: 9001 }), /dados diferentes/);
+    const project = (await db.query('select * from public.holding_website_contracts where id=$1', [result.id])).rows[0];
+    const sub = (await db.query('select * from public.holding_website_subscriptions where id=$1', [result.subscription_id])).rows[0];
+    assert.equal(project.bundled_subscription, true); assert.equal(sub.contract_id, project.id);
+    assert.equal(sub.customer_id, project.customer_id); assert.equal(sub.amount_cents, 9000);
+    assert.equal(sub.lifecycle_status, 'active'); assert.equal(sub.pending_action, null);
+    assert.equal(project.plan_snapshot.invoice_policy, 'manual_project_total');
+    assert.equal(sub.plan_snapshot.invoice_policy, 'automatic_after_payment');
+    assert.equal(project.billing_state, 'local'); assert.equal(sub.billing_state, 'local');
+    const failRequest = '30000000-0000-4000-8000-000000000011';
+    for (const patch of [{ fiscal_confirmed: false }, { billing_cycle: 'annual' }, { amount_cents: 0 }, { plan_id: creation }]) {
+      await assert.rejects(bundle({ ...terms, ...patch }, failRequest));
+      assert.equal((await db.query('select count(*)::integer as count from public.holding_website_contracts where request_id=$1', [failRequest])).rows[0].count, 0);
+      assert.equal((await db.query('select count(*)::integer as count from public.holding_website_subscriptions where request_id=$1', [failRequest])).rows[0].count, 0);
+    }
+    const onlyProject = '30000000-0000-4000-8000-000000000012';
+    assert.equal((await bundle(null, onlyProject)).rows[0].bundle.subscription_id, null);
+    await assert.rejects(bundle(terms, onlyProject), /dados diferentes/);
+    await assert.rejects(db.query("update public.holding_website_subscriptions set pending_action='resume' where id=$1", [sub.id]), /check constraint/);
+    const claim = () => db.query(`update public.holding_website_subscriptions
+      set billing_state='processing',pending_action='pause'
+      where id=$1 and billing_state='local' and lifecycle_status='active' and pending_action is null returning id`, [sub.id]);
+    const claims = await Promise.all([claim(), claim()]);
+    assert.equal(claims.reduce((sum, result) => sum + result.rows.length, 0), 1);
+    await db.query(`update public.holding_website_subscriptions set billing_state='local',pending_action=null,lifecycle_status='cancelled' where id=$1`, [sub.id]);
+    assert.equal((await claim()).rows.length, 0);
+    await db.exec('reset role');
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`); await assert.rejects(bundle(), /permission denied/); await db.exec('reset role');
+    }
+  });
 });

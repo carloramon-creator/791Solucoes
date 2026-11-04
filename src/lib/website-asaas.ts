@@ -71,15 +71,15 @@ export async function createWebsiteAsaas() {
   const base = environment === 'production' ? 'https://api.asaas.com/v3' : 'https://sandbox.asaas.com/api/v3';
   const key = config.asaasApiKey;
   // Transporte exclusivo de Websites: sem retries de POST nem rotinas fiscais/SaaS.
-  async function request(path: string, body?: object): Promise<Record<string, unknown>> {
+  async function request(path: string, body?: object, method = body ? 'POST' : 'GET'): Promise<Record<string, unknown>> {
     const response = await fetch(`${base}${path}`, {
-      method: body ? 'POST' : 'GET',
+      method,
       headers: { access_token: key, 'Content-Type': 'application/json', 'User-Agent': '791holding-websites' },
       ...(body ? { body: JSON.stringify(body) } : {}),
       cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(20000),
     });
     if (!response.ok) {
-      console.error(`[WEBSITES ASAAS] HTTP ${response.status} em ${body ? 'POST' : 'GET'}.`);
+      console.error(`[WEBSITES ASAAS] HTTP ${response.status} em ${method}.`);
       throw new Error(`Asaas retornou HTTP ${response.status}. Confira o painel Asaas antes de qualquer nova emissão.`);
     }
     return object(await response.json());
@@ -151,7 +151,17 @@ export async function createWebsiteAsaas() {
     },
     async getSubscription(id: string) {
       if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');
-      return subscription(await request(`/subscriptions/${encodeURIComponent(id)}`));
+      const row = subscription(await request(`/subscriptions/${encodeURIComponent(id)}`));
+      if (row.id !== id) throw new Error('Assinatura retornada não corresponde à solicitada.');
+      return row;
+    },
+    async setSubscriptionStatus(id: string, status: 'ACTIVE' | 'INACTIVE', nextDueDate?: string) {
+      if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');
+      const row = subscription(await request(`/subscriptions/${encodeURIComponent(id)}`, {
+        status, ...(nextDueDate ? { nextDueDate } : {}), updatePendingPayments: false,
+      }, 'PUT'));
+      if (row.id !== id) throw new Error('Assinatura retornada não corresponde à solicitada.');
+      return row;
     },
     async subscriptionReference(id: string) {
       if (!/^sub_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de assinatura Asaas inválido.');

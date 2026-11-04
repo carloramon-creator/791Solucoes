@@ -421,7 +421,7 @@ test('both webhooks route recurring Websites to their own processor before const
   }
 });
 
-function apiHarness(path, { denied = false, customerError = null, rpcError = null } = {}) {
+function apiHarness(path, { denied = false, deniedFiscal = false, customerError = null, rpcError = null } = {}) {
   const permissions = [], writes = [], rpcs = [], tables = [];
   class Query {
     constructor(table) { tables.push(table); this.filters = []; }
@@ -440,14 +440,18 @@ function apiHarness(path, { denied = false, customerError = null, rpcError = nul
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/holding-commercial-auth': { authorizeHoldingCommercial: async (_req, required) => {
       permissions.push(required);
-      return denied ? Response.json({ error: 'Denied' }, { status: 403 }) : null;
+      return denied || (deniedFiscal && required.includes('menu.notas_fiscais')) ? Response.json({ error: 'Denied' }, { status: 403 }) : null;
     } },
     '@/lib/holding-customers': customers,
     '@/lib/website-contracts': terms,
+    '@/lib/website-subscription-terms': load('src/lib/website-subscription-terms.ts', {
+      '@/lib/holding-customers': customers, '@/lib/website-contracts': terms,
+      '@/lib/website-plans': load('src/lib/website-plans.ts'),
+    }),
     '@/lib/website-billing': { billWebsiteContract: async (...args) => { billingCalls.push(args); return { message: 'ok' }; } },
     '@/lib/supabase-server': { supabaseServer: {
       from: (table) => new Query(table),
-      rpc: async (name, args) => { rpcs.push({ name, args }); return { data: contractId, error: rpcError }; },
+      rpc: async (name, args) => { rpcs.push({ name, args }); return { data: { id: contractId, subscription_id: null }, error: rpcError }; },
     } },
   });
   return {
@@ -495,7 +499,7 @@ test('contract API saves a server-calculated schedule atomically with an idempot
     customer_snapshot: { document: 'forged' }, schedule: [{ amount_cents: 1 }],
   };
   assert.equal((await h.request('POST', body)).status, 201);
-  assert.equal(h.rpcs[0].name, 'holding_create_website_contract');
+  assert.equal(h.rpcs[0].name, 'holding_create_website_bundle');
   assert.equal(h.rpcs[0].args.p_request_id, contractId);
   assert.deepEqual(h.rpcs[0].args.p_schedule, terms.buildWebsiteSchedule(input));
   assert.equal(h.rpcs[0].args.customer_snapshot, undefined);
@@ -504,6 +508,32 @@ test('contract API saves a server-calculated schedule atomically with an idempot
   assert.equal((await h.request('POST', '{', true)).status, 400);
   const conflict = apiHarness('src/app/api/admin/website-contracts/route.ts', { rpcError: { code: '22023' } });
   assert.equal((await conflict.request('POST', body)).status, 409);
+});
+
+test('combined contract API validates optional subscription, enforces fiscal permission and forces the same customer/request', async () => {
+  const body = { ...input, customer_id: customerId, plan_id: requestId, request_id: contractId, payment_method: 'PIX' };
+  const subscription = {
+    plan_id: requestId, amount_cents: 15999, billing_cycle: 'annual', first_due_date: '2026-12-10', payment_method: 'BOLETO',
+    fiscal_confirmed: true, customer_id: 'forged', request_id: 'forged', asaas_subscription_id: 'sub_foreign',
+  };
+  const path = 'src/app/api/admin/website-contracts/route.ts';
+  const h = apiHarness(path);
+  assert.equal((await h.request('POST', { ...body, subscription })).status, 201);
+  assert.equal(h.rpcs[0].name, 'holding_create_website_bundle');
+  assert.equal(h.rpcs[0].args.p_subscription.customer_id, customerId);
+  assert.equal(h.rpcs[0].args.p_subscription.request_id, contractId);
+  assert.equal(h.rpcs[0].args.p_subscription.amount_cents, 15999);
+  assert.equal(h.rpcs[0].args.p_subscription.fiscal_confirmed, true);
+  assert.equal(h.rpcs[0].args.p_subscription.asaas_subscription_id, undefined);
+  for (const patch of [{ fiscal_confirmed: false }, { amount_cents: 0 }, { billing_cycle: 'one_time' }, { first_due_date: 'wrong' }]) {
+    assert.equal((await h.request('POST', { ...body, subscription: { ...subscription, ...patch } })).status, 400);
+  }
+  assert.equal(h.rpcs.length, 1);
+  const denied = apiHarness(path, { deniedFiscal: true });
+  assert.equal((await denied.request('POST', { ...body, subscription })).status, 403);
+  assert.equal(denied.rpcs.length, 0);
+  assert.equal((await denied.request('POST', body)).status, 201);
+  assert.equal(denied.rpcs[0].args.p_subscription, null);
 });
 
 test('billing API requires an explicit action and cannot use untrusted provider IDs or amounts', async () => {

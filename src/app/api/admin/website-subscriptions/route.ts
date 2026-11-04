@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     if (denied) return denied;
     const [subscriptions, customers, plans] = await Promise.all([
       db.from('holding_website_subscriptions').select(
-        '*,holding_website_subscription_payments(*,holding_website_invoices(status,system_invoice_id))',
+        '*,lifecycle_status,pending_action,resume_due_date,contract_id,holding_website_subscription_payments(*,holding_website_invoices(status,system_invoice_id))',
       ).order('created_at', { ascending: false }),
       db.from('holding_customers').select('id,name,document').eq('active', true).order('name'),
       db.from('holding_website_plans').select('id,name,scope,billing_cycle,price_cents,recurring_prices,fiscal_config')

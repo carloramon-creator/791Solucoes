@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Globe, Loader2, Plus } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { buildWebsiteSchedule, WEBSITE_PAYMENT_METHODS, type WebsiteContract, type WebsitePaymentMethod } from '@/lib/website-contracts';
+import type { WebsitePlan } from '@/lib/website-plans';
+import { EMPTY_WEBSITE_SUBSCRIPTION, WebsiteSubscriptionFields, type WebsiteSubscriptionForm } from '@/components/WebsiteSubscriptionFields';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialMoney,
   commercialSecondaryClass, HoldingCommercialSelect,
@@ -13,10 +15,12 @@ import {
 type Options = {
   customers: Array<{ id: string; name: string; document: string }>;
   plans: Array<{ id: string; name: string; price_cents: number; scope: string }>;
+  recurring_plans: WebsitePlan[];
 };
 type Form = {
   request_id: string; customer_id: string; plan_id: string; total: string; count: string;
   first_due_date: string; deposit: string; deposit_due_date: string; payment_method: WebsitePaymentMethod;
+  subscription: WebsiteSubscriptionForm | null;
 };
 const STATES = { local: 'Somente na Holding', processing: 'Processando — não reenviar', review: 'Revisão necessária', issued: 'Emitido no Asaas' };
 const STATUS: Record<string, string> = {
@@ -28,7 +32,7 @@ const dateLabel = (value: string) => value.split('-').reverse().join('/');
 
 export default function WebsiteContractsPage() {
   const [contracts, setContracts] = useState<WebsiteContract[]>([]);
-  const [options, setOptions] = useState<Options>({ customers: [], plans: [] });
+  const [options, setOptions] = useState<Options>({ customers: [], plans: [], recurring_plans: [] });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
@@ -51,12 +55,12 @@ export default function WebsiteContractsPage() {
       const contractData: { contracts?: WebsiteContract[]; error?: string } = await contractRes.json();
       const optionData: Partial<Options> & { error?: string } = await optionsRes.json();
       if (!contractRes.ok || !Array.isArray(contractData.contracts)) throw new Error(contractData.error || 'Não foi possível carregar as contratações.');
-      if (!optionsRes.ok || !Array.isArray(optionData.customers) || !Array.isArray(optionData.plans)) {
+      if (!optionsRes.ok || !Array.isArray(optionData.customers) || !Array.isArray(optionData.plans) || !Array.isArray(optionData.recurring_plans)) {
         throw new Error(optionData.error || 'Não foi possível carregar clientes e produtos.');
       }
       if (!signal?.aborted) {
         setContracts(contractData.contracts);
-        setOptions({ customers: optionData.customers, plans: optionData.plans });
+        setOptions({ customers: optionData.customers, plans: optionData.plans, recurring_plans: optionData.recurring_plans });
       }
     }).catch((failure: unknown) => {
       if (!signal?.aborted) {
@@ -88,6 +92,7 @@ export default function WebsiteContractsPage() {
     setForm({
       request_id: crypto.randomUUID(), customer_id: '', plan_id: '', total: '', count: '1',
       first_due_date: '', deposit: '', deposit_due_date: '', payment_method: 'PIX',
+      subscription: null,
     });
   }
   async function save(event: FormEvent) {
@@ -101,12 +106,16 @@ export default function WebsiteContractsPage() {
         body: JSON.stringify({
           ...scheduleInput, customer_id: form.customer_id, plan_id: form.plan_id,
           payment_method: form.payment_method, request_id: form.request_id,
+          subscription: form.subscription ? { ...form.subscription, amount_cents: Math.round(Number(form.subscription.amount) * 100) } : null,
         }),
       });
-      const payload: { id?: string; error?: string } = await response.json();
+      const payload: { id?: string; subscription_id?: string; error?: string } = await response.json();
       if (!response.ok || !payload.id) throw new Error(payload.error || 'O banco não confirmou a contratação.');
+      if (form.subscription && !payload.subscription_id) throw new Error('O banco não confirmou a assinatura conjunta. Atualize e confira os cadastros antes de repetir.');
       setForm(null);
-      setMessage('Contratação e parcelas salvas somente na Holding. Para cobrar, use Gerar no Asaas.');
+      setMessage(payload.subscription_id
+        ? 'Criação e assinatura salvas juntas, sem cobrar. Gere as parcelas do projeto aqui e ative a hospedagem/manutenção em Assinaturas recorrentes.'
+        : 'Contratação e parcelas salvas somente na Holding. Para cobrar, use Gerar no Asaas.');
       await load();
     } catch (failure) {
       console.error('[WEBSITE CONTRACTS] Falha ao salvar contratação.');
@@ -228,7 +237,9 @@ export default function WebsiteContractsPage() {
           <fieldset disabled={saving} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               <label className={commercialLabelClass}><span>Cliente *</span>
-                <HoldingCommercialSelect required value={form.customer_id} onChange={(event) => setForm({ ...form, customer_id: event.target.value })}>
+                <HoldingCommercialSelect required value={form.customer_id} onChange={(event) => setForm({
+                  ...form, customer_id: event.target.value, subscription: form.subscription ? { ...form.subscription, fiscal_confirmed: false } : null,
+                })}>
                   <option value="">Selecione o cliente</option>
                   {options.customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} — {customer.document}</option>)}
                 </HoldingCommercialSelect>
@@ -287,6 +298,17 @@ export default function WebsiteContractsPage() {
               </div>
             ) : <p className="text-sm text-slate-500">{previewError}</p>}
             <p className="text-xs text-slate-500">Sem juros adicionais nesta etapa. Eventuais centavos ficam na última parcela. Após salvar, valores e escopo ficam preservados no contrato e não são editáveis nesta tela.</p>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={Boolean(form.subscription)} onChange={(event) => setForm({
+                ...form, subscription: event.target.checked ? { ...EMPTY_WEBSITE_SUBSCRIPTION } : null,
+              })} /> Incluir hospedagem / manutenção nesta contratação
+            </label>
+            {form.subscription && <section className="space-y-5 rounded-xl border border-slate-200 p-4">
+              <h3 className="font-bold text-slate-800">Assinatura opcional para o mesmo cliente</h3>
+              <WebsiteSubscriptionFields value={form.subscription} plans={options.recurring_plans}
+                onChange={(subscription) => setForm({ ...form, subscription })} />
+              {!options.recurring_plans.length && <p role="alert" className="text-sm text-amber-700">Cadastre primeiro um produto recorrente em Planos → Websites.</p>}
+            </section>}
             <div className="flex justify-end gap-3">
               <button type="button" className={commercialSecondaryClass} onClick={() => setForm(null)}>Cancelar</button>
               <button type="submit" className={commercialButtonClass} disabled={Boolean(previewError) || !form.customer_id || !form.plan_id}>
@@ -311,6 +333,7 @@ export default function WebsiteContractsPage() {
               </div>
             </div>
             <details className="text-sm text-slate-600"><summary className="cursor-pointer">Escopo preservado na contratação</summary><p className="mt-2 whitespace-pre-wrap">{contract.plan_snapshot.scope}</p></details>
+            {contract.bundled_subscription && <Link href="/assinaturas/websites/recorrentes" className="block text-sm text-blue-700 underline">Hospedagem/manutenção contratada junto — gerenciar assinatura recorrente</Link>}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-slate-500"><tr><th className="p-3">Parcela</th><th className="p-3">Vencimento</th><th className="p-3">Valor</th><th className="p-3">Última situação consultada</th><th className="p-3">Cobrança</th></tr></thead>

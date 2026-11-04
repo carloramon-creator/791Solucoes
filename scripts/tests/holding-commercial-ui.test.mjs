@@ -25,6 +25,12 @@ const customers = load('src/lib/holding-customers.ts');
 const terms = load('src/lib/website-contracts.ts', { '@/lib/holding-customers': customers });
 const catalog = load('src/lib/website-plans.ts');
 const fields = load('src/components/HoldingCommercialFields.tsx');
+const subscriptionTerms = load('src/lib/website-subscription-terms.ts', {
+  '@/lib/holding-customers': customers, '@/lib/website-contracts': terms, '@/lib/website-plans': catalog,
+});
+const subscriptionFields = load('src/components/WebsiteSubscriptionFields.tsx', {
+  '@/lib/website-plans': catalog, '@/lib/website-contracts': terms, '@/components/HoldingCommercialFields': fields,
+});
 const customerId = '10000000-0000-4000-8000-000000000001';
 const planId = '20000000-0000-4000-8000-000000000001';
 const contractId = '30000000-0000-4000-8000-000000000001';
@@ -39,6 +45,7 @@ function nodes(node, predicate) {
   if (!node || typeof node !== 'object') return [];
   if (Array.isArray(node)) return node.flatMap((child) => nodes(child, predicate));
   if (node.type === fields.HoldingCommercialSelect) return nodes(node.type(node.props), predicate);
+  if (node.type === subscriptionFields.WebsiteSubscriptionFields) return nodes(node.type(node.props), predicate);
   return [...(predicate(node) ? [node] : []), ...nodes(node.props?.children, predicate)];
 }
 function text(node) {
@@ -77,6 +84,8 @@ function harness(path, request, confirm = true) {
     '@/lib/website-contracts': terms,
     '@/lib/website-plans': catalog,
     '@/components/HoldingCommercialFields': fields,
+    '@/components/WebsiteSubscriptionFields': subscriptionFields,
+    '@/lib/website-subscription-terms': subscriptionTerms,
     '@/lib/holding-auth-fetch': { holdingAuthFetch: async (url, init = {}) => {
       const method = init.method || 'GET';
       const body = init.body ? JSON.parse(init.body) : undefined;
@@ -115,7 +124,8 @@ test('contract guidance is collapsed by default and remains available on demand'
   assert.match(text(guidance), /Gere no Asaas somente quando desejar cobrar/);
   assert.match(text(guidance), /empréstimos, aportes e transferências não geram nota/);
 });
-const optionsResponse = () => Response.json({ customers: [customer], plans: [plan] });
+const recurringPlan = { ...plan, billing_cycle: 'monthly', recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } };
+const optionsResponse = () => Response.json({ customers: [customer], plans: [plan], recurring_plans: [recurringPlan] });
 async function contractForm(request = (url) => url.endsWith('/options') ? optionsResponse() : contractResponse()) {
   const ui = harness('src/app/assinaturas/websites/page.tsx', request);
   await ui.mount(); ui.button('Nova contratação').props.onClick();
@@ -229,7 +239,7 @@ test('contract UI prefills product price, previews entry and cents, and saves wi
   assert.match(text(ui.render()), /Prévia das parcelas/);
   assert.match(text(ui.render()), /28\/02\/2027/);
   assert.match(text(ui.render()), /31\/03\/2027/);
-  for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type))) {
+  for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type) && node.props.type !== 'checkbox')) {
     assert.ok(field.props.className.split(' ').includes('h-11'));
   }
   await ui.submit();
@@ -243,6 +253,85 @@ test('contract UI prefills product price, previews entry and cents, and saves wi
   assert.equal(ui.calls.some((call) => call.url.includes('/billing')), false);
   assert.match(text(ui.render()), /salvas somente na Holding/);
 });
+
+test('combined creation UI saves negotiated recurring terms for the same customer in one request, without billing', async () => {
+    const ui = await contractForm((url, method, body) => method === 'POST'
+      ? Response.json({ id: contractId, subscription_id: customerId }) : url.endsWith('/options') ? optionsResponse() : contractResponse());
+    ui.fill('Cliente', customerId); ui.fill('Produto', planId); ui.fill('Primeiro vencimento', '2026-11-20');
+    ui.fill('Incluir hospedagem', true);
+    ui.fill('Produto recorrente', planId);
+    assert.equal(ui.field('Valor personalizado').props.value, '100.00');
+    ui.fill('Ciclo', 'quarterly');
+    assert.equal(ui.field('Valor personalizado').props.value, '280.00');
+    ui.fill('Valor personalizado', '255.50');
+    ui.fill('Primeiro vencimento da assinatura', '2026-12-10');
+    ui.fill('Forma de pagamento da assinatura', 'BOLETO'); ui.fill('Confirmo o enquadramento', true);
+    for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type) && node.props.type !== 'checkbox')) {
+      assert.ok(field.props.className.split(' ').includes('h-11'));
+    }
+    await ui.submit();
+    const posts = ui.calls.filter((call) => call.method === 'POST');
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].url, '/api/admin/website-contracts');
+    assert.equal(posts[0].body.customer_id, customerId);
+    assert.equal(posts[0].body.subscription.amount_cents, 25550);
+    assert.equal(posts[0].body.subscription.billing_cycle, 'quarterly');
+    assert.equal(posts[0].body.subscription.payment_method, 'BOLETO');
+    assert.equal(posts[0].body.subscription.first_due_date, '2026-12-10');
+    assert.equal(posts[0].body.subscription.fiscal_confirmed, true);
+    assert.match(text(ui.render()), /Criação e assinatura salvas juntas, sem cobrar/);
+  });
+
+test('optional subscription removal restores creation-only flow and customer changes require fresh fiscal consent', async () => {
+    const ui = await contractForm((url, method) => method === 'POST'
+      ? Response.json({ error: 'Erro fiscal: nada salvo.' }, { status: 400 }) : url.endsWith('/options') ? optionsResponse() : contractResponse());
+    ui.fill('Cliente', customerId); ui.fill('Produto', planId); ui.fill('Primeiro vencimento', '2026-11-20');
+    ui.fill('Incluir hospedagem', true); ui.fill('Produto recorrente', planId); ui.fill('Confirmo o enquadramento', true);
+    ui.fill('Cliente', customerId);
+    assert.equal(ui.field('Confirmo o enquadramento').props.checked, false);
+    await ui.submit();
+    assert.match(text(ui.render()), /Erro fiscal: nada salvo/);
+    const request = ui.calls.find((call) => call.method === 'POST').body.request_id;
+    assert.ok(ui.field('Produto recorrente'));
+    ui.fill('Incluir hospedagem', false);
+    await ui.submit();
+    assert.equal(ui.calls.at(-1).body.subscription, null);
+    assert.equal(ui.calls.at(-1).body.request_id, request);
+  });
+
+test('recurring UI confirms pause/end, requires a new resume date and hides reactivation for ended subscriptions', async () => {
+    const base = { id: contractId, customer_snapshot: { name: customer.name }, plan_snapshot: {
+      name: 'Hospedagem', billing_cycle: 'monthly' }, amount_cents: 10000, billing_state: 'issued',
+      lifecycle_status: 'active', pending_action: null, holding_website_subscription_payments: [],
+    };
+    let local = { ...base };
+    const ui = harness('src/app/assinaturas/websites/recorrentes/page.tsx', (_url, method, body) => {
+      if (method === 'POST') {
+        local = { ...local, lifecycle_status: body.action === 'pause' ? 'paused' : body.action === 'cancel' ? 'cancelled' : 'active' };
+        return Response.json({ message: 'Alterado' });
+      }
+      return Response.json({ subscriptions: [local], customers: [customer], plans: [recurringPlan] });
+    });
+    await ui.mount(); ui.button('Pausar').props.onClick(); await settle(); await settle();
+    assert.equal(ui.calls.find((call) => call.method === 'POST').body.confirmed, true);
+    assert.match(ui.confirmations[0], /Cobranças já emitidas, inclusive vencidas, continuam válidas/);
+    ui.button('Reativar').props.onClick();
+    assert.equal(ui.field('Próximo vencimento').props.required, true);
+    ui.fill('Próximo vencimento', '2026-12-10'); await ui.submit(); await settle(); await settle();
+    assert.equal(ui.calls.filter((call) => call.method === 'POST').at(-1).body.next_due_date, '2026-12-10');
+    ui.button('Encerrar assinatura').props.onClick(); await settle(); await settle();
+    assert.match(ui.confirmations.at(-1), /não poderá ser reativada pela Holding/);
+    assert.equal(ui.button('Reativar'), undefined); assert.equal(ui.button('Pausar'), undefined);
+    assert.match(text(ui.render()), /Encerrada/);
+    for (const status of ['active', 'paused']) {
+      const declined = harness('src/app/assinaturas/websites/recorrentes/page.tsx', () => Response.json({
+        subscriptions: [{ ...base, lifecycle_status: status }], customers: [customer], plans: [recurringPlan],
+      }), false);
+      await declined.mount();
+      declined.button('Encerrar assinatura').props.onClick(); await settle();
+      assert.equal(declined.calls.filter((call) => call.method === 'POST').length, 0);
+    }
+  });
 
 test('failed and duplicate submissions retain a stable request ID and do not silently clear the contract', async () => {
   let finish;
@@ -304,30 +393,6 @@ test('manual invoice UI validates a preview before production confirmation and n
           },
         });
 
-        test('recurring subscription UI picks cycle price, permits a client override and saves without billing or editing the catalog', async () => {
-          const recurring = { ...plan, billing_cycle: 'monthly', recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } };
-          const ui = harness('src/app/assinaturas/websites/recorrentes/page.tsx', (_url, method) => method === 'POST'
-            ? Response.json({ id: contractId }) : Response.json({ subscriptions: [], customers: [customer], plans: [recurring] }));
-          await ui.mount(); ui.button('Nova assinatura').props.onClick();
-          ui.fill('Cliente', customerId); ui.fill('Produto', planId);
-          assert.equal(ui.field('Valor personalizado').props.value, '100.00');
-          ui.fill('Ciclo', 'quarterly');
-          assert.equal(ui.field('Valor personalizado').props.value, '280.00');
-          ui.fill('Valor personalizado', '255.50');
-          ui.fill('Primeiro vencimento', '2026-11-20');
-          ui.fill('Confirmo o enquadramento', true);
-          for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type) && node.props.type !== 'checkbox')) {
-            assert.match(field.props.className, /h-11/);
-          }
-          await ui.submit();
-          const post = ui.calls.find((call) => call.method === 'POST');
-          assert.equal(post.url, '/api/admin/website-subscriptions');
-          assert.equal(post.body.billing_cycle, 'quarterly'); assert.equal(post.body.amount_cents, 25550);
-          assert.equal(post.body.fiscal_confirmed, true);
-          assert.equal(recurring.recurring_prices.quarterly, 28000);
-          assert.equal(ui.calls.some((call) => /billing|website-plans/.test(call.url)), false);
-          assert.match(text(ui.render()), /salva sem cobrar/);
-        });
       }
       return url.endsWith('/options') ? optionsResponse() : Response.json({ contracts: [local] });
     }, confirm);
@@ -347,6 +412,31 @@ test('manual invoice UI validates a preview before production confirmation and n
   }
 });
 
+test('recurring subscription UI picks cycle price, permits a client override and saves without billing or editing the catalog', async () => {
+  const recurring = { ...recurringPlan };
+  const ui = harness('src/app/assinaturas/websites/recorrentes/page.tsx', (_url, method) => method === 'POST'
+    ? Response.json({ id: contractId }) : Response.json({ subscriptions: [], customers: [customer], plans: [recurring] }));
+  await ui.mount(); ui.button('Nova assinatura').props.onClick();
+  ui.fill('Cliente', customerId); ui.fill('Produto recorrente', planId);
+  assert.equal(ui.field('Valor personalizado').props.value, '100.00');
+  ui.fill('Ciclo', 'quarterly');
+  assert.equal(ui.field('Valor personalizado').props.value, '280.00');
+  ui.fill('Valor personalizado', '255.50');
+  ui.fill('Primeiro vencimento', '2026-11-20');
+  ui.fill('Confirmo o enquadramento', true);
+  for (const field of nodes(ui.render(), (node) => ['input', 'select'].includes(node.type) && node.props.type !== 'checkbox')) {
+    assert.match(field.props.className, /h-11/);
+  }
+  await ui.submit();
+  const post = ui.calls.find((call) => call.method === 'POST');
+  assert.equal(post.url, '/api/admin/website-subscriptions');
+  assert.equal(post.body.billing_cycle, 'quarterly'); assert.equal(post.body.amount_cents, 25550);
+  assert.equal(post.body.fiscal_confirmed, true);
+  assert.equal(recurring.recurring_prices.quarterly, 28000);
+  assert.equal(ui.calls.some((call) => /billing|website-plans/.test(call.url)), false);
+  assert.match(text(ui.render()), /salva sem cobrar/);
+});
+
 test('rendered form fixtures retain actual React markup for visual verification', {
   skip: !process.env.WEBSITE_UI_FIXTURE_DIR,
 }, async () => {
@@ -357,6 +447,8 @@ test('rendered form fixtures retain actual React markup for visual verification'
   await clients.mount(); clients.button('Novo cliente').props.onClick();
   const contracts = await contractForm();
   contracts.fill('Produto', planId);
+  contracts.fill('Incluir hospedagem', true);
+  contracts.fill('Produto recorrente', planId);
   const recurring = harness('src/app/assinaturas/websites/recorrentes/page.tsx', () => Response.json({
     subscriptions: [], customers: [customer], plans: [{ ...plan, billing_cycle: 'monthly',
       recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } }],

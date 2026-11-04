@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authorizeHoldingCommercial } from '@/lib/holding-commercial-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 import { validateWebsiteContract } from '@/lib/website-contracts';
+import { validateWebsiteSubscription } from '@/lib/website-subscription-terms';
 
 const PERMISSIONS = ['menu.assinaturas', 'submenu.assinaturas.websites'];
 
@@ -28,19 +29,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Envie um JSON válido.' }, { status: 400 });
     }
     let input: ReturnType<typeof validateWebsiteContract>;
-    try { input = validateWebsiteContract(body); } catch (error) {
+    let subscription: ReturnType<typeof validateWebsiteSubscription> | null = null;
+    try {
+      input = validateWebsiteContract(body);
+      if (body && typeof body === 'object' && 'subscription' in body && body.subscription != null) {
+        if (typeof body.subscription !== 'object' || Array.isArray(body.subscription)) throw new Error('Assinatura opcional inválida.');
+        subscription = validateWebsiteSubscription({ ...body.subscription, customer_id: input.customer_id, request_id: input.request_id });
+      }
+    } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : 'Contratação inválida.' }, { status: 400 });
     }
-    const { data, error } = await supabaseServer.rpc('holding_create_website_contract', {
+    if (subscription) {
+      const fiscalDenied = await authorizeHoldingCommercial(req, ['menu.notas_fiscais']);
+      if (fiscalDenied) return fiscalDenied;
+    }
+    const { data, error } = await supabaseServer.rpc('holding_create_website_bundle', {
       p_request_id: input.request_id,
       p_customer_id: input.customer_id, p_plan_id: input.plan_id, p_total_cents: input.total_cents,
       p_payment_method: input.payment_method, p_schedule: input.schedule,
+      p_subscription: subscription ? { ...subscription, fiscal_confirmed: true } : null,
     });
     if (error?.code === '22023') return NextResponse.json({ error: 'Esta tentativa já foi salva com outros dados. Atualize as contratações antes de continuar.' }, { status: 409 });
-    if (error?.code === 'P0002') return NextResponse.json({ error: 'Selecione um cliente ativo e um produto ativo de cobrança única.' }, { status: 400 });
+    if (error?.code === 'P0002' || error?.code === 'P0001') return NextResponse.json({ error: 'Confira cliente/produtos ativos, ciclo oferecido e dados fiscais confirmados da assinatura opcional.' }, { status: 400 });
     if (error) throw error;
-    if (!data) throw new Error('Contrato não confirmado pelo banco.');
-    return NextResponse.json({ id: data }, { status: 201 });
+    if (!data || typeof data.id !== 'string') throw new Error('Contrato não confirmado pelo banco.');
+    return NextResponse.json({ id: data.id, subscription_id: data.subscription_id }, { status: 201 });
   } catch {
     console.error('[WEBSITE CONTRACTS] Falha ao salvar contratação.');
     return NextResponse.json({ error: 'Não foi possível salvar a contratação. Confira o cadastro e a migração do banco.' }, { status: 500 });

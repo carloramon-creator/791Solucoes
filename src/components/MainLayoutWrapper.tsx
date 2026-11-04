@@ -14,6 +14,7 @@ const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
   { path: '/notas-fiscais', resourceCode: 'menu.notas_fiscais' },
   { path: '/suporte', resourceCode: 'menu.suporte' },
   { path: '/assinaturas', resourceCode: 'menu.assinaturas' },
+  { path: '/clientes', resourceCode: 'menu.clientes' },
   { path: '/patrocinadores', resourceCode: 'menu.patrocinadores' },
   { path: '/planos', resourceCode: 'menu.planos' },
   { path: '/cupons', resourceCode: 'menu.cupons' },
@@ -25,7 +26,9 @@ function mapPathToResource(path: string): string | null {
   if (path.startsWith('/financeiro')) return 'menu.financeiro';
   if (path.startsWith('/notas-fiscais')) return 'menu.notas_fiscais';
   if (path.startsWith('/suporte')) return 'menu.suporte';
+  if (path === '/assinaturas/websites' || path.startsWith('/assinaturas/websites/')) return 'submenu.assinaturas.websites';
   if (path.startsWith('/assinaturas')) return 'menu.assinaturas';
+  if (path === '/clientes' || path.startsWith('/clientes/')) return 'menu.clientes';
   if (path.startsWith('/patrocinadores')) return 'menu.patrocinadores';
   if (path === '/planos/websites' || path.startsWith('/planos/websites/')) return 'submenu.planos.websites';
   if (path.startsWith('/planos')) return 'menu.planos';
@@ -112,7 +115,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
         } else {
           // É administrador. Redireciona para a primeira rota habilitada quando necessário.
           setSponsorId(null);
-          if (pathname === '/login' || pathname === '/' || pathname.startsWith('/financeiro') || pathname.startsWith('/notas-fiscais') || pathname.startsWith('/suporte') || pathname.startsWith('/assinaturas') || pathname.startsWith('/patrocinadores') || pathname.startsWith('/planos') || pathname.startsWith('/cupons') || pathname.startsWith('/configuracoes')) {
+          if (pathname === '/login' || pathname === '/' || pathname.startsWith('/financeiro') || pathname.startsWith('/notas-fiscais') || pathname.startsWith('/suporte') || pathname.startsWith('/assinaturas') || pathname.startsWith('/clientes') || pathname.startsWith('/patrocinadores') || pathname.startsWith('/planos') || pathname.startsWith('/cupons') || pathname.startsWith('/configuracoes')) {
             try {
               const token = authUser.user_metadata?.token || (await supabase.auth.getSession()).data?.session?.access_token;
               if (token) {
@@ -133,6 +136,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
                   const currentAllowed = unrestrictedFallback || !currentResource || (
                     permissionCodes.has(currentResource)
                     && (currentResource !== 'submenu.planos.websites' || permissionCodes.has('menu.planos'))
+                    && (currentResource !== 'submenu.assinaturas.websites' || permissionCodes.has('menu.assinaturas'))
                   );
 
                   if (pathname === '/login') {

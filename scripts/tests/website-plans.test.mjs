@@ -29,6 +29,7 @@ const valid = {
   billing_cycle: 'one_time',
   price_cents: 250099,
   active: true,
+  fiscal_config: null,
 };
 const requiredResources = ['menu.planos', 'submenu.planos.websites'];
 
@@ -70,6 +71,28 @@ test('rejects malformed, missing, oversized or mistyped fields', () => {
   assert.equal(catalog.validateWebsitePlan({
     ...valid, name: 'x'.repeat(120), description: 'x'.repeat(2000), scope: 'x'.repeat(5000),
   }).ok, true);
+});
+
+test('stores per-product fiscal data without guessing licensing codes or accepting invalid confirmation', () => {
+  const pending = {
+    national_code: '', municipal_code: '', nbs: '', service_description: '', accountant_confirmed: false,
+    simples_percent: null,
+  };
+  assert.deepEqual(catalog.validateWebsitePlan({ ...valid, fiscal_config: pending }).data.fiscal_config, pending);
+  assert.equal(catalog.validateWebsitePlan({ ...valid, fiscal_config: { ...pending, accountant_confirmed: true } }).ok, false);
+  const configured = {
+    national_code: '010101', municipal_code: '001', nbs: '123456789',
+    service_description: ' Descrição fiscal validada ', accountant_confirmed: true,
+    simples_percent: 6,
+  };
+  assert.equal(catalog.validateWebsitePlan({ ...valid, fiscal_config: configured }).data.fiscal_config.service_description, 'Descrição fiscal validada');
+  for (const patch of [
+    { national_code: '0101' }, { municipal_code: '0001' }, { nbs: '111' },
+    { accountant_confirmed: 'true' }, { service_description: 'a'.repeat(2001) },
+  ]) assert.equal(catalog.validateWebsitePlan({ ...valid, fiscal_config: { ...configured, ...patch } }).ok, false);
+  assert.equal(catalog.websiteInvoicePolicy('one_time'), 'manual_project_total');
+  assert.equal(catalog.websiteInvoicePolicy('monthly'), 'automatic_after_payment');
+  assert.equal(catalog.websiteInvoicePolicy('annual'), 'automatic_after_payment');
 });
 
 function loadRoute(options = {}) {
@@ -238,6 +261,10 @@ test('fails explicitly, not open, when permission queries or persistence fail', 
 });
 
 const require = createRequire(import.meta.url);
+const commercialFields = loadModule('src/components/HoldingCommercialFields.tsx', {
+  'react/jsx-runtime': require('react/jsx-runtime'),
+  'lucide-react': require('lucide-react'),
+});
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 function nodes(node, predicate) {
@@ -285,6 +312,7 @@ function pageHarness(request) {
     'react/jsx-runtime': require('react/jsx-runtime'),
     'lucide-react': require('lucide-react'),
     '@/lib/website-plans': catalog,
+    '@/components/HoldingCommercialFields': commercialFields,
     '@/lib/holding-auth-fetch': {
       holdingAuthFetch: async (url, init = {}) => {
         assert.equal(url, '/api/admin/website-plans');
@@ -356,6 +384,40 @@ test('UI switches between project and recurring categories with only compatible 
   assert.equal(ui.field('Modalidade').props.value, 'annual');
   ui.fill('Categoria', 'additional');
   assert.equal(ui.field('Modalidade').props.value, 'one_time');
+});
+
+test('UI standardizes single-line fields and explains project installments without configuring recurrence', async () => {
+  const ui = pageHarness(loadRoute().request);
+  await ui.mount();
+  ui.button('Novo produto').props.onClick();
+  for (const label of ['Nome do produto', 'Categoria', 'Modalidade', 'Preço total']) {
+    const field = ui.field(label);
+    for (const style of ['h-11', 'rounded-md', 'border-slate-300', 'font-normal', 'text-sm']) {
+      assert.ok(field.props.className.split(' ').includes(style), `${label}: ${style}`);
+    }
+    if (field.type === 'select') assert.match(field.props.className, /appearance-none/);
+  }
+  assert.doesNotMatch(ui.field('Escopo, limites').props.className, /h-11/);
+  assert.match(text(ui.render()), /valor total do projeto, não o valor da parcela/);
+  assert.match(text(ui.render()), /O parcelamento ainda não é configurado nesta tela/);
+  ui.fill('Categoria', 'hosting');
+  assert.doesNotMatch(text(ui.render()), /valor total do projeto, não o valor da parcela/);
+});
+
+test('UI resets accounting confirmation when fiscal data changes and does not enable real issuance', async () => {
+  const ui = pageHarness(loadRoute().request);
+  await ui.mount(); ui.button('Novo produto').props.onClick();
+  ui.fill('Tributação nacional', '010101');
+  ui.fill('NBS', '123456789');
+  ui.fill('Descrição fiscal', 'Confecção de website');
+  ui.fill('Enquadramento deste serviço', true);
+  assert.equal(ui.field('Enquadramento deste serviço').props.checked, true);
+  ui.fill('NBS', '123456780');
+  assert.equal(ui.field('Enquadramento deste serviço').props.checked, false);
+  assert.match(text(ui.render()), /emissão manual de uma NFS-e pelo valor total/);
+  assert.match(text(ui.render()), /automação fiscal de assinaturas Websites ainda não está habilitada/);
+  ui.fill('Categoria', 'hosting');
+  assert.match(text(ui.render()), /emissão automática de NFS-e após confirmação/);
 });
 
 test('UI retains form data and reports failed saves, without showing success', async () => {

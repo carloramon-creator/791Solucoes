@@ -20,12 +20,152 @@ autenticacao administrativa e verificacao de `menu.planos` e
 `submenu.planos.websites`. Administradores e o bootstrap sem perfis seguem a
 convencao existente da Holding; outros perfis precisam das duas permissoes.
 
-Esta etapa e somente o catalogo: nao cadastra clientes/projetos/assinaturas,
-nao chama o Asaas e nao emite NFS-e. Parcelamento, recorrencia e emissao fiscal
-ficam para a etapa de contratacao. Edicoes e inativacoes nao propagam alteracoes
-a contratos ou cobrancas. Nao ha exclusao de produtos.
+O catalogo nao cobra nem emite NFS-e ao salvar. A contratacao de projetos e
+descrita abaixo. Edicoes e inativacoes nao propagam alteracoes a contratos ou
+cobrancas. Nao ha exclusao de produtos.
 
 Testes: `node --test scripts/tests/website-plans.test.mjs`.
+
+## Clientes e contratacoes de Websites (Holding)
+
+Aplicar **somente na Holding**, depois da migration do catalogo:
+`supabase/migrations/20261104184500_holding_website_plan_fiscal.sql`, seguida de
+`supabase/migrations/20261104190000_holding_website_contracts.sql` e
+`supabase/migrations/20261104193000_holding_website_invoices.sql`.
+Estas migrations nao foram aplicadas automaticamente e nao modificam Glass/Barber.
+Ela cria `holding_customers`, `holding_website_contracts`,
+`holding_website_installments` e a RPC transacional de contratacao. RLS e
+revogacoes bloqueiam anon/authenticated; acesso somente via APIs administrativas.
+Nao ha exclusao nem provisionamento de tenants/usuarios de outros sistemas.
+
+Fluxo:
+
+1. Em **Clientes**, cadastrar nome/razao social, CPF/CNPJ valido, e-mail,
+   contato e endereco fiscal. Um cadastro por documento, reutilizavel em varios
+   projetos. O CPF/CNPJ nao pode mudar depois de salvo. Endereco fiscal pode
+   estar completo antes de contratar para permitir emissao nacional.
+2. Em **Assinaturas > Websites**, selecionar cliente ativo e produto ativo de
+   cobranca unica (confeccao/alteracoes), definir preco total negociado, forma
+   de pagamento, entrada opcional e de 1 a 12 parcelas mensais do saldo.
+   Produtos de hospedagem/manutencao recorrente continuam somente no catalogo.
+3. Conferir a previa e **Salvar sem cobrar**. A RPC grava contrato e parcelas
+   atomicamente; a chave de tentativa impede duplicacao no reenvio da mesma
+   solicitacao. O contrato preserva nome/documento/e-mail/endereco do cliente e
+   nome/descricao/escopo do produto na contratacao. Edicoes futuras no cadastro
+   nao mudam esse historico.
+4. **Gerar no Asaas** exige confirmacao explicita e usa `asaasApiKey` e
+   `asaasEnv` de `system_settings/finance_api`, somente no servidor. Em
+   producao sao cobrancas reais, sujeitas a notificacoes e taxas do Asaas.
+   O ambiente precisa estar definido explicitamente; contratos/clientes ja
+   vinculados a um ambiente nao sao reutilizados silenciosamente em outro.
+5. **Consultar Asaas** recupera as cobrancas existentes e seus estados atuais,
+   sem criar novas cobrancas ou novos clientes. Nao ha baixa automatica no
+   financeiro nem emissao fiscal na consulta. Cancelamento/estorno deve ser
+   feito no painel Asaas e conferido por nova consulta; divergencias/exclusoes
+   exigem revisao administrativa, sem recriar pagamentos.
+
+Pix/boleto usam o parcelamento Asaas com vencimentos mensais. No cartao, o
+saldo e **uma compra parcelada**, nao varias compras mensais: o POST envia
+`installmentCount` e `totalValue`, sem dados do cartao. O cliente informa os
+dados na fatura hospedada pelo Asaas. A interface exibe o link de pagamento
+do primeiro item do saldo, evitando sugerir varios pagamentos do mesmo
+parcelamento no cartao. Se houver entrada, ela e um pagamento separado,
+tambem com seu proprio link. Taxas/minimos/regras do provedor continuam
+aplicaveis; nao ha juros comerciais adicionais configuraveis nesta etapa.
+Datas sao ancoradas ao dia inicial, limitadas ao ultimo dia de cada mes; os
+centavos restantes ficam na ultima parcela. Qualquer divergencia do provedor
+em valor, cliente, referencia, metodo ou data bloqueia conciliacao automatica.
+
+As referencias sao `website|<contrato_uuid>|deposit` e
+`website|<contrato_uuid>|balance`. Nao usam `glass|`, `barber|` ou
+`finance_record|`. Clientes Asaas existentes sao localizados pelo documento,
+sem sobrescrever dados ou assinaturas existentes. Duplicidade de documento no
+Asaas interrompe a emissao. O fluxo de cobrancas nao chama APIs/bancos de Glass
+ou Barber, `PaymentProcessor` ou emissores NFS-e. Os dois webhooks legados receberam apenas
+uma barreira de referencia Websites para nao encaminhar esses pagamentos ao
+processador SaaS; o despacho de referencias Glass/Barber permanece igual e
+possui testes de regressao. Nao alteramos o cadastro de webhooks no Asaas.
+
+Emissao usa compare-and-set no contrato e no cliente, sem repetir POSTs.
+Timeout, resposta ambigua, emissao parcial ou falha ao persistir geram
+`review`. A consulta pode recuperar pagamentos ja criados; se faltarem itens,
+o contrato permanece em revisao, sem completar cobrancas presumidas.
+Processo interrompido abruptamente permanece em `processing`, bloqueando novas
+emissoes: um administrador deve conferir o Asaas e os vinculos antes de
+alterar esse estado no banco. Nao ha desbloqueio por tempo nem botao que
+permita reemitir cegamente. Consultas de contratos emitidos tambem usam o
+mesmo bloqueio para nao conciliar estados concorrentes fora de ordem.
+
+Permissoes: `menu.clientes` para cadastro; `menu.assinaturas` e
+`submenu.assinaturas.websites` para consultar contratos; criar/emitir/consultar
+Asaas tambem exige `menu.clientes`. Administradores/bootstrap seguem a
+convencao existente; demais perfis precisam receber os novos recursos.
+
+Testes sem chamadas reais:
+`node --test scripts/tests/website-plans.test.mjs scripts/tests/website-contracts.test.mjs scripts/tests/website-invoices.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
+Banco PostgreSQL descartavel:
+`PGLITE_MODULE=file:///caminho/node_modules/@electric-sql/pglite/dist/index.js node --test scripts/tests/website-contracts-db.integration.mjs`.
+Esse teste cria somente tabelas ficticias em memoria; nao aponta para
+producao. Fixtures visuais opcionais com markup React/CSS Tailwind reais:
+definir `WEBSITE_UI_FIXTURE_DIR` para uma pasta temporaria existente ao executar
+o teste de interface. Nenhuma cobranca real ou NFS-e e emitida pelos testes.
+
+### Enquadramento fiscal por produto Websites
+
+Cada produto tem tributacao nacional (6 digitos), municipal opcional (3
+digitos), NBS (9 digitos), descricao fiscal, percentual aproximado de tributos
+do Simples (`pTotTribSN`, entre 0 e 100) e confirmacao contabil. Os campos
+comecam vazios, sem copiar os codigos de licenciamento Glass/Barber. Pode-se
+salvar um rascunho fiscal incompleto; para confirmar exigem-se tributacao
+nacional, NBS, descricao e percentual. Alterar um campo desmarca a confirmacao. Validar o
+formato dos codigos nao comprova que o enquadramento e correto.
+
+A contratacao preserva uma copia desses dados no `plan_snapshot`; editar o
+produto nao reclassifica contratos existentes. A politica prevista e manual
+pelo valor total para projetos, independente de pagamento, e automatica apos
+pagamento para servicos recorrentes. Entrada bancaria nao determina receita
+tributavel: emprestimos, aportes e transferencias nao sao gatilhos de NFS-e.
+**A automacao recorrente Websites ainda nao esta implementada.** Confirmar
+dados no catalogo nao emite nota. O emissor nacional existente de licenciamento
+nao foi alterado; nao houve mudanca em `nfse_config`, `system_plans` ou Asaas fiscal.
+
+### NFS-e manual de projetos Websites
+
+Em **Assinaturas > Websites**, **Emitir NFS-e** exige competencia, validacao
+previa e confirmacao explicita de producao. Emite **uma nota pelo total do
+projeto**, mesmo antes do pagamento, sem usar o valor de parcelas ou entradas
+bancarias. A API exige tambem `menu.notas_fiscais`. Usa o certificado/emitente
+da Holding e os componentes genericos de XML, assinatura e envio nacional,
+sem acessar tenants. Os codigos e o percentual informativo vem exclusivamente
+do snapshot do produto no contrato, nunca dos codigos de licenciamento.
+O percentual informado deve estar vigente na competencia e confirmado com a
+contabilidade; nao calcula automaticamente anexos/fator R para estes servicos
+e nao representa aliquota de ISS. O fluxo suporta o regime ME/EPP do Simples
+ja parametrizado no XML nacional, com ISS nao retido e prestacao no municipio
+do emitente. Nao use para operacoes com outro tratamento tributario. Esta
+versao so aceita competencias/emissoes de 2026; 2027 requer revisao IBS/CBS.
+Contratos com fiscal/endereco incompletos sao bloqueados, sem completar dados
+silenciosamente a partir de cadastros alterados.
+
+A reserva transacional `holding_reserve_website_invoice` usa uma chave unica
+por contrato em `holding_website_invoices`, independentemente da competencia.
+Compartilha atomicamente a sequencia da serie ja usada pelo mesmo emitente,
+sem alterar o emissor Glass/Barber. Previa nao reserva numero nem envia DPS.
+Resultado oficial e persistido antes do historico `system_invoices`;
+`nfse_producao_website_<contrato>` permite que a receita fiscal da mesma
+Holding seja contabilizada uma unica vez, inclusive se o historico visual
+falhar. Isso nao cria lancamento bancario/receita financeira.
+
+Timeouts, rejeicoes ou interrupcoes deixam a operacao reservada ou em revisao,
+sem reenvio automatico. Conferir a DPS no portal nacional antes de qualquer
+correcao administrativa; nao apagar reservas ou reiniciar a sequencia.
+Autorizacao com falha local tambem bloqueia nova nota. Cancelamento, se
+necessario, usa o historico fiscal/portal, nunca outra emissao pelo contrato.
+
+O campo `cTribMun` **continua no XSD nacional como opcional** (`minOccurs=0`),
+nao foi abolido: preencher o complemento de 3 digitos somente quando exigido.
+Fonte oficial: [documentacao atual da NFS-e nacional](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual),
+pacote `nfse-esquemas_xsd-v1-01-20260209.zip`.
 
 ## Comprovante REP-P centralizado (somente homologacao)
 

@@ -14,6 +14,53 @@ export const WEBSITE_BILLING_CYCLES = {
 export type WebsiteCategory = keyof typeof WEBSITE_CATEGORIES;
 export type WebsiteBillingCycle = keyof typeof WEBSITE_BILLING_CYCLES;
 
+export type WebsiteFiscalConfig = {
+  national_code: string;
+  municipal_code: string;
+  nbs: string;
+  service_description: string;
+  accountant_confirmed: boolean;
+  simples_percent: number | null;
+};
+
+export function websiteInvoicePolicy(cycle: WebsiteBillingCycle) {
+  return cycle === 'one_time' ? 'manual_project_total' : 'automatic_after_payment';
+}
+
+export function validateWebsiteFiscalConfig(value: unknown):
+  | { ok: true; data: WebsiteFiscalConfig | null }
+  | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true, data: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { ok: false, error: 'Dados fiscais inválidos.' };
+  const config = value as Record<string, unknown>;
+  for (const [field, length] of [['national_code', 6], ['municipal_code', 3], ['nbs', 9]] as const) {
+    if (typeof config[field] !== 'string' || (config[field].trim() && !new RegExp(`^\\d{${length}}$`).test(config[field].trim()))) {
+      return { ok: false, error: `Informe ${length} dígitos em ${field}, ou deixe em branco enquanto estiver pendente.` };
+    }
+  }
+  if (typeof config.service_description !== 'string' || config.service_description.trim().length > 2000) {
+    return { ok: false, error: 'A descrição fiscal deve ter até 2.000 caracteres.' };
+  }
+  if (typeof config.accountant_confirmed !== 'boolean') return { ok: false, error: 'Informe a confirmação contábil.' };
+  if (config.simples_percent !== null && config.simples_percent !== undefined
+    && (typeof config.simples_percent !== 'number' || !Number.isFinite(config.simples_percent)
+      || config.simples_percent < 0 || config.simples_percent > 100)) {
+    return { ok: false, error: 'Informe o percentual aproximado de tributos do Simples entre 0 e 100.' };
+  }
+  const data: WebsiteFiscalConfig = {
+    national_code: (config.national_code as string).trim(),
+    municipal_code: (config.municipal_code as string).trim(),
+    nbs: (config.nbs as string).trim(),
+    service_description: config.service_description.trim(),
+    accountant_confirmed: config.accountant_confirmed,
+    simples_percent: typeof config.simples_percent === 'number' ? config.simples_percent : null,
+  };
+  if (data.accountant_confirmed && (!data.national_code || !data.nbs || !data.service_description || data.simples_percent === null)) {
+    return { ok: false, error: 'Preencha tributação nacional, NBS, descrição e percentual de tributos antes de confirmar com a contabilidade.' };
+  }
+  return { ok: true, data };
+}
+
 export type WebsitePlanInput = {
   name: string;
   description: string;
@@ -22,6 +69,7 @@ export type WebsitePlanInput = {
   billing_cycle: WebsiteBillingCycle;
   price_cents: number;
   active: boolean;
+  fiscal_config: WebsiteFiscalConfig | null;
 };
 
 export type WebsitePlan = WebsitePlanInput & {
@@ -66,6 +114,8 @@ export function validateWebsitePlan(value: unknown):
   if (typeof body.active !== 'boolean') {
     return { ok: false, error: 'Informe se o produto está ativo.' };
   }
+  const fiscal = validateWebsiteFiscalConfig(body.fiscal_config);
+  if (!fiscal.ok) return fiscal;
   return {
     ok: true,
     data: {
@@ -76,6 +126,7 @@ export function validateWebsitePlan(value: unknown):
       billing_cycle: body.billing_cycle as WebsiteBillingCycle,
       price_cents: body.price_cents,
       active: body.active,
+      fiscal_config: fiscal.data,
     },
   };
 }

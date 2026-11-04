@@ -30,14 +30,10 @@ export async function POST(req: Request) {
     let payment = payload.payment || {};
     let externalRef = payment.externalReference || '';
 
-    const holdingService = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-    const glassService = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!,
-      process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY!
-    );
+    // Websites têm conciliação própria e nunca entram no fluxo SaaS/fiscal.
+    if (typeof externalRef === 'string' && externalRef.startsWith('website|')) {
+      return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
+    }
 
     // Verificamos se o pagamento foi confirmado
     if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED_IN_CASH') {
@@ -50,7 +46,19 @@ export async function POST(req: Request) {
       }
       payment = verified.payment;
       externalRef = payment.externalReference || '';
+      if (typeof externalRef === 'string' && externalRef.startsWith('website|')) {
+        return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
+      }
       console.log(`[ASAAS WEBHOOK] Pagamento confirmado: ${payment.id} (Ref: ${externalRef})`);
+
+      const holdingService = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      const glassService = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_GLASS_URL!,
+        process.env.SUPABASE_GLASS_SERVICE_ROLE_KEY!
+      );
 
       // CASO 1: Lançamento Financeiro da Holding
       if (externalRef.startsWith('finance_record|')) {

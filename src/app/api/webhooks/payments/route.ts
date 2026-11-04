@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ received: true, ignored: verified.reason });
         }
         const payment = verified.payment;
+        if (typeof payment.externalReference === 'string' && payment.externalReference.startsWith('website|')) {
+          return NextResponse.json({ received: true, ignored: 'website_billing_isolated' });
+        }
         await PaymentProcessor.handlePaymentConfirmed({
           externalReference: payment.externalReference,
           value: payment.value,

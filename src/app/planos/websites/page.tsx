@@ -1,13 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AlertCircle, CheckCircle2, Globe, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, Globe, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
+import {
+  commercialFieldClass as fieldClass,
+  commercialInputClass as inputClass,
+} from '@/components/HoldingCommercialFields';
 import {
   WEBSITE_BILLING_CYCLES,
   WEBSITE_CATEGORIES,
   validateWebsitePlan,
   websiteBillingCycles,
+  type WebsiteFiscalConfig,
   type WebsiteBillingCycle,
   type WebsiteCategory,
   type WebsitePlan,
@@ -21,13 +26,19 @@ type PlanForm = {
   billing_cycle: WebsiteBillingCycle;
   price: string;
   active: boolean;
+  fiscal_config: WebsiteFiscalConfig;
 };
 
+const EMPTY_FISCAL: WebsiteFiscalConfig = {
+  national_code: '', municipal_code: '', nbs: '', service_description: '', accountant_confirmed: false,
+  simples_percent: null,
+};
 const EMPTY_FORM: PlanForm = {
   name: '', description: '', scope: '', category: 'creation',
   billing_cycle: 'one_time', price: '', active: true,
+  fiscal_config: EMPTY_FISCAL,
 };
-const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20';
+const selectClass = `${inputClass} appearance-none pr-10`;
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function PlanosWebsitesPage() {
@@ -82,6 +93,7 @@ export default function PlanosWebsitesPage() {
       billing_cycle: plan.billing_cycle,
       price: (plan.price_cents / 100).toFixed(2),
       active: plan.active,
+      fiscal_config: plan.fiscal_config ? { ...plan.fiscal_config } : { ...EMPTY_FISCAL },
     } : { ...EMPTY_FORM });
   }
 
@@ -98,6 +110,7 @@ export default function PlanosWebsitesPage() {
       billing_cycle: form.billing_cycle,
       price_cents: Math.round(Number(form.price) * 100),
       active: form.active,
+      fiscal_config: form.fiscal_config,
     });
     if (!validated.ok) {
       setSaveError(validated.error);
@@ -170,45 +183,102 @@ export default function PlanosWebsitesPage() {
           <h2 id="website-form-title" className="mb-5 text-lg font-bold text-slate-800">{editingId ? 'Editar produto' : 'Novo produto de Websites'}</h2>
           <fieldset disabled={saving} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
                 <span>Nome do produto *</span>
                 <input ref={nameInput} className={inputClass} value={form.name} required maxLength={120}
                   onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Website institucional" />
               </label>
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
                 <span>Categoria *</span>
-                <select className={inputClass} value={form.category} onChange={(event) => {
-                  const category = event.target.value as WebsiteCategory;
-                  const cycles = websiteBillingCycles(category);
-                  setForm({ ...form, category, billing_cycle: cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0] });
-                }}>
-                  {Object.entries(WEBSITE_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                </select>
+                <span className="relative block">
+                  <select className={selectClass} value={form.category} onChange={(event) => {
+                    const category = event.target.value as WebsiteCategory;
+                    const cycles = websiteBillingCycles(category);
+                    setForm({ ...form, category, billing_cycle: cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0] });
+                  }}>
+                    {Object.entries(WEBSITE_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                  <ChevronDown aria-hidden="true" size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                </span>
               </label>
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
                 <span>Modalidade de cobrança *</span>
-                <select className={inputClass} value={form.billing_cycle}
-                  onChange={(event) => setForm({ ...form, billing_cycle: event.target.value as WebsiteBillingCycle })}>
-                  {websiteBillingCycles(form.category).map((cycle) => <option key={cycle} value={cycle}>{WEBSITE_BILLING_CYCLES[cycle]}</option>)}
-                </select>
+                <span className="relative block">
+                  <select className={selectClass} value={form.billing_cycle}
+                    onChange={(event) => setForm({ ...form, billing_cycle: event.target.value as WebsiteBillingCycle })}>
+                    {websiteBillingCycles(form.category).map((cycle) => <option key={cycle} value={cycle}>{WEBSITE_BILLING_CYCLES[cycle]}</option>)}
+                  </select>
+                  <ChevronDown aria-hidden="true" size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                </span>
               </label>
-              <label className="space-y-1.5 text-sm font-semibold text-slate-700">
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
                 <span>{form.billing_cycle === 'one_time' ? 'Preço total' : form.billing_cycle === 'monthly' ? 'Preço mensal' : 'Preço anual'} (R$) *</span>
                 <input type="number" inputMode="decimal" min="0.01" max="9999999.99" step="0.01" required
                   className={inputClass} value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="0,00" />
               </label>
             </div>
+            {form.billing_cycle === 'one_time' && (
+              <p className="text-sm text-slate-500">
+                Informe o valor total do projeto, não o valor da parcela. Cobrança única significa um projeto sem renovação recorrente:
+                o pagamento poderá ser à vista ou parcelado, com quantidade de parcelas e vencimentos definidos na contratação.
+                O parcelamento ainda não é configurado nesta tela.
+              </p>
+            )}
             <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
               <span>Descrição comercial</span>
-              <textarea className={inputClass} rows={2} maxLength={2000} value={form.description}
+              <textarea className={fieldClass} rows={2} maxLength={2000} value={form.description}
                 onChange={(event) => setForm({ ...form, description: event.target.value })} />
             </label>
             <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
               <span>Escopo, limites e condições *</span>
-              <textarea className={inputClass} rows={4} maxLength={5000} required value={form.scope}
+              <textarea className={fieldClass} rows={4} maxLength={5000} required value={form.scope}
                 onChange={(event) => setForm({ ...form, scope: event.target.value })}
                 placeholder="Defina entregas, revisões, prazo, suporte, backups e o que não está incluído." />
             </label>
+            <section aria-labelledby="website-fiscal-title" className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h3 id="website-fiscal-title" className="font-bold text-slate-800">Dados fiscais deste produto</h3>
+              <p className="text-sm text-slate-600">
+                {form.billing_cycle === 'one_time'
+                  ? 'Regra: emissão manual de uma NFS-e pelo valor total do projeto, com confirmação explícita, independentemente do pagamento.'
+                  : 'Regra prevista: emissão automática de NFS-e após confirmação do pagamento da assinatura.'}
+                {' '}Entradas bancárias, empréstimos, aportes e transferências não são gatilhos fiscais.
+                Estes dados não alteram a configuração fiscal do Glass ou do Barber. Projetos podem ser emitidos pelo botão no contrato, após validação.
+                A automação fiscal de assinaturas Websites ainda não está habilitada.
+              </p>
+              <div className="grid gap-5 md:grid-cols-2">
+                {([
+                  ['national_code', 'Tributação nacional (6 dígitos)', 6],
+                  ['municipal_code', 'Tributação municipal (opcional)', 3],
+                  ['nbs', 'NBS (9 dígitos)', 9],
+                ] as const).map(([key, label, max]) => (
+                  <label key={key} className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
+                    <span>{label}</span>
+                    <input className={inputClass} inputMode="numeric" maxLength={max} value={form.fiscal_config[key]}
+                      onChange={(event) => setForm({ ...form, fiscal_config: { ...form.fiscal_config, [key]: event.target.value, accountant_confirmed: false } })} />
+                  </label>
+                ))}
+                <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
+                  <span>Tributos aproximados do Simples (%)</span>
+                  <input className={inputClass} type="number" step="0.01" min="0" max="100"
+                    value={form.fiscal_config.simples_percent ?? ''}
+                    onChange={(event) => setForm({ ...form, fiscal_config: {
+                      ...form.fiscal_config, simples_percent: event.target.value === '' ? null : Number(event.target.value),
+                      accountant_confirmed: false,
+                    } })} />
+                </label>
+              </div>
+              <label className="block space-y-1.5 text-sm font-semibold text-slate-700">
+                <span>Descrição fiscal do serviço</span>
+                <textarea className={fieldClass} rows={3} maxLength={2000} value={form.fiscal_config.service_description}
+                  onChange={(event) => setForm({ ...form, fiscal_config: { ...form.fiscal_config, service_description: event.target.value, accountant_confirmed: false } })} />
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.fiscal_config.accountant_confirmed}
+                  onChange={(event) => setForm({ ...form, fiscal_config: { ...form.fiscal_config, accountant_confirmed: event.target.checked } })} />
+                Enquadramento deste serviço validado com a contabilidade
+              </label>
+              <p className="text-xs text-slate-500">Informe os dados e o percentual vigentes confirmados pela contabilidade; não copie o enquadramento de licenciamento. O percentual é informativo (pTotTribSN), não uma alíquota de ISS. Tributação municipal é um complemento opcional no padrão nacional. Salvar este formulário nunca emite nota.</p>
+            </section>
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
               <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} />
               Produto ativo para novas contratações
@@ -260,6 +330,11 @@ export default function PlanosWebsitesPage() {
                   <h3 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h3>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 break-words">{plan.scope}</p>
                 </div>
+                <p className="mt-3 text-xs text-slate-500">
+                  Fiscal: {plan.fiscal_config?.accountant_confirmed ? 'enquadramento confirmado' : 'pendente de validação'}.
+                  {' '}{plan.billing_cycle === 'one_time' ? 'Regra: nota manual do total.' : 'Regra: nota após pagamento da assinatura.'}
+                  {' '}Salvar o produto não emite nota.
+                </p>
                 <button type="button" disabled={formOpen} onClick={() => openForm(plan)} aria-label={`Editar ${plan.name}`}
                   className="mt-5 flex items-center justify-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                   <Pencil size={15} /> Editar produto

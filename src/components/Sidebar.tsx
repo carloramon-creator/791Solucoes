@@ -44,9 +44,11 @@ const navigationItems: NavItem[] = [
     resourceCode: 'menu.assinaturas',
     subItems: [
       { name: 'Visao Geral', href: '/assinaturas' },
+      { name: 'Websites', href: '/assinaturas/websites', resourceCode: 'submenu.assinaturas.websites' },
       { name: 'Previa de Fechamento', href: '/assinaturas/previa-fechamento' },
     ],
   },
+  { name: 'CLIENTES', href: '/clientes', icon: Users, resourceCode: 'menu.clientes' },
   { name: 'PATROCINADORES', href: '/patrocinadores', icon: ShieldCheck, resourceCode: 'menu.patrocinadores' },
   {
     name: 'PLANOS',

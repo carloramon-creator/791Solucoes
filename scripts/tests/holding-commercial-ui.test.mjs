@@ -287,7 +287,7 @@ test('CPF blur reopens a local customer or explicitly requires manual name, neve
   }
 });
 
-test('automatic lookup ignores partial/invalid fields and defers to the explicit button without duplicate requests', async () => {
+test('automatic lookup ignores partial/invalid fields and runs when TAB focuses the lookup button without duplicate requests', async () => {
   const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
     ? Response.json({ customers: [] }) : Response.json({ fields: { name: 'Empresa ficticia' }, source: 'Test' }));
   await ui.mount(); ui.button('Novo cliente').props.onClick();
@@ -297,10 +297,30 @@ test('automatic lookup ignores partial/invalid fields and defers to the explicit
   ui.fill('CEP', '123'); ui.field('CEP').props.onBlur({ relatedTarget: null }); await settle();
   assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
   ui.fill('CPF / CNPJ', '11222333000181');
+  const lookupButton = ui.button('Consultar CPF');
   ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: { tagName: 'BUTTON' } });
-  ui.button('Consultar CPF').props.onClick(); await settle();
+  lookupButton.props.onClick(); await settle();
   assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
-  assert.equal(ui.confirmations.length, 1);
+  assert.equal(ui.confirmations.length, 0);
+});
+
+test('editing an existing customer looks up unchanged CNPJ and CEP on blur to fill missing data without overwriting existing fields', async () => {
+  const existing = { ...customer, document: '11222333000181', postal_code: '01001000', address: '', district: '' };
+  const ui = harness('src/app/clientes/page.tsx', (_url, method, body) => method === 'GET'
+    ? Response.json({ customers: [existing] }) : Response.json({ source: 'Test', fields: body.kind === 'cnpj'
+      ? { name: 'Outro nome', phone: '1133334444' }
+      : { postal_code: '01001000', address: 'Rua ficticia', district: 'Centro', city: 'Sao Paulo', state: 'SP' } }));
+  await ui.mount(); ui.button('Editar').props.onClick();
+  ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: { tagName: 'BUTTON' } }); await settle();
+  assert.equal(ui.field('Nome / razão social').props.value, customer.name);
+  assert.equal(ui.field('Telefone').props.value, '(11) 3333-4444');
+  ui.field('CEP').props.onBlur({ relatedTarget: { tagName: 'BUTTON' } }); await settle();
+  assert.equal(ui.field('Endereço').props.value, 'Rua ficticia');
+  assert.equal(ui.field('Bairro').props.value, 'Centro');
+  assert.equal(ui.confirmations.length, 0);
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 2);
+  ui.field('CEP').props.onBlur({ relatedTarget: null }); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 2);
 });
 
 test('async lookup preserves edits, ignores changed document/CEP and cannot modify a cancelled or reopened form', async () => {

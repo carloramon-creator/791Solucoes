@@ -63,7 +63,7 @@ export default function HoldingCustomersPage() {
 
   function edit(customer?: HoldingCustomer) {
     lookupVersion.current++;
-    automaticLookup.current = { document: customer?.document || '', cep: customer?.postal_code || '' };
+    automaticLookup.current = { document: '', cep: '' };
     setEditingId(customer?.id || null);
     setForm(customer ? { ...customer } : { ...EMPTY });
     setError(''); setMessage('');
@@ -205,9 +205,8 @@ export default function HoldingCustomersPage() {
                     readOnly={field.key === 'document' && Boolean(editingId)}
                     value={field.key === 'document' ? maskCustomerDocument(form.document)
                       : field.key === 'phone' ? maskCustomerPhone(form.phone) : field.key === 'postal_code' ? maskCustomerCep(form.postal_code) : form[field.key]}
-                    onBlur={(event) => {
-                      if (event.relatedTarget?.tagName === 'BUTTON') return;
-                      if (field.key === 'document' && !editingId) void lookup('document', true);
+                    onBlur={() => {
+                      if (field.key === 'document') void lookup('document', true);
                       if (field.key === 'postal_code') void lookup('cep', true);
                     }}
                     onChange={(event) => {

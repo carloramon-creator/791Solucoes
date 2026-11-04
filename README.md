@@ -122,7 +122,9 @@ API (nao comprova a existencia da caixa postal).
 
 Ao sair de **CPF / CNPJ** ou **CEP**, a consulta e automatica para numeros
 completos e validos; nao consulta a cada tecla nem repete o mesmo numero ao
-voltar ao campo. Consultas automaticas preenchem somente campos vazios,
+voltar ao campo. Funciona tambem ao usar TAB (inclusive quando o foco seguinte
+e o botao de consulta) e ao editar um cadastro com CNPJ/CEP ja preenchidos.
+Consultas automaticas preenchem somente campos vazios,
 preservando edicoes feitas enquanto a resposta chega. Mudar documento/CEP,
 cancelar ou fechar o formulario invalida respostas pendentes. Os botoes
 continuam disponiveis para repetir explicitamente uma consulta.

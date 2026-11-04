@@ -7,6 +7,8 @@ import { mesesAnteriores } from '@/services/nfse/simples-nacional';
 
 type Apuracao = { anexo: string; faixa: number; percentual: number; rbt12: number; fs12: number; fatorR: number; folhaFinanceira?: { categoriaNome: string; meses: Record<string, number>; lancamentos: { id: string; mes: string; valor: number }[] } };
 
+const campoFiscal = 'h-11 min-w-0 max-w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500';
+
 export default function NfseProducaoNacional() {
   const formId = useId();
   const [config, setConfig] = useState<ConfigNacional | null>(null);
@@ -50,7 +52,7 @@ export default function NfseProducaoNacional() {
   const moeda = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   return <section className="rounded-3xl border border-emerald-200 bg-white p-6 space-y-4">
     <h2 className="font-bold text-slate-800">Emissão nacional de produção — assinaturas</h2>
-    <p className="text-sm text-slate-600">Competências desde 01/11/2026 usam o Emissor Nacional, nunca a IPM. Notas antigas continuam no fluxo municipal. Esta configuração cobre licenciamento de software, ME/EPP no Simples, ISS sem retenção, em 2026.</p>
+    <p className="text-sm text-slate-600">Emissão pelo Emissor Nacional, com cálculo automático dos tributos aproximados do Simples antes de cada nota.</p>
     {erro && <p role="alert" className="text-sm text-red-700">{erro}</p>}
     {!config && !erro && <p className="text-sm">Produção nacional ainda não configurada.
       {competencia && <button type="button" onClick={configurar} className="ml-2 underline">Configurar</button>}
@@ -62,25 +64,21 @@ export default function NfseProducaoNacional() {
       </div>
       <p className="text-sm">Serviço: {config.codigoTributacaoNacional} · NBS: {config.codigoNbs} · Série: {config.serie} · Apuração: competência.</p>
       <div className="flex flex-wrap gap-3 text-sm">
-        <div><label className="block" htmlFor={`${formId}-inicio`}>Início da atividade</label><input id={`${formId}-inicio`} type="date" className="rounded border p-2" value={config.historico.inicioAtividade} onChange={e => setConfig({ ...config, historico: { ...config.historico, inicioAtividade: e.target.value } })} /></div>
-        <div><label className="block" htmlFor={`${formId}-municipio`}>Município IBGE do emissor</label><input id={`${formId}-municipio`} inputMode="numeric" className="rounded border p-2" value={config.municipioEmissao} onChange={e => setConfig({ ...config, municipioEmissao: e.target.value })} /></div>
-        <div><label className="block" htmlFor={`${formId}-serie`}>Série</label><input id={`${formId}-serie`} inputMode="numeric" className="rounded border p-2" value={config.serie} onChange={e => setConfig({ ...config, serie: e.target.value })} /></div>
+        <div><label className="block mb-1" htmlFor={`${formId}-inicio`}>Início da atividade</label><input id={`${formId}-inicio`} type="date" className={campoFiscal} value={config.historico.inicioAtividade} onChange={e => setConfig({ ...config, historico: { ...config.historico, inicioAtividade: e.target.value } })} /></div>
+        <div><label className="block mb-1" htmlFor={`${formId}-municipio`}>Município IBGE do emissor</label><input id={`${formId}-municipio`} inputMode="numeric" className={campoFiscal} value={config.municipioEmissao} onChange={e => setConfig({ ...config, municipioEmissao: e.target.value })} /></div>
+        <div><label className="block mb-1" htmlFor={`${formId}-serie`}>Série</label><input id={`${formId}-serie`} inputMode="numeric" className={campoFiscal} value={config.serie} onChange={e => setConfig({ ...config, serie: e.target.value })} /></div>
       </div>
       {apuracao && <div className="rounded-xl bg-emerald-50 p-4 text-sm space-y-1">
-        <p className="font-bold">Última simulação carregada/salva · {competencia} · Anexo {apuracao.anexo}, faixa {apuracao.faixa} · {apuracao.percentual}%</p>
-        <p>Não é recalculada enquanto você edita. Não ativar sem confirmar o enquadramento.</p>
+        <p className="font-bold">Cálculo da última consulta · {competencia} · Anexo {apuracao.anexo}, faixa {apuracao.faixa} · {apuracao.percentual.toLocaleString('pt-BR')}%</p>
+        <p>Recalculado antes de cada emissão. Após editar esta configuração, salve para atualizar a consulta.</p>
         <p>RBT12: {moeda(apuracao.rbt12)} · Folha/encargos pagos: {moeda(apuracao.fs12)} · Fator R: {(apuracao.fatorR * 100).toFixed(2)}%</p>
+        {apuracao.fs12 === 0 && <p>Sem folha paga: fator R convencional de 1%, conforme a regra do Simples. Não é a alíquota do imposto.</p>}
         {apuracao.folhaFinanceira && <p>Fonte: {apuracao.folhaFinanceira.categoriaNome} · {apuracao.folhaFinanceira.lancamentos.length} pagamentos incluídos. Recalculado antes de cada emissão.</p>}
       </div>}
-      <div className="flex items-start gap-2 text-sm">
-        <input id={`${formId}-enquadramento`} type="checkbox" checked={config.enquadramentoConfirmado} onChange={e => setConfig({ ...config, enquadramentoConfirmado: e.target.checked, enabled: e.target.checked ? config.enabled : false })} />
-        <label htmlFor={`${formId}-enquadramento`}>
-        Confirmei que o licenciamento está sujeito ao fator R e que os dados de receita e folha estão corretos. Não marcar se houver divergência com o enquadramento do contador.
-        </label>
-      </div>
       <div>
-        <label className="block text-sm" htmlFor={`${formId}-classe-folha`}>Fonte da folha para o fator R</label>
-        <select id={`${formId}-classe-folha`} className="rounded border p-2" value={config.historico.folhaCategoriaId || ""}
+        <label className="block text-sm mb-1" htmlFor={`${formId}-classe-folha`}>Fonte da folha para o fator R</label>
+        <div className="relative w-full sm:max-w-md">
+        <select id={`${formId}-classe-folha`} className={`${campoFiscal} w-full appearance-none pr-8`} value={config.historico.folhaCategoriaId || ""}
           onChange={e => {
             const { folhaCategoriaId: anterior, ...historico } = config.historico;
             void anterior;
@@ -89,23 +87,31 @@ export default function NfseProducaoNacional() {
           <option value="">Histórico manual / declaração sem folha</option>
           {classesFolha.map(c => <option key={c.id} value={c.id}>{c.name} — todas as subclasses</option>)}
         </select>
-        <p className="text-xs text-slate-600">Na fonte automática, entram somente despesas pagas da classe e suas subclasses nos 12 meses anteriores. Registre salários/pró-labore BRUTOS e encargos elegíveis separadamente; não inclua novamente retenções já contidas no bruto. Data ausente ou duplicidade bloqueia o cálculo.</p>
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"><path d="m6 8 4 4 4-4" strokeWidth="1.5" /></svg>
+        </div>
+        <p className="mt-1 text-xs text-slate-600">Inclui a classe e suas subclasses, somente pagamentos efetivos dos 12 meses anteriores. Use remuneração bruta e encargos elegíveis, sem duplicar retenções.</p>
       </div>
-      <div className="flex items-center gap-2 text-sm">
-        <input id={`${formId}-folha`} type="checkbox" disabled={!!config.historico.folhaCategoriaId} checked={config.historico.semFolha} onChange={e => setConfig({ ...config, historico: { ...config.historico, semFolha: e.target.checked } })} />
+      <details className="rounded-xl border border-slate-200 p-4 space-y-4">
+        <summary className="cursor-pointer text-sm font-bold text-slate-600">Enquadramento e ajustes do histórico</summary>
+        <div className="flex items-start gap-2 text-sm">
+          <input id={`${formId}-enquadramento`} type="checkbox" checked={config.enquadramentoConfirmado} onChange={e => setConfig({ ...config, enquadramentoConfirmado: e.target.checked, enabled: e.target.checked ? config.enabled : false })} />
+          <label htmlFor={`${formId}-enquadramento`}>Confirmei que o licenciamento está sujeito ao fator R e que os dados de receita e folha estão corretos. Não marcar se houver divergência com o enquadramento do contador.</label>
+        </div>
+      {!config.historico.folhaCategoriaId && <div className="flex items-center gap-2 text-sm">
+        <input id={`${formId}-folha`} type="checkbox" checked={config.historico.semFolha} onChange={e => setConfig({ ...config, historico: { ...config.historico, semFolha: e.target.checked } })} />
         <label htmlFor={`${formId}-folha`}>
         Não há folha, pró-labore nem encargos pagos. Atualizar antes de emitir se isso mudar.
         </label>
-      </div>
+      </div>}
       <div className="flex items-start gap-2 text-sm">
         <input id={`${formId}-externas`} type="checkbox" checked={!!config.historico.semReceitasExternas} onChange={e => setConfig({ ...config, historico: { ...config.historico, semReceitasExternas: e.target.checked } })} />
         <label htmlFor={`${formId}-externas`}>
-        Todas as receitas de clientes estão nas notas deste sistema, sem receitas externas. Atualizar se isso mudar. Com esta declaração e sem folha, o histórico avança automaticamente a cada mês.
+        Todas as receitas de clientes estão nas notas deste sistema, sem receitas externas. Atualizar se isso mudar. Com esta declaração e folha automática ou sem folha, a janela avança mensalmente.
         </label>
       </div>
       <details className="rounded-xl border p-4">
         <summary className="cursor-pointer text-sm font-bold">Histórico mensal — receitas externas e folha</summary>
-        <p className="my-3 text-xs text-slate-600">As notas reais autorizadas no sistema entram automaticamente, sem testes ou canceladas. Informe abaixo somente receitas de clientes fora do sistema; aportes e empréstimos não entram. Se houver receita sem nota ou cancelamento que não extinguiu a receita, ajuste o histórico. Folha inclui salários, pró-labore e encargos efetivamente pagos conforme as regras do fator R.</p>
+        <p className="my-3 text-xs text-slate-600">Entram as notas de produção autorizadas, sem homologação ou canceladas. Teste emitido em produção permanece até regularização fiscal. Informe somente receitas fora do sistema; aportes e empréstimos não entram. Ajuste receitas sem nota ou cancelamentos que não extinguiram a receita.</p>
         <label className="block text-sm" htmlFor={`${formId}-historico`}>Histórico externo/folha conferido até</label>
         <input id={`${formId}-historico`} type="month" className="rounded border p-2" value={config.historico.historicoConfirmadoAte} onChange={e => setConfig({ ...config, historico: { ...config.historico, historicoConfirmadoAte: e.target.value } })} />
         <div className="grid gap-2">
@@ -117,6 +123,7 @@ export default function NfseProducaoNacional() {
               onChange={e => setConfig({ ...config, historico: { ...config.historico, folha: { ...config.historico.folha, [mes]: e.target.value === '' ? NaN : Number(e.target.value) } } })} />
           </div>)}
         </div>
+      </details>
       </details>
       <p className="text-xs text-slate-600">O percentual é informação aproximada na NFS-e, não uma apuração ou envio do DAS/PGDAS-D. O cálculo usa os 12 meses anteriores, sem incluir o mês atual. A folha financeira é automática quando selecionada; receitas externas continuam exigindo declaração. Excedentes ConsultFlex e competências de 2027 exigem parametrização própria.</p>
       <button type="button" disabled={busy} onClick={salvar} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Salvando…' : 'Salvar configuração nacional'}</button>

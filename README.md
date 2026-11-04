@@ -194,6 +194,12 @@ explicitamente, fica visivel no historico e NAO retorna a IPM. A assinatura paga
 continua sendo ativada. Competencias anteriores conservam a IPM.
 Em Configuracoes > NFS-e, "Emissao nacional de producao" permite confirmar
 o enquadramento, habilitar o emissor e editar receitas externas e folha por mes.
+O painel principal mostra o calculo, a fonte de folha e os dados de emissao.
+Declaracoes e ajustes mensais ficam recolhidos; a declaracao manual sem folha
+so aparece quando nao ha fonte financeira selecionada. IPM fica em "Legado
+municipal", sem apagar credenciais nem alterar notas antigas; homologacao fica
+em "Ferramentas tecnicas" e so e montada ao expandir. Certificado A1, dados do
+prestador e controles gerais de ambiente/emissao continuam disponiveis.
 Nao ativar enquanto houver divergencia fiscal (por exemplo, Anexo III versus V).
 
 O escopo automatico e licenciamento (010501/111032200), Simples ME/EPP,

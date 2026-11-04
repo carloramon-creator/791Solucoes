@@ -9,17 +9,12 @@ import {
   FileCheck, 
   Save, 
   Loader2, 
-  AlertCircle,
   CheckCircle2,
   MapPin,
-  Activity,
-  Hash,
   Zap,
   Building,
   Image
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { ConfigTabs } from '@/components/ConfigTabs';
 import NfseHomologacaoNacional from '@/components/NfseHomologacaoNacional';
@@ -28,6 +23,7 @@ import NfseProducaoNacional from '@/components/NfseProducaoNacional';
 export default function NfseConfigPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mostrarHomologacao, setMostrarHomologacao] = useState(false);
   const [config, setConfig] = useState({
     environment: 'homologacao',
     auto_emit: false,
@@ -185,7 +181,6 @@ export default function NfseConfigPage() {
 
       <ConfigTabs />
       <NfseProducaoNacional />
-      <NfseHomologacaoNacional cnpj={config.prestador_cnpj} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
@@ -221,6 +216,10 @@ export default function NfseConfigPage() {
               </div>
 
               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+                <div>
+                  <label htmlFor="nfse-prestador-cnpj" className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">CNPJ do Prestador (Holding)</label>
+                  <input id="nfse-prestador-cnpj" type="text" value={config.prestador_cnpj} onChange={(e) => handleCnpjInput(e.target.value, 'prestador_cnpj')} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none" />
+                </div>
                 <div>
                   <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Razão Social</label>
                   <input 
@@ -332,19 +331,22 @@ export default function NfseConfigPage() {
           </div>
         </div>
 
-        {/* Bloco Município */}
+        <details className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-5">
+          <summary className="cursor-pointer text-sm font-bold text-slate-600">Legado municipal — IPM e competências anteriores a 01/11/2026</summary>
+          <p className="mt-3 text-sm text-slate-500">Mantido para operações com notas antigas. Não é utilizado para novas competências nacionais. Os dados salvos não foram apagados.</p>
+          <div className="mt-4 space-y-4">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col md:col-span-2">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MapPin className="text-purple-500" size={20} />
-              <h2 className="text-sm text-slate-800 uppercase tracking-wider">Município e Identificação</h2>
+              <h2 className="text-sm text-slate-800 uppercase tracking-wider">Parâmetros municipais antigos</h2>
             </div>
           </div>
           
           <div className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div>
-                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Código Municipal (IBGE/TOM)</label>
+                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Código Municipal IPM (TOM)</label>
                 <input 
                   type="text" 
                   placeholder="Ex: 8303 (São José/SC)"
@@ -364,7 +366,7 @@ export default function NfseConfigPage() {
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Cód. Tributação Nacional</label>
+                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Código de serviço do legado IPM</label>
                 <input 
                   type="text" 
                   placeholder="Ex: 01.01.01"
@@ -416,29 +418,11 @@ export default function NfseConfigPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">CNPJ do Prestador (Holding)</label>
-                <input 
-                  type="text" 
-                  placeholder="00.000.000/0001-00"
-                  value={config.prestador_cnpj}
-                  onChange={(e) => handleCnpjInput(e.target.value, 'prestador_cnpj')}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none font-bold"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 uppercase tracking-widest mb-2">Cód. Tributário (Serviço)</label>
-                <input 
-                  type="text" 
-                  placeholder="ex: 01.01.01"
-                  value={config.tax_code}
-                  onChange={(e) => setConfig({...config, tax_code: e.target.value})}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 h-[44px] text-sm focus:outline-none font-mono"
-                />
-              </div>
             </div>
           </div>
         </div>
+          </div>
+        </details>
 
         {/* Bloco Certificado e Ambiente - LADO A LADO */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
@@ -511,6 +495,12 @@ export default function NfseConfigPage() {
             </div>
           </div>
         </div>
+
+        <details className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-5" onToggle={e => setMostrarHomologacao(e.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm font-bold text-slate-600">Ferramentas técnicas — homologação nacional</summary>
+          <p className="my-3 text-sm text-slate-500">Testes sem validade fiscal, separados da emissão real. Use somente para diagnóstico ou validação de alterações.</p>
+          {mostrarHomologacao && <NfseHomologacaoNacional cnpj={config.prestador_cnpj} />}
+        </details>
 
       </div>
 

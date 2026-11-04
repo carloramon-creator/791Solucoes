@@ -197,7 +197,7 @@ test('customer UI reopens an existing CPF and deletion requires confirmation, pr
   }
 });
 
-test('customer lookup keeps manual data on cancellation or failure, disables edits while pending and ignores responses after unmount', async () => {
+test('customer lookup keeps manual data on cancellation or failure, allows edits while pending and ignores responses after unmount', async () => {
   for (const confirm of [true, false]) {
     const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
       ? Response.json({ customers: [] }) : Response.json({ error: 'Servico indisponivel.' }, { status: 502 }), confirm);
@@ -216,7 +216,8 @@ test('customer lookup keeps manual data on cancellation or failure, disables edi
   await ui.mount(); ui.button('Novo cliente').props.onClick(); ui.fill('CPF / CNPJ', '11222333000181');
   ui.fill('Nome / razão social', 'Manual');
   ui.button('Consultar CPF').props.onClick(); await settle();
-  assert.equal(nodes(ui.render(), (node) => node.type === 'fieldset')[0].props.disabled, true);
+  assert.equal(nodes(ui.render(), (node) => node.type === 'fieldset')[0].props.disabled, false);
+  assert.equal(ui.button('Salvar cliente').props.disabled, true);
   await ui.submit();
   assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
   ui.unmount();
@@ -249,6 +250,74 @@ test('CNPJ lookup never exposes Safari pattern errors or clears manual fields on
     assert.equal(nodes(ui.render(), (node) => node.type === 'fieldset')[0].props.disabled, false);
     assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
     assert.equal(ui.field('CPF / CNPJ').props.value, '11.222.333/0001-81');
+  }
+});
+
+test('document and CEP lookup run on blur without confirmation, deduplicate and preserve filled fields', async () => {
+  const ui = harness('src/app/clientes/page.tsx', (_url, method, body) => method === 'GET'
+    ? Response.json({ customers: [] }) : Response.json({ source: 'Test', fields: body.kind === 'cnpj'
+      ? { name: 'Empresa ficticia', email: 'company@example.test', postal_code: '01001000', address: 'Rua ficticia', city: 'Sao Paulo', state: 'SP' }
+      : { postal_code: '01001000', address: 'Endereco do CEP', city: 'Sao Paulo', state: 'SP' } }));
+  await ui.mount(); ui.button('Novo cliente').props.onClick();
+  ui.fill('E-mail', 'manual@example.test'); ui.fill('CPF / CNPJ', '11222333000181');
+  ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: { tagName: 'INPUT' } }); await settle();
+  assert.equal(ui.field('Nome / razão social').props.value, 'Empresa ficticia');
+  assert.equal(ui.field('E-mail').props.value, 'manual@example.test');
+  assert.equal(ui.confirmations.length, 0);
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
+  ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: null }); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
+  ui.fill('Endereço', 'Endereco manual'); ui.fill('Número', '10'); ui.fill('Complemento', 'Sala');
+  ui.fill('CEP', '01001000'); ui.field('CEP').props.onBlur({ relatedTarget: null }); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 2);
+  assert.equal(ui.field('Endereço').props.value, 'Endereco manual');
+  assert.equal(ui.field('Número').props.value, '10'); assert.equal(ui.field('Complemento').props.value, 'Sala');
+  ui.field('CEP').props.onBlur({ relatedTarget: null }); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 2);
+});
+
+test('CPF blur reopens a local customer or explicitly requires manual name, never calls a personal-data provider', async () => {
+  for (const existing of [false, true]) {
+    const ui = harness('src/app/clientes/page.tsx', () => Response.json({ customers: existing ? [customer] : [] }));
+    await ui.mount(); ui.button('Novo cliente').props.onClick(); ui.fill('CPF / CNPJ', customer.document);
+    ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: null }); await settle();
+    assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
+    if (existing) assert.equal(ui.field('Nome / razão social').props.value, customer.name);
+    else assert.match(text(ui.render()), /informe o nome manualmente/);
+  }
+});
+
+test('automatic lookup ignores partial/invalid fields and defers to the explicit button without duplicate requests', async () => {
+  const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+    ? Response.json({ customers: [] }) : Response.json({ fields: { name: 'Empresa ficticia' }, source: 'Test' }));
+  await ui.mount(); ui.button('Novo cliente').props.onClick();
+  for (const document of ['1122', '11222333000182', '']) {
+    ui.fill('CPF / CNPJ', document); ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: null });
+  }
+  ui.fill('CEP', '123'); ui.field('CEP').props.onBlur({ relatedTarget: null }); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
+  ui.fill('CPF / CNPJ', '11222333000181');
+  ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: { tagName: 'BUTTON' } });
+  ui.button('Consultar CPF').props.onClick(); await settle();
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);
+  assert.equal(ui.confirmations.length, 1);
+});
+
+test('async lookup preserves edits, ignores changed document/CEP and cannot modify a cancelled or reopened form', async () => {
+  for (const change of ['name', 'document', 'cep', 'cancel']) {
+    let finish;
+    const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+      ? Response.json({ customers: [] }) : new Promise((resolve) => { finish = resolve; }));
+    await ui.mount(); ui.button('Novo cliente').props.onClick(); ui.fill('CPF / CNPJ', '11222333000181');
+    ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: null }); await settle();
+    if (change === 'name') ui.fill('Nome / razão social', 'Nome digitado durante consulta');
+    if (change === 'document') ui.fill('CPF / CNPJ', '52998224725');
+    if (change === 'cep') ui.fill('CEP', '01002000');
+    if (change === 'cancel') { ui.button('Cancelar').props.onClick(); ui.button('Novo cliente').props.onClick(); }
+    finish(Response.json({ source: 'Test', fields: { name: 'Empresa antiga', address: 'Rua antiga' } })); await settle();
+    assert.equal(ui.field('Nome / razão social').props.value, change === 'name' ? 'Nome digitado durante consulta' : '');
+    assert.equal(ui.field('Endereço').props.value, change === 'name' ? 'Rua antiga' : '');
+    assert.equal(ui.button('Salvar cliente').props.disabled, false);
   }
 });
 

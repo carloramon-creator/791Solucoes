@@ -66,6 +66,8 @@ test('CNPJ lookup validates returned identifier and whitelists corporate fields 
   assert.equal(data.fields.qsa, undefined);
   assert.equal(h.calls[0].url, 'https://brasilapi.com.br/api/cnpj/v1/11222333000181');
   assert.equal(h.calls[0].init.redirect, 'error');
+  assert.equal(h.calls[0].init.headers.Accept, 'application/json');
+  assert.match(h.calls[0].init.headers['User-Agent'], /^791holding\/1\.0/);
   assert.match(response.headers.get('cache-control'), /no-store/);
   const wrong = harness({ response: () => Response.json({ cnpj: 'other', razao_social: 'Wrong' }) });
   assert.equal((await wrong.post({ kind: 'cnpj', value: '11222333000181' })).status, 502);
@@ -79,7 +81,10 @@ test('CEP lookup returns address fields but never replaces building number/compl
   for (const options of [{ response: () => Response.json({ erro: true }) }, { response: () => Response.json({}, { status: 404 }) }]) {
     assert.equal((await harness(options).post({ kind: 'cep', value: '01001000' })).status, 404);
   }
-  for (const options of [{ failure: true }, { response: () => Response.json({}, { status: 429 }) }, { response: () => Response.json({ cep: 'wrong' }) }]) {
+  const limited = await harness({ response: () => Response.json({}, { status: 429 }) }).post({ kind: 'cep', value: '01001000' });
+  assert.equal(limited.status, 429);
+  assert.match((await limited.json()).error, /limite de consultas/);
+  for (const options of [{ failure: true }, { response: () => Response.json({ cep: 'wrong' }) }]) {
     assert.equal((await harness(options).post({ kind: 'cep', value: '01001000' })).status, 502);
   }
 });

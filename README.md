@@ -120,15 +120,25 @@ possuem mascaras de apresentacao; o banco continua recebendo os digitos
 normalizados. E-mail usa campo `email` e validacao de formato no cliente e na
 API (nao comprova a existencia da caixa postal).
 
+Ao sair de **CPF / CNPJ** ou **CEP**, a consulta e automatica para numeros
+completos e validos; nao consulta a cada tecla nem repete o mesmo numero ao
+voltar ao campo. Consultas automaticas preenchem somente campos vazios,
+preservando edicoes feitas enquanto a resposta chega. Mudar documento/CEP,
+cancelar ou fechar o formulario invalida respostas pendentes. Os botoes
+continuam disponiveis para repetir explicitamente uma consulta.
+
 **Consultar CPF / CNPJ** verifica os digitos localmente. Se ja existir cliente
 na Holding, abre seu cadastro para edicao em vez de duplicar. Para CNPJ,
 mediante confirmacao explicita, consulta a BrasilAPI e preenche razao social,
-endereco e contatos disponiveis. **Consultar CEP** usa o ViaCEP e preenche
+endereco e contatos disponiveis (a consulta automatica nao pede confirmacao;
+a substituicao manual pelo botao continua pedindo). **Consultar CEP** usa o ViaCEP e preenche
 logradouro, bairro, municipio e UF, preservando numero/complemento. Confira
 os dados antes de salvar; os campos continuam editaveis, e a consulta nao
 comprova regularidade fiscal. CNPJ e CEP sao enviados apenas ao servico
 respectivo por API administrativa autenticada; nao ha consultas durante a
-digitacao nem alteracao de clientes/contratos/Asaas ao consultar.
+digitacao nem alteracao de clientes/contratos/Asaas ao consultar. Os provedores
+recebem `Accept: application/json` e `User-Agent` proprio da Holding, seguindo
+o padrao do wizard Glass, sem chamar suas APIs nem alterar seu codigo.
 
 CPF nunca e enviado a estes servicos. Apenas digitos verificadores sao
 validados; nao existe integracao autorizada de consulta de nome/situacao

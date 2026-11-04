@@ -38,6 +38,7 @@ export default function HoldingCustomersPage() {
   const [lookingUp, setLookingUp] = useState(false);
   const busy = useRef(false);
   const lookupVersion = useRef(0);
+  const automaticLookup = useRef({ document: '', cep: '' });
   const nameInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback((signal?: AbortSignal) => (
@@ -62,16 +63,20 @@ export default function HoldingCustomersPage() {
 
   function edit(customer?: HoldingCustomer) {
     lookupVersion.current++;
+    automaticLookup.current = { document: customer?.document || '', cep: customer?.postal_code || '' };
     setEditingId(customer?.id || null);
     setForm(customer ? { ...customer } : { ...EMPTY });
     setError(''); setMessage('');
   }
   useEffect(() => () => { lookupVersion.current++; }, []);
 
-  async function lookup(kind: 'document' | 'cep') {
+  async function lookup(kind: 'document' | 'cep', automatic = false) {
     if (!form || busy.current) return;
-    setError(''); setMessage('');
     const digits = (kind === 'document' ? form.document : form.postal_code).replace(/\D/g, '');
+    if (automatic && (automaticLookup.current[kind] === digits || !digits)) return;
+    if (automatic && (kind === 'document' ? !validDocument(digits) : digits.length !== 8)) return;
+    automaticLookup.current[kind] = digits;
+    setError(''); setMessage('');
     if (kind === 'document') {
       if (!validDocument(digits)) { setError('Informe um CPF ou CNPJ válido antes de consultar.'); return; }
       const existing = customers.find((customer) => customer.document === digits && customer.id !== editingId);
@@ -81,9 +86,10 @@ export default function HoldingCustomersPage() {
         return;
       }
     } else if (digits.length !== 8) { setError('Informe um CEP com 8 dígitos.'); return; }
-    if (!window.confirm(kind === 'document'
+    if (!automatic && !window.confirm(kind === 'document'
       ? 'Consultar este CNPJ na BrasilAPI e preencher razão social e dados cadastrais? Os campos retornados substituirão os atuais. Confira os dados antes de salvar.'
       : 'Consultar este CEP no ViaCEP e preencher endereço, bairro, município e UF? Confira os dados antes de salvar. Número e complemento serão preservados.')) return;
+    const snapshot = { ...form };
     const version = ++lookupVersion.current;
     busy.current = true; setLookingUp(true);
     try {
@@ -96,9 +102,12 @@ export default function HoldingCustomersPage() {
       const values = payload.fields;
       setForm((current) => {
         if (!current) return current;
+        if (current.document.replace(/\D/g, '') !== snapshot.document.replace(/\D/g, '')
+          || current.postal_code.replace(/\D/g, '') !== snapshot.postal_code.replace(/\D/g, '')) return current;
         const next = { ...current };
         for (const key of ['name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
-          if (typeof values[key] === 'string' && (kind === 'cep' || values[key])) next[key] = values[key];
+          if (current[key] === snapshot[key] && (!automatic || !current[key] || key === 'postal_code')
+            && typeof values[key] === 'string' && (kind === 'cep' || values[key])) next[key] = values[key];
         }
         return next;
       });
@@ -115,7 +124,9 @@ export default function HoldingCustomersPage() {
           ? 'Não foi possível concluir a consulta no navegador. Confira sua conexão, atualize a página e tente novamente. Seus campos foram preservados; você também pode preencher manualmente.'
           : failure instanceof Error ? failure.message : 'Consulta indisponível. Preencha manualmente.');
       }
-    } finally { busy.current = false; setLookingUp(false); }
+    } finally {
+      if (version === lookupVersion.current) { busy.current = false; setLookingUp(false); }
+    }
   }
 
   async function remove(customer: HoldingCustomer) {
@@ -173,7 +184,7 @@ export default function HoldingCustomersPage() {
         </div>
       </header>
       <p className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-        Use um cadastro por CPF/CNPJ, mesmo que o cliente tenha vários websites. Consulte o CNPJ para trazer a razão social e consulte o CEP para preencher o endereço fiscal.
+        Ao sair do campo CNPJ ou CEP, consultamos BrasilAPI ou ViaCEP e preenchemos campos vazios. CPF novo: informe o nome manualmente; CPF já cadastrado abre o cliente da Holding.
         O cliente só será vinculado ao Asaas ao gerar cobranças. Dados já existentes no Asaas não serão sobrescritos automaticamente.
       </p>
       {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{message}</p>}
@@ -182,7 +193,7 @@ export default function HoldingCustomersPage() {
       {form && (
         <form onSubmit={save} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="mb-5 text-lg font-bold text-slate-800">{editingId ? 'Editar cliente' : 'Novo cliente'}</h2>
-          <fieldset disabled={saving || lookingUp} className="space-y-5">
+          <fieldset disabled={saving} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               {fields.map((field) => (
                 <div key={field.key} className={commercialLabelClass}>
@@ -194,27 +205,40 @@ export default function HoldingCustomersPage() {
                     readOnly={field.key === 'document' && Boolean(editingId)}
                     value={field.key === 'document' ? maskCustomerDocument(form.document)
                       : field.key === 'phone' ? maskCustomerPhone(form.phone) : field.key === 'postal_code' ? maskCustomerCep(form.postal_code) : form[field.key]}
+                    onBlur={(event) => {
+                      if (event.relatedTarget?.tagName === 'BUTTON') return;
+                      if (field.key === 'document' && !editingId) void lookup('document', true);
+                      if (field.key === 'postal_code') void lookup('cep', true);
+                    }}
                     onChange={(event) => {
                       const value = event.target.value;
+                      if (field.key === 'document' || field.key === 'postal_code') {
+                        lookupVersion.current++;
+                        automaticLookup.current[field.key === 'document' ? 'document' : 'cep'] = '';
+                        if (lookingUp) { busy.current = false; setLookingUp(false); }
+                      }
                       setForm({ ...form, [field.key]: field.key === 'document' ? maskCustomerDocument(value)
                         : field.key === 'phone' ? maskCustomerPhone(value) : field.key === 'postal_code' ? maskCustomerCep(value)
                           : field.key === 'state' ? value.toUpperCase() : value });
                     }} />
-                  {(field.key === 'document' || field.key === 'postal_code') && <button type="button" className={commercialSecondaryClass}
+                  {(field.key === 'document' || field.key === 'postal_code') && <button type="button" disabled={lookingUp} className={commercialSecondaryClass}
                     onClick={() => void lookup(field.key === 'document' ? 'document' : 'cep')}>
                     {lookingUp ? 'Consultando...' : field.key === 'document' ? 'Consultar CPF / CNPJ' : 'Consultar CEP'}
                   </button>}
                 </div>
               ))}
             </div>
-            <p className="text-xs text-slate-500">O CPF/CNPJ não pode ser alterado após o cadastro. Edições não modificam os dados históricos de contratos existentes.</p>
+            <p className="text-xs text-slate-500">Consulta automática não substitui campos já preenchidos. Use os botões para consultar novamente. CPF valida os dígitos, mas não consulta nome em bases externas. O CPF/CNPJ não pode ser alterado após o cadastro; edições não modificam contratos existentes.</p>
+            {lookingUp && <p role="status" className="text-sm text-slate-600">Consultando cadastro... Você pode continuar preenchendo os outros campos.</p>}
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Cliente ativo para novas contratações
             </label>
             {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             <div className="flex justify-end gap-3">
-              <button type="button" className={commercialSecondaryClass} onClick={() => setForm(null)}>Cancelar</button>
-              <button className={commercialButtonClass} type="submit">{saving && <Loader2 size={16} className="animate-spin" />} Salvar cliente</button>
+              <button type="button" className={commercialSecondaryClass} onClick={() => {
+                lookupVersion.current++; busy.current = false; setLookingUp(false); setForm(null);
+              }}>Cancelar</button>
+              <button className={commercialButtonClass} disabled={lookingUp} type="submit">{saving && <Loader2 size={16} className="animate-spin" />} Salvar cliente</button>
             </div>
           </fieldset>
         </form>

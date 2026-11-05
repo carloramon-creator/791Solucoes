@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import ipmProvider from '@/lib/nfse/providers/ipm';
 import { montarSnapshotDanfse } from '@/services/nfse/danfse-snapshot';
 import { emitirNacionalProducao, usaNacional } from '@/services/nfse/emissao-nacional';
+import { glassAccessChargesForMonth } from '@/lib/glass-access-charges';
 
 // Configurações globais
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -683,6 +684,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
         values: {
           users: Number(existingValues?.users || 0),
           whatsappUsers: Number(existingValues?.whatsappUsers || existingValues?.whatsapp_users || 0),
+          accessAddons: Number(existingValues?.accessAddons || 0),
           messages: Number(existingValues?.messages || 0),
           marketingMessages: Number(existingValues?.marketingMessages || 0),
           consultflexBasic: Number(existingValues?.consultflexBasic || existingValues?.consultflex_basic || 0),
@@ -698,8 +700,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const [
     { data: tenant, error: tenantErr },
     { data: planConfig, error: planErr },
-    { count: registeredUsers, error: usersErr },
-    { data: sectorsData, error: sectorsErr },
+    { data: accessOrders, error: accessOrdersErr },
     { data: whatsappUsoRows, error: messagesErr },
   ] = await Promise.all([
     glassSupabase
@@ -713,13 +714,11 @@ export async function scheduleMonthlyOverageChargeForTenant({
       .eq('sistema', '791glass')
       .single(),
     glassSupabase
-      .from('user_profiles')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('vidracaria_id', tenantId),
-    glassSupabase
-      .from('whatsapp_sectors')
-      .select('id')
-      .eq('vidracaria_id', tenantId),
+      .from('glass_access_orders')
+      .select('id,vidracaria_id,kind,quantity,unit_cents,cycle,status,billing_from,billing_until')
+      .eq('vidracaria_id', tenantId)
+      .eq('status', 'confirmed')
+      .in('cycle', ['semiannual', 'annual']),
     (() => {
       // Ledger do glass: SAC (utilidade + mensagens normais) e Marketing, sem as falhas da Meta.
       const janela = getBrtWindowFromRefMonth(refMonth);
@@ -731,25 +730,9 @@ export async function scheduleMonthlyOverageChargeForTenant({
     })(),
   ]);
 
-  const firstError = tenantErr || planErr || usersErr || sectorsErr || messagesErr;
+  const firstError = tenantErr || planErr || accessOrdersErr || messagesErr;
   if (firstError) {
     throw new Error(firstError.message);
-  }
-
-  const sectorIds = (sectorsData || []).map((row: any) => row.id).filter(Boolean);
-  let whatsappUsers = 0;
-
-  if (sectorIds.length > 0) {
-    const { data: sectorUsers, error: sectorUsersErr } = await glassSupabase
-      .from('whatsapp_sector_users')
-      .select('user_id')
-      .in('sector_id', sectorIds);
-
-    if (sectorUsersErr) {
-      throw new Error(sectorUsersErr.message);
-    }
-
-    whatsappUsers = new Set((sectorUsers || []).map((row: any) => row.user_id).filter(Boolean)).size;
   }
 
   const planLimits = ((planConfig as any)?.system_limits || {}) as Record<string, unknown>;
@@ -801,15 +784,16 @@ export async function scheduleMonthlyOverageChargeForTenant({
   };
 
   const extras = {
-    users: Math.max(0, Number(registeredUsers || 0) - limits.users),
-    whatsappUsers: Math.max(0, whatsappUsers - limits.whatsappUsers),
+    // A capacidade simultanea e contratada na assinatura; cadastros nao geram excedente.
+    users: 0,
+    whatsappUsers: 0,
     messages: Math.max(0, sacSent - limits.messages),
     marketingMessages: Math.max(0, marketingSent - limits.marketingMessages),
   };
 
   const values = {
-    users: extras.users * prices.extraUserPrice,
-    whatsappUsers: extras.whatsappUsers * prices.extraDevicePrice,
+    users: 0,
+    whatsappUsers: 0,
     messages: roundMoney(extras.messages * prices.extraMessagePrice),
     marketingMessages: roundMoney(extras.marketingMessages * prices.extraMktMessagePrice),
     consultflexBasic: consultflexUsage.basic * prices.consultflexBasicPrice,
@@ -826,7 +810,8 @@ export async function scheduleMonthlyOverageChargeForTenant({
 
   const consultflexCalculatedTotal = values.consultflexBasic + values.consultflexComplete;
   const consultflexTotal = consultflexCalculatedTotal;
-  const totalOverage = roundMoney(values.users + values.whatsappUsers + values.messages + values.marketingMessages + consultflexTotal);
+  const accessCharges = glassAccessChargesForMonth(accessOrders || [], refMonth);
+  const totalOverage = roundMoney(values.messages + values.marketingMessages + consultflexTotal + accessCharges.total);
 
   const closingDetails = {
     refMonth,
@@ -856,6 +841,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
       consultflexBasic: values.consultflexBasic,
       consultflexComplete: values.consultflexComplete,
       consultflexTotal,
+      accessAddons: accessCharges.total,
       total: totalOverage,
     },
   };
@@ -876,8 +862,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   }
 
   const itemLabels: string[] = [];
-  if (extras.users > 0) itemLabels.push(`Usuários extras (${extras.users})`);
-  if (extras.whatsappUsers > 0) itemLabels.push(`Usuários WhatsApp extras (${extras.whatsappUsers})`);
+  if (accessCharges.total > 0) itemLabels.push('Acessos adicionais contratados');
   if (extras.messages > 0) itemLabels.push(`Mensagens SAC extras (${extras.messages})`);
   if (extras.marketingMessages > 0) itemLabels.push(`Mensagens Marketing extras (${extras.marketingMessages})`);
   if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
@@ -905,9 +890,11 @@ export async function scheduleMonthlyOverageChargeForTenant({
       api_payload: null,
     },
     prices,
+    access_orders: accessCharges.items,
     values: {
       ...values,
       consultflexTotal,
+      accessAddons: accessCharges.total,
       total: totalOverage,
     },
     due_date: dueDate.toISOString().split('T')[0],

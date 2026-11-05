@@ -315,7 +315,7 @@ export default function TenantConsumptionReportPage() {
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.activity.auditedDeletes)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.whatsappReceived)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.messagesSent)}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.registeredUsers)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.users)}</span></td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.registeredUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.activeUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.whatsappUsers)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.whatsappUsers)}</span></td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.messagesSent)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.messages)}</span></td>

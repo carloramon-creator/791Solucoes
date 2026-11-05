@@ -105,6 +105,7 @@ interface UsageTenantRow {
       consultflexBasic: number;
       consultflexComplete: number;
       consultflexTotal: number;
+      accessAddons?: number;
       total: number;
     };
   };
@@ -1121,7 +1122,7 @@ export default function AssinaturasPage() {
                 {renderSortHeader({ label: "Status", sortKey: "status", align: "center" })}
                 {renderSortHeader({ label: "Vencimento", sortKey: "vencimento", align: "center" })}
                 {renderSortHeader({ label: "Assinatura", sortKey: "assinatura", align: "center" })}
-                {renderSortHeader({ label: "Faturas", sortKey: "faturas", align: "center", title: "Extras do mês: usuários, mensagens e consultas" })}
+                {renderSortHeader({ label: "Extras estimados", sortKey: "faturas", align: "center", title: "Estimativa de excedentes do período, não saldo de faturas. Clique para consultar o histórico." })}
                 <th className="px-4 py-2 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Ações</th>
               </tr>
             </thead>
@@ -1222,11 +1223,10 @@ export default function AssinaturasPage() {
                           const v = usage?.overage.values;
                           const extras = Number(v?.total || 0);
                           const detail = v ? [
-                            v.users ? `Usuários ${formatCurrency(v.users)}` : '',
-                            v.whatsappUsers ? `Aparelhos WhatsApp ${formatCurrency(v.whatsappUsers)}` : '',
                             v.messages ? `Mensagens SAC ${formatCurrency(v.messages)}` : '',
                             v.marketingMessages ? `Mensagens marketing ${formatCurrency(v.marketingMessages)}` : '',
                             v.consultflexTotal ? `ConsultFlex ${formatCurrency(v.consultflexTotal)}` : '',
+                            v.accessAddons ? `Acessos contratados ${formatCurrency(v.accessAddons)}` : '',
                           ].filter(Boolean).join(' · ') : '';
                           return (
                             <button
@@ -1549,8 +1549,9 @@ export default function AssinaturasPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.users)}`}>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><Users size={12} /> Sistema</p>
-                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.registeredUsers}/{selectedUsage.limits.users}</p>
-                  <p className="text-[11px] font-medium">Ativos: {selectedUsage.usage.activeUsers}</p>
+                  <p className="mt-2 text-xl font-black">{selectedUsage.usage.registeredUsers} cadastrados</p>
+                  <p className="text-[11px] font-medium">Ativos no cadastro: {selectedUsage.usage.activeUsers}</p>
+                  <p className="text-[11px] font-medium">Limite: {selectedUsage.limits.users} acessos simultâneos. Cadastros não geram excedente.</p>
                 </div>
                 <div className={`rounded-xl border p-3 ${getToneClasses(selectedUsage.status.whatsappUsers)}`}>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1"><Smartphone size={12} /> WhatsApp</p>
@@ -1573,12 +1574,8 @@ export default function AssinaturasPage() {
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 flex items-center gap-1"><TrendingUp size={12} /> Estimativa de Excedentes</p>
                 <div className="mt-3 space-y-2 text-sm text-slate-700">
                   <div className="flex items-center justify-between">
-                    <span>Usuários extras ({selectedUsage.overage.extraUsers})</span>
-                    <strong>{formatCurrency(selectedUsage.overage.values.users)}</strong>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span>Usuários WhatsApp extras ({selectedUsage.overage.extraWhatsappUsers})</span>
-                    <strong>{formatCurrency(selectedUsage.overage.values.whatsappUsers)}</strong>
+                    <span>Acessos adicionais contratados</span>
+                    <strong>{formatCurrency(selectedUsage.overage.values.accessAddons ?? 0)}</strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span>Mensagens SAC extras ({selectedUsage.overage.extraMessages})</span>

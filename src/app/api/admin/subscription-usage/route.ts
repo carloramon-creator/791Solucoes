@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getGlassClient } from '@/lib/glass-client';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { glassAccessChargesForMonth } from '@/lib/glass-access-charges';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -173,7 +174,7 @@ export async function GET(req: Request) {
       { data: tenants, error: tenantsError },
       { data: userProfiles, error: profilesError },
       { data: sectors, error: sectorsError },
-      { data: sectorUsers, error: sectorUsersError },
+      { data: accessUsers, error: accessUsersError },
       { data: messages, error: messagesError },
       { data: budgets, error: budgetsError },
       { data: clients, error: clientsError },
@@ -184,6 +185,7 @@ export async function GET(req: Request) {
       { data: planConfig, error: planConfigError },
       { data: invoices, error: invoicesError },
       { data: whatsappUso, error: whatsappUsoError },
+      { data: accessOrders, error: accessOrdersError },
     ] = await Promise.all([
       glass
         .from('vidracarias')
@@ -196,8 +198,8 @@ export async function GET(req: Request) {
         .from('whatsapp_sectors')
         .select('id, vidracaria_id'),
       glass
-        .from('whatsapp_sector_users')
-        .select('sector_id, user_id'),
+        .from('glass_whatsapp_access_users')
+        .select('vidracaria_id, user_id'),
       glass
         .from('whatsapp_messages')
         .select('vidracaria_id, sender_type, created_at')
@@ -253,13 +255,16 @@ export async function GET(req: Request) {
         p_inicio: messagesPeriodStart,
         p_fim: rangeEnd.toISOString(),
       }),
+      glass.from('glass_access_orders')
+        .select('id,vidracaria_id,kind,quantity,unit_cents,cycle,status,billing_from,billing_until')
+        .eq('status', 'confirmed').in('cycle', ['semiannual', 'annual']),
     ]);
 
     const firstError =
       tenantsError ||
       profilesError ||
       sectorsError ||
-      sectorUsersError ||
+      accessUsersError ||
       messagesError ||
       budgetsError ||
       clientsError ||
@@ -269,7 +274,8 @@ export async function GET(req: Request) {
       auditedDeletesError ||
       planConfigError ||
       invoicesError ||
-      whatsappUsoError;
+      whatsappUsoError ||
+      accessOrdersError;
 
     if (firstError) {
       return NextResponse.json({ error: firstError.message }, { status: 500 });
@@ -302,13 +308,6 @@ export async function GET(req: Request) {
       });
     }
 
-    const sectorToTenantMap = new Map<string, string>();
-    (sectors || []).forEach((sector: any) => {
-      if (sector?.id && sector?.vidracaria_id) {
-        sectorToTenantMap.set(String(sector.id), String(sector.vidracaria_id));
-      }
-    });
-
     const usersByTenant = new Map<string, Set<string>>();
     const activeUsersByTenant = new Map<string, Set<string>>();
     (userProfiles || []).forEach((profile: any) => {
@@ -333,13 +332,10 @@ export async function GET(req: Request) {
     });
 
     const whatsappUsersByTenant = new Map<string, Set<string>>();
-    (sectorUsers || []).forEach((row: any) => {
-      const sectorId = String(row?.sector_id || '');
+    (accessUsers || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
       const userId = String(row?.user_id || '');
-      if (!sectorId || !userId) return;
-
-      const tenantId = sectorToTenantMap.get(sectorId);
-      if (!tenantId) return;
+      if (!tenantId || !userId) return;
 
       if (!whatsappUsersByTenant.has(tenantId)) whatsappUsersByTenant.set(tenantId, new Set());
       whatsappUsersByTenant.get(tenantId)?.add(userId);
@@ -613,19 +609,21 @@ export async function GET(req: Request) {
         ? extraMktMessagePrice
         : toNumber(tenant.valor_msg_marketing_excedente, extraMktMessagePrice);
 
-      const extraUsers = Math.max(0, registeredUsers - usersLimit);
-      const extraWhatsappUsers = Math.max(0, whatsappUsers - whatsappUsersLimit);
+      // O limite controla acessos simultaneos, nao cadastros faturaveis.
+      const extraUsers = 0;
+      const extraWhatsappUsers = 0;
       const extraMessages = Math.max(0, messagesSent - messagesLimit);
       const extraMarketingMessages = Math.max(0, marketingMessagesSent - marketingMessagesLimit);
 
-      const usersOverage = extraUsers * extraUserPrice;
-      const whatsappUsersOverage = extraWhatsappUsers * extraDevicePrice;
+      const usersOverage = 0;
+      const whatsappUsersOverage = 0;
       const messagesOverage = extraMessages * tenantMessagePrice;
       const marketingMessagesOverage = extraMarketingMessages * tenantMktMessagePrice;
       const consultflexBasicOverage = consultflexUsage.basicSuccess * consultflexBasicPrice;
       const consultflexCompleteOverage = consultflexUsage.completeSuccess * consultflexCompletePrice;
       const consultflexOverage = consultflexBasicOverage + consultflexCompleteOverage;
-      const overageTotal = usersOverage + whatsappUsersOverage + messagesOverage + marketingMessagesOverage + consultflexOverage;
+      const accessCharges = glassAccessChargesForMonth((accessOrders || []).filter((order) => order.vidracaria_id === tenantId), rangeEnd.toISOString().slice(0, 7));
+      const overageTotal = messagesOverage + marketingMessagesOverage + consultflexOverage + accessCharges.total;
 
       return {
         ...tenant,
@@ -657,7 +655,7 @@ export async function GET(req: Request) {
           marketingMessages: marketingMessagesLimit,
         },
         status: {
-          users: getStatusTone(registeredUsers, usersLimit),
+          users: 'ok' as StatusTone,
           whatsappUsers: getStatusTone(whatsappUsers, whatsappUsersLimit),
           messages: getStatusTone(messagesSent, messagesLimit),
           marketingMessages: getStatusTone(marketingMessagesSent, marketingMessagesLimit),
@@ -685,6 +683,7 @@ export async function GET(req: Request) {
             consultflexBasic: consultflexBasicOverage,
             consultflexComplete: consultflexCompleteOverage,
             consultflexTotal: consultflexOverage,
+            accessAddons: accessCharges.total,
             total: overageTotal,
           },
         },

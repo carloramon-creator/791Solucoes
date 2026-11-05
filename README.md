@@ -940,3 +940,28 @@ aplicada depois da migration de eventos.
 Testes: `node --test scripts/tests/ai-usage.test.mjs`.
 SQL transacional de validacao: `scripts/tests/ai-usage.rollback.sql`.
 Custos: `scripts/tests/ai-usage-costs.rollback.sql` (tambem com rollback).
+## Glass: cadastros e acessos simultaneos
+
+`vidracarias.limite_usuarios` limita os usuarios conectados simultaneamente,
+nao a quantidade de cadastros ou de perfis marcados como ativos.
+Cadastros acima desse numero nao geram excedente: a estimativa de consumo
+e o fechamento mensal mantem `extras.users` e `values.users` em zero.
+A ampliacao contratada da capacidade simultanea continua compondo a assinatura.
+Usuarios WhatsApp vinculados tambem nao geram cobranca automatica:
+a capacidade adicional exige contratacao explicita. Mensagens e Consultflex
+mantem suas regras de cobranca por consumo.
+Faturas e lancamentos antigos nao sao recalculados ou cancelados automaticamente;
+devem ser revisados antes de qualquer ajuste financeiro.
+
+O monitoramento usa habilitacoes nominais de `glass_whatsapp_access_users`,
+nao vinculos de setores, e identifica a coluna como **Extras estimados**:
+nao e saldo de faturas. Pedidos confirmados de `glass_access_orders` com
+ciclo semestral/anual entram em `values.accessAddons`, pelo valor mensal
+integral, a partir da competencia da compra ate o mes anterior a renovacao.
+Pedidos mensais compoem a recorrencia no Glass e nao entram novamente no
+excedente. Cotacoes e pedidos ainda em processamento nunca sao faturados.
+O historico preserva o valor ja registrado, inclusive adicionais explicitos.
+Aplicar primeiro as migrations de acessos no banco Glass; a API nao mascara
+ausencia de tabelas como uma estimativa de zero.
+
+Teste: `node --test scripts/tests/glass-user-billing.test.mjs`.

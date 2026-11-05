@@ -61,7 +61,7 @@ function harness(path, request, confirm = true, props) {
   const hooks = {
     useState(initial) {
       const i = stateIndex++;
-      if (!(i in states)) states[i] = initial;
+      if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial;
       return [states[i], (next) => { states[i] = typeof next === 'function' ? next(states[i]) : next; }];
     },
     useRef(initial) { return refs[refIndex++] ||= { current: initial }; },
@@ -83,6 +83,7 @@ function harness(path, request, confirm = true, props) {
     '@/lib/holding-customers': customers,
     '@/lib/website-contracts': terms,
     '@/lib/website-plans': catalog,
+    '@/lib/holding-operations': load('src/lib/holding-operations.ts'),
     '@/components/HoldingCommercialFields': fields,
     '@/components/WebsiteSubscriptionFields': subscriptionFields,
     '@/components/WebsiteContractSubscriptions': { WebsiteContractSubscriptions: () => null },
@@ -98,12 +99,13 @@ function harness(path, request, confirm = true, props) {
   }, { window: { confirm: (message) => { confirmations.push(message); return confirm; } } });
   const render = () => {
     stateIndex = 0; refIndex = 0; effectIndex = 0; callbackIndex = 0;
-    const tree = props ? page.WebsiteContractSubscriptions(props) : page.default();
+    const tree = props ? (page.HoldingOperations ? page.HoldingOperations(props) : page.WebsiteContractSubscriptions(props)) : page.default();
     while (pending.length) pending.shift()();
     return tree;
   };
   const field = (label) => {
     const container = nodes(render(), (node) => node.type === 'label' && text(node).includes(label))[0];
+    if (!container) return undefined;
     return nodes(container, (node) => ['input', 'textarea', 'select'].includes(node.type))[0]
       || nodes(render(), (node) => node.props?.id === container?.props.htmlFor)[0];
   };
@@ -117,6 +119,66 @@ function harness(path, request, confirm = true, props) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('operations managers create per-product records and staff cannot see creation, import or assignment controls', async () => {
+  const ui = harness('src/components/HoldingOperations.tsx', (url, method, body) => {
+    const params = new URL(url, 'https://holding.test').searchParams;
+    if (method === 'POST') return Response.json({ success: true, id: contractId });
+    if (params.get('mode') === 'members') return Response.json({ members: [{ email: 'seller@example.test', name: 'Vendedor fictício' }] });
+    return Response.json({ records: [], count: 0, manager: true });
+  }, true, { area: 'comercial' });
+  await ui.mount(); await settle();
+  for (const product of ['glass', 'barber', 'websites']) {
+    ui.fill('Produto', product);
+    ui.button('Novo lead').props.onClick();
+    ui.fill('Cliente', 'Cliente fictício');
+    ui.fill('Título / objetivo', 'Conversão assistida');
+    ui.fill('Responsável pelo registro', 'seller@example.test');
+    ui.fill('Registro de contato', 'Agendar apresentação');
+    ui.submit(); await settle(); await settle();
+  }
+  const saves = ui.calls.filter((call) => call.method === 'POST').map((call) => call.body);
+  assert.deepEqual(saves.map((body) => body.product), ['glass', 'barber', 'websites']);
+  assert.ok(saves.every((body) => body.area === 'comercial' && body.source_type === 'manual' && body.note === 'Agendar apresentação' && body.owner_email === 'seller@example.test'));
+  const staff = harness('src/components/HoldingOperations.tsx', () => Response.json({
+    records: [{ id: contractId, customer_name: 'Minha carteira', title: 'Contato', product: 'glass', stage: 'available', owner_email: 'seller@example.test', version: 1 }],
+    count: 1, manager: false,
+  }), true, { area: 'comercial' });
+  await staff.mount();
+  assert.match(text(staff.render()), /Minha carteira/);
+  assert.equal(staff.button('Novo lead'), undefined);
+  assert.doesNotMatch(text(staff.render()), /Importar da base existente/);
+  staff.button('Atualizar / registrar atividade').props.onClick();
+  assert.equal(staff.field('Responsável pelo registro'), undefined);
+  assert.equal(staff.field('Prazo de acompanhamento').props.readOnly, true);
+});
+
+test('production uses the delivery stages and management keeps financial-free indicators filterable by person and period', async () => {
+  const production = harness('src/components/HoldingOperations.tsx', (url) => new URL(url, 'https://holding.test').searchParams.get('mode') === 'members'
+    ? Response.json({ members: [] }) : Response.json({ records: [], count: 0, manager: true }), true, { area: 'producao' });
+  await production.mount(); await settle();
+  production.button('Novo projeto').props.onClick();
+  const form = nodes(production.render(), (node) => node.type === 'form')[0];
+  assert.equal(nodes(nodes(form, (node) => node.type === 'label' && text(node).includes('Etapa'))[0], (node) => node.type === 'select')[0].props.value, 'materials');
+  assert.match(text(form), /Aguardando materiais/);
+  assert.match(text(form), /Aprovação do cliente/);
+  assert.doesNotMatch(text(form), /Convertido/);
+  assert.doesNotMatch(text(production.render()), /Assinantes Glass/);
+  const metrics = harness('src/components/HoldingOperations.tsx', () => Response.json({
+    members: [{ email: 'designer@example.test', nome: 'Designer fictício' }],
+    metrics: [{ area: 'producao', product: 'websites', owner_email: 'designer@example.test', open_records: 2, overdue_records: 1, created: 3, conversions: 0, deliveries: 1, on_time_deliveries: 1 }],
+  }), true, { area: 'gestao' });
+  await metrics.mount();
+  assert.match(text(metrics.render()), /Designer fictício/);
+  assert.match(text(metrics.render()), /não recebimentos financeiros/);
+  metrics.fill('Responsável nos indicadores', 'unassigned');
+  const table = nodes(metrics.render(), (node) => node.type === 'tbody')[0];
+  assert.doesNotMatch(text(table), /Designer fictício/);
+  metrics.fill('Fim', '2026-11-30');
+  metrics.render();
+  await settle();
+  assert.ok(metrics.calls.some((call) => call.url.includes('end=2026-11-30')));
+});
+
 test('contract cards show designer names, filter unassigned contracts and save assignment without billing', async () => {
   const rows = [
     { id: contractId, customer_snapshot: { name: 'Cliente sem responsável' }, plan_snapshot: { name: 'Plano', scope: '' }, total_cents: 100, payment_method: 'PIX', billing_state: 'local', holding_website_installments: [], project_type: 'catalog' },

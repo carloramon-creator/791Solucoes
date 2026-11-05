@@ -13,6 +13,9 @@ const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
   { path: '/financeiro', resourceCode: 'menu.financeiro' },
   { path: '/notas-fiscais', resourceCode: 'menu.notas_fiscais' },
   { path: '/suporte', resourceCode: 'menu.suporte' },
+  { path: '/comercial', resourceCode: 'menu.comercial' },
+  { path: '/producao', resourceCode: 'menu.producao' },
+  { path: '/gestao', resourceCode: 'menu.gestao' },
   { path: '/assinaturas', resourceCode: 'menu.assinaturas' },
   { path: '/clientes', resourceCode: 'menu.clientes' },
   { path: '/patrocinadores', resourceCode: 'menu.patrocinadores' },
@@ -27,6 +30,9 @@ function mapPathToResource(path: string): string | null {
   if (path.startsWith('/financeiro')) return 'menu.financeiro';
   if (path.startsWith('/notas-fiscais')) return 'menu.notas_fiscais';
   if (path.startsWith('/suporte')) return 'menu.suporte';
+  if (path === '/comercial' || path.startsWith('/comercial/')) return 'menu.comercial';
+  if (path === '/producao' || path.startsWith('/producao/')) return 'menu.producao';
+  if (path === '/gestao' || path.startsWith('/gestao/')) return 'menu.gestao';
   if (path === '/assinaturas/websites' || path.startsWith('/assinaturas/websites/')) return 'submenu.assinaturas.websites';
   if (path.startsWith('/assinaturas')) return 'menu.assinaturas';
   if (path === '/clientes' || path.startsWith('/clientes/')) return 'menu.clientes';
@@ -143,7 +149,7 @@ function HoldingLayout({ children }: { children: React.ReactNode }) {
                     : (MENU_ORDER.find((item) => permissionCodes.has(item.resourceCode))?.path || '/');
 
                   const currentResource = mapPathToResource(pathname);
-                  const currentAllowed = currentResource === 'menu.websites' ? permissionCodes.has(currentResource) : unrestrictedFallback || !currentResource || (
+                  const currentAllowed = currentResource && ['menu.websites', 'menu.comercial', 'menu.producao', 'menu.gestao'].includes(currentResource) ? permissionCodes.has(currentResource) : unrestrictedFallback || !currentResource || (
                     permissionCodes.has(currentResource)
                     && (currentResource !== 'submenu.planos.websites' || permissionCodes.has('menu.planos'))
                     && (currentResource !== 'submenu.assinaturas.websites' || permissionCodes.has('menu.assinaturas'))

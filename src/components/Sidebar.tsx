@@ -38,6 +38,9 @@ const navigationItems: NavItem[] = [
   { name: 'FINANCEIRO', href: '/financeiro', icon: Receipt, resourceCode: 'menu.financeiro' },
   { name: 'NOTAS FISCAIS', href: '/notas-fiscais', icon: FileCheck, resourceCode: 'menu.notas_fiscais' },
   { name: 'SUPORTE', href: '/suporte', icon: LifeBuoy, resourceCode: 'menu.suporte' },
+  { name: 'COMERCIAL', href: '/comercial', icon: Users, resourceCode: 'menu.comercial' },
+  { name: 'PRODUÇÃO', href: '/producao', icon: FileCheck, resourceCode: 'menu.producao' },
+  { name: 'GESTÃO', href: '/gestao', icon: LayoutDashboard, resourceCode: 'menu.gestao' },
   {
     name: 'ASSINATURAS',
     href: '/assinaturas',
@@ -245,7 +248,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const canAccess = (resourceCode?: string) => {
     if (!resourceCode) return true;
     if (!permissionsLoaded) return false;
-    if (resourceCode === 'menu.websites') return permissionCodes.has(resourceCode);
+    if (['menu.websites', 'menu.comercial', 'menu.producao', 'menu.gestao'].includes(resourceCode || '')) return permissionCodes.has(resourceCode || '');
     if (unrestrictedFallback) return true;
     return permissionCodes.has(resourceCode);
   };

@@ -2,6 +2,56 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+## Comercial, Producao e Gestao
+
+Aplicar **somente na Holding**
+`supabase/migrations/20261106000000_holding_operations.sql` antes da publicacao.
+Os menus `/comercial`, `/producao` e `/gestao` compartilham registros
+operacionais por produto (Glass, Barber e Websites), sem alterar o banco
+operacional de nenhum produto.
+
+- Comercial: carteira atribuida, contatos/atividades com historico, proxima
+  acao, prazo, negociacao, conversao e motivo de perda. O gestor cria/distribui;
+  vendedores consultam e atualizam somente a propria carteira.
+- Producao: projetos, responsavel operacional, prazo e etapas de materiais,
+  producao, revisao interna, aprovacao do cliente e conclusao. Tempo acumulado
+  inclui somente producao/revisao interna, nao espera de materiais/aprovacao.
+  Essa contagem e tempo decorrido de etapa, nao horas trabalhadas nem controle
+  de ponto. O responsavel operacional nao concede nem substitui permissoes de
+  acesso ao produto ou a atribuicao comercial do webdesigner.
+- Gestao: indicadores por modulo, produto, pessoa e periodo de ate 366 dias.
+  Carga e atrasos sao atuais; entradas, primeiras conversoes e primeiras
+  entregas usam eventos historicos, com responsavel e prazo daquele momento.
+  Reatribuicoes/reaberturas nao transferem ou duplicam essas entregas.
+  Datas usam America/Sao_Paulo; entrega sem prazo nao conta como no prazo.
+
+Importacoes sao individuais e exclusivas por modulo/produto/origem. Glass usa o
+conector existente, somente para leitura dos dados comerciais; permite filtrar
+o status exato informado pela origem (incluindo trials quando assim registrados).
+Nao presume uso efetivo ou pagamento pelo status. Falha de conexao e exibida e
+nao cria registros com dados presumidos. Websites oferece contratos da Holding.
+Barber e demais origens usam cadastro manual nesta etapa; nao ha conector Barber
+ou sincronizacao automatica de trials, pagamentos, publicacao ou entregas.
+
+Comissoes sao **somente estrutura**: a primeira conversao preserva vendedor e
+data, com valor/regra nulos e situacao `awaiting_rule`. Reabrir uma conversao
+invalida essa previsao (`void`), sem recria-la na reconversao. Nao existem
+percentual, apuracao financeira, aprovacao ou pagamento de comissao automaticos.
+Conversao comercial registrada nao e confirmacao de recebimento.
+
+Permissoes novas: `menu.comercial`, `action.comercial.manage`, `menu.producao`,
+`action.producao.manage`, `menu.gestao`. A migration habilita os perfis
+administrativos existentes; outros perfis exigem habilitacao explicita.
+Sem perfil ativo nao ha fallback de acesso. Tabelas com RLS, sem grants locais,
+RPCs somente `service_role`; o servidor verifica a identidade e a transacao
+revalida carteira, permissao, responsavel e versao. Cada gravacao produz evento
+atomico. Listas/historicos tem paginacao de 25; indicadores agregam no banco,
+independentemente da pagina visivel. Nao usar notas de atividade para guardar
+senhas, documentos ou outros dados desnecessarios ao atendimento.
+
+Validacao:
+`PGLITE_MODULE=file:///caminho/para/@electric-sql/pglite/dist/index.js node --test scripts/tests/holding-operations.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
+
 ## Planos de Websites
 
 O catálogo agrupa os cards por categoria comercial: confecção de website,

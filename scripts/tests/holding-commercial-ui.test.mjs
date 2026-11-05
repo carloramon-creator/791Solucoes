@@ -136,6 +136,28 @@ test('contract guidance is collapsed by default and remains available on demand'
   assert.match(text(guidance), /Gere no Asaas somente quando desejar cobrar/);
   assert.match(text(guidance), /empréstimos, aportes e transferências não geram nota/);
 });
+test('contract editing prefills terms, fixes the customer and saves by PUT without emitting or changing recurring services', async () => {
+  const local = {
+    id: contractId, customer_id: customerId, plan_id: planId, total_cents: 600000,
+    payment_method: 'PIX', billing_state: 'review', asaas_environment: 'production', edit_revision: 2,
+    customer_snapshot: { name: customer.name }, plan_snapshot: { name: plan.name, scope: plan.scope },
+    holding_website_installments: [{ id: 'parcel', number: 1, kind: 'balance', amount_cents: 600000, due_date: '2026-11-19', status: 'PENDING' }],
+  };
+  const ui = harness('src/app/assinaturas/websites/page.tsx', (url, method) => url.endsWith('/options')
+    ? optionsResponse() : method === 'PUT' ? Response.json({ id: contractId }) : Response.json({ contracts: [local] }));
+  await ui.mount(); ui.button('Editar contratação').props.onClick();
+  assert.match(text(ui.render()), /Editar contratação de projeto/);
+  assert.equal(ui.field('Cliente').props.disabled, true);
+  assert.equal(ui.field('Preço total').props.value, '6000.00');
+  assert.equal(ui.field('Primeiro vencimento').props.value, '2026-11-19');
+  assert.doesNotMatch(text(ui.render()), /Incluir hospedagem/);
+  ui.fill('Preço total', '4500.00');
+  await ui.submit();
+  const saved = ui.calls.find((call) => call.method === 'PUT');
+  assert.equal(saved.body.id, contractId); assert.equal(saved.body.revision, 2);
+  assert.equal(saved.body.total_cents, 450000);
+  assert.equal(ui.calls.some((call) => call.url.endsWith('/billing')), false);
+});
 const recurringPlan = { ...plan, billing_cycle: 'monthly', recurring_prices: { monthly: 10000, quarterly: 28000, semiannual: 53000, annual: 99000 } };
 const optionsResponse = () => Response.json({ customers: [customer], plans: [plan], recurring_plans: [recurringPlan] });
 async function contractForm(request = (url) => url.endsWith('/options') ? optionsResponse() : contractResponse()) {

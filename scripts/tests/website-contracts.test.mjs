@@ -95,7 +95,7 @@ test('rejects invalid financial inputs and impossible dates without generating d
   }
 });
 
-function billingHarness({ existing = [], local = contract(), customerData = customer, timeout = false, lookupFail = false, createCustomerFail = false, persistFail = false, environment = 'sandbox' } = {}) {
+function billingHarness({ existing = [], local = contract(), customerData = customer, remoteCustomer, timeout = false, lookupFail = false, createCustomerFail = false, persistFail = false, environment = 'sandbox' } = {}) {
   const tables = {
     holding_customers: [{ ...customerData }],
     holding_website_contracts: [structuredClone(local)],
@@ -124,6 +124,7 @@ function billingHarness({ existing = [], local = contract(), customerData = cust
   }
   const api = {
     environment,
+    async getCustomer(id) { calls.push(['getCustomer', id]); return remoteCustomer || { id, cpfCnpj: customerData.document, deleted: false }; },
     async findCustomer(document) { calls.push(['findCustomer', document]); return existing.length ? 'cus_test' : null; },
     async createCustomer() { calls.push(['createCustomer']); if (createCustomerFail) throw new Error('Uncertain customer POST'); return 'cus_test'; },
     async findPayments(reference) {
@@ -175,6 +176,28 @@ test('entry is a separate payment and remaining credit card balance is one insta
   const local = contract({
     holding_website_installments: terms.buildWebsiteSchedule({ ...input, deposit_cents: 2000, deposit_due_date: '2027-01-15' })
       .map((row, i) => ({ ...row, id: `p-${i}`, asaas_payment_id: null })),
+  });
+  test('revised contracts emit under a new reference and ready customer links are checked before charging', async () => {
+    const h = billingHarness({
+      local: contract({ edit_revision: 1 }),
+      customerData: { ...customer, asaas_state: 'ready', asaas_customer_id: 'cus_test', asaas_environment: 'sandbox' },
+    });
+    await h.billWebsiteContract(contractId, true);
+    assert.equal(h.calls[0][0], 'getCustomer');
+    assert.equal(h.calls.find(([name]) => name === 'createPayments')[1].reference, `website|${contractId}|balance|r1`);
+    const wrong = billingHarness({
+      customerData: { ...customer, asaas_state: 'ready', asaas_customer_id: 'cus_test' },
+      remoteCustomer: { id: 'cus_test', cpfCnpj: '11222333000181', deleted: false },
+    });
+    await assert.rejects(wrong.billWebsiteContract(contractId, true), /documento.*diverge/);
+    assert.equal(wrong.calls.some(([name]) => name === 'createPayments'), false);
+    const deleted = billingHarness({
+      customerData: { ...customer, asaas_state: 'ready', asaas_customer_id: 'cus_old' },
+      remoteCustomer: { id: 'cus_old', cpfCnpj: customer.document, deleted: true },
+    });
+    await deleted.billWebsiteContract(contractId, true);
+    assert.equal(deleted.tables.holding_customers[0].asaas_customer_id, 'cus_test');
+    assert.equal(deleted.calls.filter(([name]) => name === 'createCustomer').length, 1);
   });
   const h = billingHarness({ local });
   await h.billWebsiteContract(contractId, true);
@@ -358,6 +381,20 @@ test('customer lookup refuses duplicate remote documents and never updates a pre
   }));
   await assert.rejects((await duplicate.createWebsiteAsaas()).findCustomer(customer.document), /mais de um cliente/);
 });
+test('Asaas customer retrieval checks identity and deleted flag, and creation rejects inconsistent documents', async () => {
+  const h = asaasHarness(() => Response.json({ id: 'cus_test', cpfCnpj: '529.982.247-25', deleted: true }));
+  assert.deepEqual(await (await h.createWebsiteAsaas()).getCustomer('cus_test'), { id: 'cus_test', cpfCnpj: customer.document, deleted: true });
+  assert.equal(h.calls[0].init.method, 'GET');
+  for (const payload of [
+    { id: 'cus_other', cpfCnpj: customer.document }, { id: 'cus_test' },
+    { id: 'cus_test', cpfCnpj: customer.document, deleted: 'true' },
+  ]) {
+    const invalid = asaasHarness(() => Response.json(payload));
+    await assert.rejects((await invalid.createWebsiteAsaas()).getCustomer('cus_test'));
+  }
+  const wrong = asaasHarness(() => Response.json({ id: 'cus_test', cpfCnpj: '11222333000181' }));
+  await assert.rejects((await wrong.createWebsiteAsaas()).createCustomer(customer), /documento/);
+});
 
 function webhookHarness(path, verifiedRef, recurring = false) {
   const processorCalls = [], clientCalls = [];
@@ -452,6 +489,9 @@ function apiHarness(path, { denied = false, deniedFiscal = false, customerError 
       '@/lib/website-plans': load('src/lib/website-plans.ts'),
     }),
     '@/lib/website-billing': { billWebsiteContract: async (...args) => { billingCalls.push(args); return { message: 'ok' }; } },
+    '@/lib/website-contract-edit': { editWebsiteContract: async (body) => {
+      billingCalls.push(['edit', body]); return { id: contractId };
+    } },
     '@/lib/supabase-server': { supabaseServer: {
       from: (table) => new Query(table),
       rpc: async (name, args) => { rpcs.push({ name, args }); return { data: { id: contractId, subscription_id: null }, error: rpcError }; },
@@ -553,7 +593,7 @@ test('billing API requires an explicit action and cannot use untrusted provider 
 test('all commercial APIs deny access before any customer, contract, provider or database mutation', async () => {
   for (const [path, methods] of [
     ['src/app/api/admin/holding-customers/route.ts', ['GET', 'POST', 'PUT']],
-    ['src/app/api/admin/website-contracts/route.ts', ['GET', 'POST']],
+    ['src/app/api/admin/website-contracts/route.ts', ['GET', 'POST', 'PUT']],
     ['src/app/api/admin/website-contracts/options/route.ts', ['GET']],
     ['src/app/api/admin/website-contracts/billing/route.ts', ['POST']],
   ]) {

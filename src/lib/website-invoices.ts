@@ -107,6 +107,13 @@ export async function emitWebsiteInvoice(id: string, competence: string, confirm
       ? 'Nota deste contrato já reservada/enviada. Confira o histórico e o portal nacional; não repita a emissão.'
       : 'Não foi possível reservar a operação fiscal. Nenhuma nota foi enviada.');
   }
+  const { data: current, error: currentError } = await db.from('holding_website_contracts')
+    .select('total_cents,customer_snapshot,plan_snapshot').eq('id', id).single();
+  if (currentError || !current || current.total_cents !== contract.total_cents
+    || JSON.stringify(current.customer_snapshot) !== JSON.stringify(contract.customer_snapshot)
+    || JSON.stringify(current.plan_snapshot) !== JSON.stringify(contract.plan_snapshot)) {
+    throw new Error('Contratação alterada durante a reserva fiscal. Nenhuma nota foi enviada; confira a operação reservada antes de continuar.');
+  }
   return deliverWebsiteInvoice(reserved, data, config, contract.customer_snapshot, {
     website_contract_id: id, invoice_policy: 'manual_project_total',
   });

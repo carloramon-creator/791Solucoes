@@ -53,7 +53,7 @@ const result = {
   xml: '<NFSe><infNFSe><nNFSe>123</nNFSe></infNFSe></NFSe>',
   accessLink: 'https://www.nfse.gov.br/ConsultaPublica/?tpc=1',
 };
-function harness({ local = contract(), settings = config(), timeout = false, failTable, failStatus } = {}) {
+function harness({ local = contract(), settings = config(), timeout = false, editDuringReservation = false, failTable, failStatus } = {}) {
   const tables = {
     holding_website_contracts: [local], system_settings: [{ id: 'nfse_config', value: settings }],
     holding_website_invoices: [], system_invoices: [],
@@ -80,7 +80,7 @@ function harness({ local = contract(), settings = config(), timeout = false, fai
           tables[this.table].push(row); selected.push(row);
         } else selected.forEach((row) => Object.assign(row, value));
       }
-      return Promise.resolve({ data: this.singleRow ? selected[0] : selected, error: null }).then(resolve, reject);
+      return Promise.resolve({ data: structuredClone(this.singleRow ? selected[0] : selected), error: null }).then(resolve, reject);
     }
   }
   const db = {
@@ -97,6 +97,7 @@ function harness({ local = contract(), settings = config(), timeout = false, fai
       };
       tables.holding_website_invoices.push(row);
       tables.system_settings.push({ id: row.operation, value: { status: 'preparando' } });
+      if (editDuringReservation) tables.holding_website_contracts[0].total_cents = 1;
       return { data: row, error: null };
     } }),
   };
@@ -114,6 +115,13 @@ function harness({ local = contract(), settings = config(), timeout = false, fai
   });
   return { ...api, calls, tables, writes };
 }
+
+test('a concurrent contract edit cannot send a stale fiscal snapshot after reservation', async () => {
+  const h = harness({ editDuringReservation: true });
+  await assert.rejects(h.emitWebsiteInvoice(id, '2026-11-04', true), /alterada durante a reserva/);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.tables.holding_website_invoices.length, 1);
+});
 
 test('preview validates the complete DPS, uses project fiscal snapshot and performs zero writes or sends', async () => {
   const h = harness();

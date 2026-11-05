@@ -18,6 +18,7 @@ type Options = {
   recurring_plans: WebsitePlan[];
 };
 type Form = {
+  id?: string; revision?: number;
   request_id: string; customer_id: string; plan_id: string; total: string; count: string;
   first_due_date: string; deposit: string; deposit_due_date: string; payment_method: WebsitePaymentMethod;
   subscription: WebsiteSubscriptionForm | null;
@@ -95,6 +96,23 @@ export default function WebsiteContractsPage() {
       subscription: null,
     });
   }
+  function editContract(contract: WebsiteContract) {
+    if (busy.current) return;
+    if (contract.asaas_environment && !window.confirm(
+      'Para editar, todas as cobranças anteriores precisam estar excluídas no Asaas e não pode haver nota fiscal vinculada. O sistema verificará isso ao salvar, sem excluir cobranças automaticamente. Continuar?',
+    )) return;
+    const rows = [...contract.holding_website_installments].sort((a, b) => a.number - b.number);
+    const deposit = rows.find((row) => row.kind === 'deposit');
+    const balance = rows.filter((row) => row.kind === 'balance');
+    setError(''); setMessage('');
+    setForm({
+      id: contract.id, revision: contract.edit_revision ?? 0, request_id: crypto.randomUUID(),
+      customer_id: contract.customer_id, plan_id: contract.plan_id, total: (contract.total_cents / 100).toFixed(2),
+      payment_method: contract.payment_method, count: String(balance.length),
+      first_due_date: balance[0]?.due_date || '', deposit: deposit ? (deposit.amount_cents / 100).toFixed(2) : '',
+      deposit_due_date: deposit?.due_date || '', subscription: null,
+    });
+  }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!form || !scheduleInput || busy.current) return;
@@ -102,10 +120,11 @@ export default function WebsiteContractsPage() {
     busy.current = true; setSaving(true); setError(''); setMessage('');
     try {
       const response = await holdingAuthFetch('/api/admin/website-contracts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: form.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...scheduleInput, customer_id: form.customer_id, plan_id: form.plan_id,
           payment_method: form.payment_method, request_id: form.request_id,
+          ...(form.id ? { id: form.id, revision: form.revision } : {}),
           subscription: form.subscription ? { ...form.subscription, amount_cents: Math.round(Number(form.subscription.amount) * 100) } : null,
         }),
       });
@@ -113,7 +132,7 @@ export default function WebsiteContractsPage() {
       if (!response.ok || !payload.id) throw new Error(payload.error || 'O banco não confirmou a contratação.');
       if (form.subscription && !payload.subscription_id) throw new Error('O banco não confirmou a assinatura conjunta. Atualize e confira os cadastros antes de repetir.');
       setForm(null);
-      setMessage(payload.subscription_id
+      setMessage(form.id ? 'Contratação editada, com histórico preservado e sem cobrar. A assinatura recorrente não foi alterada.' : payload.subscription_id
         ? 'Criação e assinatura salvas juntas, sem cobrar. Gere as parcelas do projeto aqui e ative a hospedagem/manutenção em Assinaturas recorrentes.'
         : 'Contratação e parcelas salvas somente na Holding. Para cobrar, use Gerar no Asaas.');
       await load();
@@ -233,11 +252,12 @@ export default function WebsiteContractsPage() {
       )}
       {form && (
         <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-800">Nova contratação de projeto</h2>
+          <h2 className="text-lg font-bold text-slate-800">{form.id ? 'Editar contratação de projeto' : 'Nova contratação de projeto'}</h2>
+          {form.id && <p className="text-sm text-amber-800">A edição exige ausência de nota fiscal e exclusão das cobranças anteriores no Asaas. O histórico será preservado. Hospedagem/manutenção é gerenciada separadamente.</p>}
           <fieldset disabled={saving} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               <label className={commercialLabelClass}><span>Cliente *</span>
-                <HoldingCommercialSelect required value={form.customer_id} onChange={(event) => setForm({
+                <HoldingCommercialSelect required disabled={Boolean(form.id)} value={form.customer_id} onChange={(event) => setForm({
                   ...form, customer_id: event.target.value, subscription: form.subscription ? { ...form.subscription, fiscal_confirmed: false } : null,
                 })}>
                   <option value="">Selecione o cliente</option>
@@ -297,12 +317,12 @@ export default function WebsiteContractsPage() {
                 </table>
               </div>
             ) : <p className="text-sm text-slate-500">{previewError}</p>}
-            <p className="text-xs text-slate-500">Sem juros adicionais nesta etapa. Eventuais centavos ficam na última parcela. Após salvar, valores e escopo ficam preservados no contrato e não são editáveis nesta tela.</p>
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <p className="text-xs text-slate-500">Sem juros adicionais nesta etapa. Eventuais centavos ficam na última parcela. Edições preservam o histórico e atualizam o escopo e os dados cadastrais a partir do cliente e produto atuais.</p>
+            {!form.id && <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
               <input type="checkbox" checked={Boolean(form.subscription)} onChange={(event) => setForm({
                 ...form, subscription: event.target.checked ? { ...EMPTY_WEBSITE_SUBSCRIPTION } : null,
               })} /> Incluir hospedagem / manutenção nesta contratação
-            </label>
+            </label>}
             {form.subscription && <section className="space-y-5 rounded-xl border border-slate-200 p-4">
               <h3 className="font-bold text-slate-800">Assinatura opcional para o mesmo cliente</h3>
               <WebsiteSubscriptionFields value={form.subscription} plans={options.recurring_plans}
@@ -355,6 +375,9 @@ export default function WebsiteContractsPage() {
               <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">Confira o painel Asaas antes de qualquer nova emissão. Consultar Asaas apenas recupera cobranças existentes, sem criar outras. Emissão parcial ou processamento interrompido exige revisão administrativa.</p>
             )}
             <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" className={commercialSecondaryClass}
+                disabled={Boolean(billingId) || Boolean(form) || Boolean(invoiceForm) || contract.billing_state === 'processing' || Boolean(contract.holding_website_invoices?.length)}
+                onClick={() => editContract(contract)}>Editar contratação</button>
               {contract.holding_website_invoices?.length ? (
                 <Link href="/notas-fiscais" className={commercialSecondaryClass}>
                   NFS-e: {contract.holding_website_invoices[0].status === 'authorized' ? 'autorizada' : 'reservada / conferir no portal'}

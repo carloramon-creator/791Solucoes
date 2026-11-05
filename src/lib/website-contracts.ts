@@ -10,6 +10,8 @@ export type WebsiteInstallment = {
   kind: 'deposit' | 'balance';
 };
 export type WebsiteContract = {
+  edit_revision?: number;
+  updated_at?: string;
   bundled_subscription?: boolean;
   id: string;
   customer_id: string;

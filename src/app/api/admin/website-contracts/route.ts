@@ -3,8 +3,24 @@ import { authorizeHoldingCommercial } from '@/lib/holding-commercial-auth';
 import { supabaseServer } from '@/lib/supabase-server';
 import { validateWebsiteContract } from '@/lib/website-contracts';
 import { validateWebsiteSubscription } from '@/lib/website-subscription-terms';
+import { editWebsiteContract } from '@/lib/website-contract-edit';
 
 const PERMISSIONS = ['menu.assinaturas', 'submenu.assinaturas.websites'];
+
+export async function PUT(req: Request) {
+  const denied = await authorizeHoldingCommercial(req, [...PERMISSIONS, 'menu.clientes']);
+  if (denied) return denied;
+  let body: unknown;
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: 'Envie um JSON válido.' }, { status: 400 });
+  }
+  try {
+    return NextResponse.json(await editWebsiteContract(body));
+  } catch (failure) {
+    console.error('[WEBSITE CONTRACTS] Edição interrompida, sem emitir cobranças.');
+    return NextResponse.json({ error: failure instanceof Error ? failure.message : 'Não foi possível editar a contratação.' }, { status: 409 });
+  }
+}
 
 export async function GET(req: Request) {
   try {

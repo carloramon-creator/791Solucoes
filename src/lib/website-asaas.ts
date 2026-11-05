@@ -24,6 +24,14 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function customerIdentity(value: unknown) {
+  const row = object(value);
+  if (typeof row.id !== 'string' || !/^cus_[A-Za-z0-9]+$/.test(row.id)
+    || typeof row.cpfCnpj !== 'string' || !/^\d{11}(?:\d{3})?$/.test(row.cpfCnpj.replace(/\D/g, ''))
+    || (row.deleted !== undefined && typeof row.deleted !== 'boolean')) throw new Error('Identificação do cliente Asaas inválida.');
+  return { id: row.id, cpfCnpj: row.cpfCnpj.replace(/\D/g, ''), deleted: row.deleted === true };
+}
+
 export function safeAsaasInvoice(value: unknown): string {
   if (typeof value !== 'string') throw new Error('Link de pagamento ausente no Asaas.');
   const url = new URL(value);
@@ -97,6 +105,12 @@ export async function createWebsiteAsaas() {
   }
   return {
     environment,
+    async getCustomer(id: string) {
+      if (!/^cus_[A-Za-z0-9]+$/.test(id)) throw new Error('Identificador de cliente Asaas inválido.');
+      const row = customerIdentity(await request(`/customers/${encodeURIComponent(id)}`));
+      if (row.id !== id) throw new Error('Cliente retornado não corresponde ao solicitado.');
+      return row;
+    },
     async findCustomer(document: string) {
       const rows = (await list(`/customers?cpfCnpj=${encodeURIComponent(document)}`)).map(object)
         .filter((row) => row.deleted !== true && row.cpfCnpj === document);
@@ -113,8 +127,9 @@ export async function createWebsiteAsaas() {
         addressNumber: customer.address_number || undefined, complement: customer.complement || undefined,
         province: customer.district || undefined,
       });
-      if (typeof row.id !== 'string' || !/^cus_[A-Za-z0-9]+$/.test(row.id)) throw new Error('Asaas não confirmou o cadastro do cliente.');
-      return row.id;
+      const identity = customerIdentity(row);
+      if (identity.deleted || identity.cpfCnpj !== customer.document) throw new Error('Asaas não confirmou o documento do cliente criado. Revise antes de cobrar.');
+      return identity.id;
     },
     async findPayments(reference: string) {
       let rows = (await list(`/payments?externalReference=${encodeURIComponent(reference)}`)).map(payment);

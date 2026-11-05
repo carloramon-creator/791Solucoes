@@ -307,4 +307,40 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
       await db.exec(`set role ${role}`); await assert.rejects(bundle(), /permission denied/); await db.exec('reset role');
     }
   });
+  await t.test('edits atomically with audit, revision, fiscal exclusion, stale-write protection and restricted execution', async () => {
+    await db.exec(await readFile('supabase/migrations/20261105020000_holding_website_contract_edit.sql', 'utf8'));
+    await db.query("update public.holding_website_plans set category='creation',billing_cycle='one_time',recurring_prices='{}' where id=$1", [plan]);
+    const editable = await create(schedule, '30000000-0000-4000-8000-000000000099');
+    const lock = async () => (await db.query("update public.holding_website_contracts set billing_state='processing' where id=$1 returning updated_at::text as locked_at", [editable])).rows[0].locked_at;
+    const edit = async (stamp, revision = 0, rows = schedule) => db.query(
+      'select public.holding_edit_website_contract($1,$2,$3,$4,$5,$6,$7,$8) as id',
+      [editable, revision, stamp, 'local', plan, 30001, 'PIX', JSON.stringify(rows)],
+    );
+    const stamp = await lock();
+    await assert.rejects(db.query(
+      "select * from public.holding_reserve_website_invoice($1::uuid,'2026-11-04','1','11222333000181')", [editable],
+    ), /processamento/);
+    await assert.rejects(edit(stamp, 1), /outra operacao/);
+    await assert.rejects(edit(stamp, 0, [{ number: 1, kind: 'balance', amount_cents: 30001, due_date: '2026-99-99' }]));
+    assert.equal((await db.query('select count(*)::int as n from public.holding_website_contract_edits where contract_id=$1', [editable])).rows[0].n, 0);
+    assert.equal((await edit(stamp)).rows[0].id, editable);
+    const saved = (await db.query('select * from public.holding_website_contracts where id=$1', [editable])).rows[0];
+    assert.equal(saved.edit_revision, 1); assert.equal(saved.billing_state, 'local'); assert.equal(saved.asaas_environment, null);
+    const audit = (await db.query('select * from public.holding_website_contract_edits where contract_id=$1', [editable])).rows[0];
+    assert.equal(audit.previous_installments.length, 3);
+    assert.equal(audit.previous_contract.payment_method, 'CREDIT_CARD');
+    assert.equal(audit.previous_contract.billing_state, 'local');
+    const installments = (await db.query('select * from public.holding_website_installments where contract_id=$1', [editable])).rows;
+    assert.ok(installments.every((i) => i.asaas_payment_id === null && i.status === 'LOCAL'));
+    await assert.rejects(edit(stamp), /outra operacao/);
+    await db.query("select * from public.holding_reserve_website_invoice($1::uuid,'2026-11-04','1','11222333000181')", [editable]);
+    const fiscalStamp = await lock();
+    await assert.rejects(edit(fiscalStamp, 1), /operacao fiscal/);
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`);
+      await assert.rejects(edit(stamp), /permission denied/);
+      await assert.rejects(db.query('select * from public.holding_website_contract_edits'), /permission denied/);
+      await db.exec('reset role');
+    }
+  });
 });

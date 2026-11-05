@@ -8,7 +8,8 @@ type Customer = HoldingCustomer & {
   asaas_environment: string | null;
   asaas_state: 'local' | 'processing' | 'review' | 'ready';
 };
-export const websiteReference = (id: string, kind: 'deposit' | 'balance') => `website|${id}|${kind}`;
+export const websiteReference = (id: string, kind: 'deposit' | 'balance', revision = 0) =>
+  `website|${id}|${kind}${revision ? `|r${revision}` : ''}`;
 
 export async function customerForAsaas(id: string, asaas: WebsiteAsaas, allowCreate: boolean) {
   const { data, error } = await db.from('holding_customers').select('*').eq('id', id).single();
@@ -17,7 +18,11 @@ export async function customerForAsaas(id: string, asaas: WebsiteAsaas, allowCre
   if (!customer.active) throw new Error('O cliente está inativo.');
   if (customer.asaas_environment && customer.asaas_environment !== asaas.environment) throw new Error('O cliente está vinculado a outro ambiente Asaas. Revisão administrativa necessária.');
   if (customer.asaas_state === 'processing') throw new Error('O cadastro deste cliente está em processamento no Asaas. Confira o painel antes de continuar.');
-  if (customer.asaas_state === 'ready' && customer.asaas_customer_id) return customer.asaas_customer_id;
+  if (customer.asaas_state === 'ready' && customer.asaas_customer_id) {
+    const remote = await asaas.getCustomer(customer.asaas_customer_id);
+    if (remote.cpfCnpj !== customer.document) throw new Error('O documento do cliente vinculado no Asaas diverge da Holding. Revise antes de cobrar.');
+    if (!remote.deleted) return remote.id;
+  }
 
   const { data: claimed, error: claimError } = await db.from('holding_customers')
     .update({ asaas_state: 'processing', asaas_environment: asaas.environment })
@@ -59,7 +64,7 @@ export function matchWebsitePayments(
   }
   return local.map((row, index) => {
     const payment = remote[index];
-    if (payment.deleted || payment.customer !== customer || payment.externalReference !== websiteReference(contract.id, kind)
+    if (payment.deleted || payment.customer !== customer || payment.externalReference !== websiteReference(contract.id, kind, contract.edit_revision)
       || payment.billingType !== contract.payment_method || Math.round(payment.value * 100) !== row.amount_cents
       || payment.dueDate !== row.due_date || (row.asaas_payment_id && row.asaas_payment_id !== payment.id)) {
       throw new Error('Valor, cliente, referência ou vencimento divergente no Asaas. Revisão necessária.');
@@ -87,16 +92,16 @@ export async function billWebsiteContract(id: string, generate: boolean) {
     for (const kind of ['deposit', 'balance'] as const) {
       const local = contract.holding_website_installments.filter((row) => row.kind === kind).sort((a, b) => a.number - b.number);
       if (!local.length) continue;
-      let remote = await asaas.findPayments(websiteReference(id, kind));
+      let remote = await asaas.findPayments(websiteReference(id, kind, contract.edit_revision));
       if (!remote.length && generate) {
         // Nunca repetir POST após resposta incerta; o contrato passa a revisão.
         await asaas.createPayments({
           customer: remoteCustomer, method: contract.payment_method, count: local.length,
           total_cents: local.reduce((sum, row) => sum + row.amount_cents, 0), due_date: local[0].due_date,
-          reference: websiteReference(id, kind),
+          reference: websiteReference(id, kind, contract.edit_revision),
           description: `Website: ${contract.plan_snapshot.name} - ${kind === 'deposit' ? 'entrada' : 'saldo'}`,
         });
-        remote = await asaas.findPayments(websiteReference(id, kind));
+        remote = await asaas.findPayments(websiteReference(id, kind, contract.edit_revision));
       }
       const matches = matchWebsitePayments(contract, kind, remoteCustomer, remote);
       for (const { local: row, remote: payment } of matches) {

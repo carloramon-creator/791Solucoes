@@ -48,6 +48,22 @@ nao compartilha a sessao da Holding nem provisiona sites/usuarios.
 A plataforma, seu login e a configuracao de DNS/HTTPS sao independentes
 e precisam estar disponiveis nesse endereco.
 
+**Editar contratacao** permite ajustar produto, preco, entrada, parcelas,
+vencimentos e forma de pagamento, mantendo o mesmo cliente. Aplicar antes
+`supabase/migrations/20261105020000_holding_website_contract_edit.sql`.
+Contratos com operacao fiscal reservada/emitida ou em processamento sao
+bloqueados. Quando ja houve envio ao Asaas, a edicao consulta o ambiente
+original, as referencias de entrada/saldo e cada pagamento vinculado:
+somente libera se nao houver cobrancas ativas e os pagamentos anteriores
+estiverem explicitamente excluidos e sem indicio de pagamento/estorno.
+404, indisponibilidade ou ambiente divergente nao comprovam exclusao.
+Nao exclui cobranças no Asaas. A revisao anterior e suas parcelas ficam
+na tabela administrativa `holding_website_contract_edits`; o novo cronograma
+fica somente na Holding e usa referencias Asaas com revisao propria quando
+o administrador gerar novamente. Cliente/produto atuais atualizam os snapshots
+ao salvar; assinatura recorrente conjunta nao e alterada. O cliente Asaas
+vinculado e revalidado por documento e exclusao antes de emitir novamente.
+
 1. Em **Clientes**, cadastrar nome/razao social, CPF/CNPJ valido, e-mail,
    contato e endereco fiscal. Um cadastro por documento, reutilizavel em varios
    projetos. O CPF/CNPJ nao pode mudar depois de salvo. Endereco fiscal pode

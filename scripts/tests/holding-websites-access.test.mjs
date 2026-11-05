@@ -190,13 +190,42 @@ test('sidebar places Websites below Cupons, honors explicit permission and suppo
           '@/lib/supabase-browser': { createSupabaseBrowser: () => ({}) },
         });
         const html = renderToStaticMarkup(React.createElement(Sidebar, { collapsed, onToggle() {} }));
-        assert.equal(html.includes('href="/websites"'), granted);
+        const destination = 'href="https://websites.791solucoes.com.br/auth/holding/start"';
+        assert.equal(html.includes(destination), granted);
         if (granted) {
-          assert.ok(html.indexOf('href="/cupons"') < html.indexOf('href="/websites"'));
-          assert.ok(html.indexOf('href="/websites"') < html.indexOf('href="/configuracoes"'));
-          assert.match(html, /href="\/websites" target="_blank" rel="noopener noreferrer"/);
+          assert.ok(html.indexOf('href="/cupons"') < html.indexOf(destination));
+          assert.ok(html.indexOf(destination) < html.indexOf('href="/configuracoes"'));
+          assert.match(html, /href="https:\/\/websites\.791solucoes\.com\.br\/auth\/holding\/start" target="_blank" rel="noopener noreferrer"/);
         }
       }
+    }
+  }
+});
+
+test('Websites authorization never mounts the administrative layout or its auth effects', () => {
+  const require = createRequire(import.meta.url);
+  const React = require('react');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  for (const pathname of ['/websites', '/', '/assinaturas/websites', '/planos/websites']) {
+    let panelInitialization = 0;
+    const { MainLayoutWrapper } = loadModule('src/components/MainLayoutWrapper.tsx', {
+      react: { useEffect() {}, useState: (initial) => [initial, () => {}] },
+      'react/jsx-runtime': require('react/jsx-runtime'),
+      'next/navigation': { usePathname: () => pathname, useRouter: () => ({}) },
+      '@/lib/supabase-browser': { createSupabaseBrowser: () => { panelInitialization++; return {}; } },
+      '@/components/Sidebar': { Sidebar: () => React.createElement('aside', null, 'Sidebar') },
+      '@/components/Topbar': { Topbar: () => null },
+      '@/components/InternalTenantChatWidget': { default: () => null },
+      'lucide-react': require('lucide-react'),
+    });
+    const html = renderToStaticMarkup(React.createElement(MainLayoutWrapper, null, 'Autorizando Websites'));
+    if (pathname === '/websites') {
+      assert.equal(panelInitialization, 0);
+      assert.match(html, /Autorizando Websites/);
+      assert.doesNotMatch(html, /Carregando painel|Sidebar/);
+    } else {
+      assert.equal(panelInitialization, 1);
+      assert.match(html, /Carregando painel/);
     }
   }
 });

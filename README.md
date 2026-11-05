@@ -58,6 +58,10 @@ cargo, nome de perfil ou bootstrap sem perfis. O acesso abre nova aba e verifica
 novamente a permissao antes de redirecionar. Falhas de consulta bloqueiam o acesso.
 O login da equipe e centralizado na Holding. Aplicar tambem
 `supabase/migrations/20261105180000_holding_websites_sso.sql` somente neste banco.
+O menu abre diretamente a entrada na Websites em nova aba, evitando carregar
+o painel da Holding antes de iniciar o login. A rota `/websites` e uma tela
+isolada de autorizacao, sem sidebar nem carregamento do painel administrativo;
+a API continua validando a sessao e as permissoes atuais antes de emitir o codigo.
 O navegador inicia a entrada na Websites, que mantem state e verificador PKCE
 em cookie HttpOnly host-only. A Holding valida a sessao autenticada e as
 permissoes de menu/visualizacao e emite codigo de uso unico (90 segundos),

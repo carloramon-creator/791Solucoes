@@ -41,6 +41,14 @@ function mapPathToResource(path: string): string | null {
 
 export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (pathname === '/websites') {
+    return <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">{children}</main>;
+  }
+  return <HoldingLayout>{children}</HoldingLayout>;
+}
+
+function HoldingLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
   const supabase = createSupabaseBrowser();
   const [loading, setLoading] = useState(true);

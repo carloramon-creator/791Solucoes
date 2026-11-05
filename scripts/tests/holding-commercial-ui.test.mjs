@@ -114,6 +114,18 @@ function harness(path, request, confirm = true) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('website catalog links to the independent platform in a protected new tab without API side effects', async () => {
+  const ui = harness('src/app/planos/websites/page.tsx', () => Response.json({ plans: [] }));
+  await ui.mount();
+  const link = nodes(ui.render(), (node) => node.type === 'a' && text(node).includes('Abrir plataforma Websites'))[0];
+  assert.ok(link);
+  assert.equal(link.props.href, 'https://websites.791solucoes.com.br');
+  assert.equal(link.props.target, '_blank');
+  assert.equal(link.props.rel, 'noopener noreferrer');
+  assert.match(link.props['aria-label'], /nova aba/);
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].method, 'GET');
+});
 test('contract guidance is collapsed by default and remains available on demand', async () => {
   const ui = harness('src/app/assinaturas/websites/page.tsx', (url) => url.endsWith('/options') ? optionsResponse() : contractResponse());
   await ui.mount();

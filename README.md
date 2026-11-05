@@ -42,6 +42,12 @@ Nao ha exclusao de contratos nem provisionamento de tenants/usuarios de outros s
 
 Fluxo:
 
+Em **Planos > Websites**, **Abrir plataforma Websites** abre
+`https://websites.791solucoes.com.br` em nova aba. E somente um atalho:
+nao compartilha a sessao da Holding nem provisiona sites/usuarios.
+A plataforma, seu login e a configuracao de DNS/HTTPS sao independentes
+e precisam estar disponiveis nesse endereco.
+
 1. Em **Clientes**, cadastrar nome/razao social, CPF/CNPJ valido, e-mail,
    contato e endereco fiscal. Um cadastro por documento, reutilizavel em varios
    projetos. O CPF/CNPJ nao pode mudar depois de salvo. Endereco fiscal pode

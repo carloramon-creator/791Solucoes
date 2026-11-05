@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AlertCircle, CheckCircle2, ChevronDown, Globe, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ExternalLink, Globe, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import {
   commercialFieldClass as fieldClass,
@@ -159,7 +159,12 @@ export default function PlanosWebsitesPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">Produtos e serviços próprios da Holding, independentes do Glass e do Barber.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <a href="https://websites.791solucoes.com.br" target="_blank" rel="noopener noreferrer"
+            aria-label="Abrir plataforma Websites (nova aba)"
+            className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <ExternalLink size={16} aria-hidden="true" /> Abrir plataforma Websites
+          </a>
           <button type="button" onClick={() => { setLoading(true); setLoadError(''); void loadPlans(); }} disabled={loading || formOpen}
             className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">
             <RefreshCw size={16} /> Atualizar

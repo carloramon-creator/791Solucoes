@@ -42,11 +42,26 @@ Nao ha exclusao de contratos nem provisionamento de tenants/usuarios de outros s
 
 Fluxo:
 
-Em **Planos > Websites**, **Abrir plataforma Websites** abre
-`https://websites.791solucoes.com.br` em nova aba. E somente um atalho:
-nao compartilha a sessao da Holding nem provisiona sites/usuarios.
-A plataforma, seu login e a configuracao de DNS/HTTPS sao independentes
-e precisam estar disponiveis nesse endereco.
+O acesso a plataforma fica em **791 Websites**, no sidebar, abaixo de **Cupons**,
+separado de **Planos > Websites**. Aplicar somente na Holding a migration
+`supabase/migrations/20261105170000_holding_websites_access.sql`.
+Ela cadastra `menu.websites` e as permissoes de visualizar, criar e editar
+websites/recursos da biblioteca. Os perfis ativos `Administrador` e `Dono`
+(este somente quando `is_system`) recebem os recursos inicialmente, sem
+sobrescrever revogacoes ja existentes.
+Outros perfis devem recebe-los em **Configuracoes > Permissoes**, e ser
+vinculados aos funcionarios em **Equipe**.
+
+O menu e o endpoint `/api/admin/websites/access` exigem uma concessao explicita
+de `menu.websites` em perfil ativo, com recurso ativo. Nao ha liberacao por
+cargo, nome de perfil ou bootstrap sem perfis. O acesso abre nova aba e verifica
+novamente a permissao antes de redirecionar. Falhas de consulta bloqueiam o acesso.
+A migration e este atalho ainda nao implementam login unico: a Websites
+continua validando sua propria sessao. As permissoes de operacao estao
+cadastradas para a integracao posterior; nao controlam a plataforma independente
+antes de essa integracao ser implementada. Nenhum usuario e criado ou duplicado.
+Validacao do menu e das permissoes:
+`node --test scripts/tests/holding-websites-access.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
 
 **Editar contratacao** permite ajustar produto, preco, entrada, parcelas,
 vencimentos e forma de pagamento, mantendo o mesmo cliente. Aplicar antes

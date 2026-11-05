@@ -18,6 +18,7 @@ const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
   { path: '/patrocinadores', resourceCode: 'menu.patrocinadores' },
   { path: '/planos', resourceCode: 'menu.planos' },
   { path: '/cupons', resourceCode: 'menu.cupons' },
+  { path: '/websites', resourceCode: 'menu.websites' },
   { path: '/configuracoes', resourceCode: 'menu.configuracoes' },
 ];
 
@@ -33,6 +34,7 @@ function mapPathToResource(path: string): string | null {
   if (path === '/planos/websites' || path.startsWith('/planos/websites/')) return 'submenu.planos.websites';
   if (path.startsWith('/planos')) return 'menu.planos';
   if (path.startsWith('/cupons')) return 'menu.cupons';
+  if (path === '/websites' || path.startsWith('/websites/')) return 'menu.websites';
   if (path.startsWith('/configuracoes')) return 'menu.configuracoes';
   return null;
 }
@@ -115,7 +117,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
         } else {
           // É administrador. Redireciona para a primeira rota habilitada quando necessário.
           setSponsorId(null);
-          if (pathname === '/login' || pathname === '/' || pathname.startsWith('/financeiro') || pathname.startsWith('/notas-fiscais') || pathname.startsWith('/suporte') || pathname.startsWith('/assinaturas') || pathname.startsWith('/clientes') || pathname.startsWith('/patrocinadores') || pathname.startsWith('/planos') || pathname.startsWith('/cupons') || pathname.startsWith('/configuracoes')) {
+          if (pathname === '/login' || mapPathToResource(pathname)) {
             try {
               const token = authUser.user_metadata?.token || (await supabase.auth.getSession()).data?.session?.access_token;
               if (token) {
@@ -133,7 +135,7 @@ export function MainLayoutWrapper({ children }: { children: React.ReactNode }) {
                     : (MENU_ORDER.find((item) => permissionCodes.has(item.resourceCode))?.path || '/');
 
                   const currentResource = mapPathToResource(pathname);
-                  const currentAllowed = unrestrictedFallback || !currentResource || (
+                  const currentAllowed = currentResource === 'menu.websites' ? permissionCodes.has(currentResource) : unrestrictedFallback || !currentResource || (
                     permissionCodes.has(currentResource)
                     && (currentResource !== 'submenu.planos.websites' || permissionCodes.has('menu.planos'))
                     && (currentResource !== 'submenu.assinaturas.websites' || permissionCodes.has('menu.assinaturas'))

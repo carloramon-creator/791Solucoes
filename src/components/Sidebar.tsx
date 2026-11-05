@@ -19,6 +19,7 @@ import {
   FileCheck,
   ShieldCheck,
   LifeBuoy,
+  Globe,
 } from 'lucide-react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 
@@ -27,6 +28,7 @@ type NavItem = {
   href: string;
   icon: any;
   resourceCode?: string;
+  newTab?: boolean;
   hasSubmenu?: boolean;
   subItems?: Array<{ name: string; href: string; resourceCode?: string }>;
 };
@@ -63,6 +65,7 @@ const navigationItems: NavItem[] = [
     ],
   },
   { name: 'CUPONS', href: '/cupons', icon: Percent, resourceCode: 'menu.cupons' },
+  { name: '791 WEBSITES', href: '/websites', icon: Globe, resourceCode: 'menu.websites', newTab: true },
   { name: 'CONFIGURAÇÕES', href: '/configuracoes', icon: Settings, hasSubmenu: false, resourceCode: 'menu.configuracoes' },
 ];
 
@@ -242,6 +245,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const canAccess = (resourceCode?: string) => {
     if (!resourceCode) return true;
     if (!permissionsLoaded) return false;
+    if (resourceCode === 'menu.websites') return permissionCodes.has(resourceCode);
     if (unrestrictedFallback) return true;
     return permissionCodes.has(resourceCode);
   };
@@ -309,6 +313,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <div key={item.name} className="flex flex-col">
                 <Link
                   href={item.href}
+                  target={item.newTab ? '_blank' : undefined}
+                  rel={item.newTab ? 'noopener noreferrer' : undefined}
+                  aria-label={item.newTab ? `${item.name} (nova aba)` : undefined}
                   onClick={(e) => toggleMenu(e, item.name, hasVisibleSubItems)}
                   className={`group flex items-center rounded-md py-2.5 text-sm font-medium transition-all ${collapsed ? 'justify-center px-0' : 'justify-between px-3'} ${
                     isActive ? 'bg-[#3b597b] text-white' : 'text-slate-500 hover:bg-slate-50'

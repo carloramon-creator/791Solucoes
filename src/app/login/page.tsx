@@ -14,6 +14,7 @@ const landingRoutes = [
   { resourceCode: 'menu.patrocinadores', path: '/patrocinadores' },
   { resourceCode: 'menu.planos', path: '/planos' },
   { resourceCode: 'menu.cupons', path: '/cupons' },
+  { resourceCode: 'menu.websites', path: '/websites' },
   { resourceCode: 'menu.configuracoes', path: '/configuracoes' },
 ];
 

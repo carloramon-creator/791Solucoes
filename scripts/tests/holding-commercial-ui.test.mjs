@@ -137,6 +137,8 @@ test('customer UI creates and edits a Holding-only customer with immutable docum
     ? Response.json({ customers: [] }) : Response.json({ customer: { id: customerId, ...body } }));
   await ui.mount();
   ui.button('Novo cliente').props.onClick();
+  assert.ok(ui.field('CPF / CNPJ').props.ref);
+  assert.equal(ui.field('Nome / razão social').props.ref, undefined);
   ui.fill('Nome / razão social', customer.name); ui.fill('CPF / CNPJ', customer.document); ui.fill('E-mail', customer.email);
   for (const field of nodes(ui.render(), (node) => node.type === 'input' && node.props.type !== 'checkbox')) {
     assert.ok(field.props.className.split(' ').includes('h-11'));
@@ -147,6 +149,8 @@ test('customer UI creates and edits a Holding-only customer with immutable docum
   assert.match(text(ui.render()), /Nenhum cadastro foi criado no Glass ou no Barber/);
   ui.button('Editar').props.onClick();
   assert.equal(ui.field('CPF / CNPJ').props.readOnly, true);
+  assert.equal(ui.field('CPF / CNPJ').props.ref, undefined);
+  assert.ok(ui.field('Nome / razão social').props.ref);
   ui.fill('Cliente ativo', false);
   await ui.submit();
   assert.equal(ui.calls.at(-1).body.active, false);

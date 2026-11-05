@@ -39,7 +39,7 @@ export default function HoldingCustomersPage() {
   const busy = useRef(false);
   const lookupVersion = useRef(0);
   const automaticLookup = useRef({ document: '', cep: '' });
-  const nameInput = useRef<HTMLInputElement>(null);
+  const firstInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback((signal?: AbortSignal) => (
     holdingAuthFetch('/api/admin/holding-customers', { signal }).then(async (response) => {
@@ -59,7 +59,7 @@ export default function HoldingCustomersPage() {
     return () => controller.abort();
   }, [load]);
   const open = form !== null;
-  useEffect(() => { if (open) nameInput.current?.focus(); }, [open, editingId]);
+  useEffect(() => { if (open) firstInput.current?.focus(); }, [open, editingId]);
 
   function edit(customer?: HoldingCustomer) {
     lookupVersion.current++;
@@ -198,7 +198,7 @@ export default function HoldingCustomersPage() {
               {fields.map((field) => (
                 <div key={field.key} className={commercialLabelClass}>
                   <label htmlFor={`customer-${field.key}`}>{field.label}{field.required ? ' *' : ''}</label>
-                  <input id={`customer-${field.key}`} ref={field.key === 'name' ? nameInput : undefined} className={commercialInputClass}
+                  <input id={`customer-${field.key}`} ref={field.key === (editingId ? 'name' : 'document') ? firstInput : undefined} className={commercialInputClass}
                     type={field.key === 'email' ? 'email' : field.key === 'phone' ? 'tel' : 'text'} required={field.required} maxLength={field.max}
                     inputMode={['document', 'postal_code', 'phone'].includes(field.key) ? 'tel' : field.key === 'email' ? 'email' : undefined}
                     autoCapitalize={field.key === 'email' ? 'none' : undefined} spellCheck={field.key === 'email' ? false : undefined}

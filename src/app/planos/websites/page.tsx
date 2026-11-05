@@ -356,14 +356,27 @@ export default function PlanosWebsitesPage() {
             <p className="mt-2 text-sm text-slate-500">Comece pela confecção de websites e depois cadastre seus planos de hospedagem e manutenção.</p>
           </div>
         ) : (
-          <section aria-label="Produtos de Websites" className="grid gap-4 md:grid-cols-2">
-            {plans.map((plan) => (
+          <section aria-label="Produtos de Websites" className="space-y-8">
+            {(Object.keys(WEBSITE_CATEGORIES) as WebsiteCategory[]).map((category) => {
+              const categoryPlans = plans.filter((plan) => plan.category === category);
+              if (!categoryPlans.length) return null;
+              return <section key={category} aria-labelledby={`website-category-${category}`}>
+                <header className="mb-4 flex items-center gap-3">
+                  <h2 id={`website-category-${category}`} className="text-lg font-bold text-slate-800">{WEBSITE_CATEGORIES[category]}</h2>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{categoryPlans.length} produto(s)</span>
+                </header>
+                <div className="grid gap-4 md:grid-cols-2">
+            {categoryPlans.map((plan) => (
               <article key={plan.id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-[#3b597b]">{WEBSITE_CATEGORIES[plan.category]}</p>
-                    <h2 className="mt-1 text-lg font-bold text-slate-800 break-words">{plan.name}</h2>
+                    <h3 className="mt-1 text-lg font-bold text-slate-800 break-words">{plan.name}</h3>
                   </div>
+                  <p className="mt-3 text-sm text-slate-600">
+                    <span className="font-semibold">Tipo de site: </span>
+                    {plan.project_type ? WEBSITE_PROJECT_TYPES[plan.project_type] : plan.category === 'creation' ? 'Pendente de definição' : 'Sem restrição de tipo'}
+                  </p>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${plan.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                     {plan.active ? 'Ativo' : 'Inativo'}
                   </span>
@@ -379,7 +392,7 @@ export default function PlanosWebsitesPage() {
                 </ul>}
                 {plan.description && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600 break-words">{plan.description}</p>}
                 <div className="mt-4 flex-1 border-t border-slate-100 pt-4">
-                  <h3 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h3>
+                  <h4 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h4>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 break-words">{plan.scope}</p>
                 </div>
                 <p className="mt-3 text-xs text-slate-500">
@@ -393,6 +406,9 @@ export default function PlanosWebsitesPage() {
                 </button>
               </article>
             ))}
+                </div>
+              </section>;
+            })}
           </section>
         )
       )}

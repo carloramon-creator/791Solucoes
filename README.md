@@ -4,6 +4,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Planos de Websites
 
+O catálogo agrupa os cards por categoria comercial: confecção de website,
+hospedagem, manutenção e alterações adicionais. Cada card informa o tipo de site;
+criações antigas sem tipo aparecem como pendentes, e serviços sem restrição de
+tipo são identificados explicitamente. Categorias vazias não são exibidas.
+
 O produto de criacao exige **Tipo de projeto**: landing page, institucional,
 portfolio, catalogo ou loja virtual. Hospedagem/manutencao podem especificar um
 tipo ou permanecer genericas; quando especificado, o tipo deve corresponder a

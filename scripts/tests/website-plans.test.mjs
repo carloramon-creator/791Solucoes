@@ -269,6 +269,35 @@ const commercialFields = loadModule('src/components/HoldingCommercialFields.tsx'
 });
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+test('catalog cards show site type and group all products by commercial category', async () => {
+  const plans = [
+    { ...valid, id: 'hosting', category: 'hosting', project_type: null, billing_cycle: 'monthly', name: 'Hospedagem geral' },
+    { ...valid, id: 'store', project_type: 'store', name: 'Loja contratada' },
+    { ...valid, id: 'legacy', project_type: null, name: 'Criação antiga' },
+    { ...valid, id: 'maintenance', category: 'maintenance', project_type: 'catalog', name: 'Manutenção catálogo', active: false },
+    { ...valid, id: 'additional', category: 'additional', project_type: null, name: 'Hora adicional' },
+  ];
+  const ui = pageHarness(async () => Response.json({ plans }));
+  await ui.mount();
+  const groups = nodes(ui.render(), (node) => node.type === 'section' && node.props['aria-labelledby']?.startsWith('website-category-'));
+  assert.deepEqual(groups.map((group) => group.props['aria-labelledby']), [
+    'website-category-creation', 'website-category-hosting', 'website-category-maintenance', 'website-category-additional',
+  ]);
+  assert.deepEqual(groups.map((group) => nodes(group, (node) => node.type === 'article').length), [2, 1, 1, 1]);
+  assert.match(text(groups[0]), /Tipo de site: Loja virtual/);
+  assert.match(text(groups[0]), /Pendente de definição/);
+  assert.match(text(groups[1]), /Sem restrição de tipo/);
+  assert.match(text(groups[2]), /Tipo de site: Catálogo/);
+  assert.match(text(groups[2]), /Inativo/);
+  assert.equal(nodes(ui.render(), (node) => node.type === 'article').length, plans.length);
+  ui.button('Editar produto').props.onClick();
+  assert.equal(ui.field('Nome do produto').props.value, 'Loja contratada');
+
+  const sparse = pageHarness(async () => Response.json({ plans: [plans[0]] }));
+  await sparse.mount();
+  assert.equal(nodes(sparse.render(), (node) => node.type === 'section' && node.props['aria-labelledby']?.startsWith('website-category-')).length, 1);
+});
+
 function nodes(node, predicate) {
   if (!node || typeof node !== 'object') return [];
   if (Array.isArray(node)) return node.flatMap((child) => nodes(child, predicate));

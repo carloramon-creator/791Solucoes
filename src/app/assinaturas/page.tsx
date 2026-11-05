@@ -33,6 +33,8 @@ import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import OverageSettleModal from '@/components/OverageSettleModal';
 import { computeGlassSubscription } from '@/lib/glass-pricing';
+import GlassDueDateButton from '@/components/GlassDueDateButton';
+import { glassSubscriptionLabel, subscriptionDaysUntilDue } from '@/lib/subscription-due-date';
 
 // Tipagem baseada na tabela vidracarias do Glass
 interface Vidracaria {
@@ -44,6 +46,7 @@ interface Vidracaria {
   ativa: boolean;
   status_assinatura: string;
   vencimento_assinatura?: string;
+  updated_at: string | null;
   created_at: string;
   phone?: string;
   modulos_ativos?: string[];
@@ -237,6 +240,9 @@ export default function AssinaturasPage() {
   const authClient = useMemo(() => createSupabaseBrowser(), []);
   const [loading, setLoading] = useState(true);
   const [tenants, setTenants] = useState<Vidracaria[]>([]);
+  const [canAdjustDueDate, setCanAdjustDueDate] = useState(false);
+  const [dueDateNotice, setDueDateNotice] = useState('');
+  const [dueDatePermissionError, setDueDatePermissionError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sponsorMap, setSponsorMap] = useState<Record<string, string>>({});
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' } | null>(null);
@@ -364,6 +370,16 @@ export default function AssinaturasPage() {
   async function fetchData() {
     setLoading(true);
     try {
+      try {
+        const response = await holdingAuthFetch('/api/admin/tenant-due-date');
+        const permission = await response.json();
+        if (!response.ok || typeof permission.canEdit !== 'boolean') throw new Error(permission.error || 'Permissão de vencimento não confirmada.');
+        setCanAdjustDueDate(permission.canEdit);
+        setDueDatePermissionError('');
+      } catch (error) {
+        setCanAdjustDueDate(false);
+        setDueDatePermissionError(error instanceof Error ? error.message : 'Não foi possível verificar a permissão de vencimento.');
+      }
       // Tenants are now fetched via fetchUsageSummary() to bypass RLS
 
       const { data: mData } = await supabaseGlass
@@ -581,16 +597,15 @@ export default function AssinaturasPage() {
     fetchData();
   }, []);
 
-  const getStatusBadge = (tenant: Vidracaria, diasRestantes: number | null) => {
-    // Se no banco já está bloqueada, ou se passou de 5 dias de atraso (regra de bloqueio automático do Glass)
-    if (tenant.status_assinatura === 'bloqueada' || (diasRestantes !== null && diasRestantes <= -5)) {
+  const getStatusBadge = (tenant: Vidracaria) => {
+    const label = glassSubscriptionLabel(tenant);
+    if (label === 'BLOQUEADA') {
       return <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> BLOQUEADA</span>;
     }
-    // Se está apenas atrasada, mas ainda não deu o prazo de bloqueio (opcional, vamos mostrar um alerta)
-    if (diasRestantes !== null && diasRestantes < 0) {
+    if (label === 'ATRASADA') {
       return <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> ATRASADA</span>;
     }
-    if (tenant.status_assinatura === 'inativa' || !tenant.ativa) {
+    if (label === 'INATIVA') {
       return <span className="bg-red-100 text-red-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><AlertCircle size={10} /> INATIVA</span>;
     }
     return <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-1 rounded-full flex items-center gap-1 uppercase tracking-wide"><CheckCircle2 size={10} /> ATIVA</span>;
@@ -825,20 +840,10 @@ export default function AssinaturasPage() {
   );
 
   const daysUntilDue = (tenant: Vidracaria) => {
-    if (!tenant.vencimento_assinatura) return null;
-    const [year, month, day] = tenant.vencimento_assinatura.split('T')[0].split('-');
-    const due = new Date(Number(year), Number(month) - 1, Number(day));
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return subscriptionDaysUntilDue(tenant.vencimento_assinatura);
   };
 
-  const statusLabelOf = (tenant: Vidracaria, dias: number | null) => {
-    if (tenant.status_assinatura === 'bloqueada' || (dias !== null && dias <= -5)) return 'BLOQUEADA';
-    if (dias !== null && dias < 0) return 'ATRASADA';
-    if (tenant.status_assinatura === 'inativa' || !tenant.ativa) return 'INATIVA';
-    return 'ATIVA';
-  };
+  const statusLabelOf = (tenant: Vidracaria) => glassSubscriptionLabel(tenant);
 
   const subscriptionValueOf = (tenant: Vidracaria) => computeGlassSubscription({
     tenant,
@@ -854,7 +859,7 @@ export default function AssinaturasPage() {
     const valueOf = (tenant: Vidracaria): string | number => {
       switch (sort.key) {
         case 'nome': return (tenant.nome || '').toLocaleLowerCase('pt-BR');
-        case 'status': return statusLabelOf(tenant, daysUntilDue(tenant));
+        case 'status': return statusLabelOf(tenant);
         case 'vencimento': return daysUntilDue(tenant) ?? Number.POSITIVE_INFINITY;
         case 'assinatura': return subscriptionValueOf(tenant);
         case 'faturas': return extrasValueOf(tenant);
@@ -1078,6 +1083,8 @@ export default function AssinaturasPage() {
         </div>
       </div>
 
+      {dueDatePermissionError && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{dueDatePermissionError}</p>}
+      {dueDateNotice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{dueDateNotice}</p>}
       {usageError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 font-medium">
           {usageError}
@@ -1146,18 +1153,6 @@ export default function AssinaturasPage() {
                   // Valor do ciclo: regra compartilhada com o painel do tenant
                   const valorTotal = subscriptionValueOf(tenant);
 
-                  let diasRestantes: number | null = null;
-                  let vencimentoStr = '';
-                  if (tenant.vencimento_assinatura) {
-                    const [year, month, day] = tenant.vencimento_assinatura.split('T')[0].split('-');
-                    const vencimentoDate = new Date(Number(year), Number(month) - 1, Number(day));
-                    const today = new Date();
-                    today.setHours(0,0,0,0);
-                    const diffTime = vencimentoDate.getTime() - today.getTime();
-                    diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    vencimentoStr = vencimentoDate.toLocaleDateString('pt-BR');
-                  }
-
                   return (
                     <tr key={tenant.id} className="hover:bg-slate-50/50 transition-colors border-b border-slate-200 group">
                       <td className="px-3 py-1.5 text-slate-700">
@@ -1190,23 +1185,13 @@ export default function AssinaturasPage() {
                         </div>
                       </td>
                       <td className="px-2 py-1.5">
-                        <div className="flex justify-center">{getStatusBadge(tenant, diasRestantes)}</div>
+                        <div className="flex justify-center">{getStatusBadge(tenant)}</div>
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {tenant.vencimento_assinatura ? (
-                          <div className="mx-auto flex min-w-[100px] flex-col items-center justify-center rounded border border-slate-100 bg-slate-50 px-2 py-0.5 text-center leading-tight">
-                            <span className="text-[9px] font-black uppercase text-slate-500">Vence {vencimentoStr}</span>
-                            <span className={`mt-0.5 text-[9px] font-bold ${diasRestantes! < 0 ? 'text-red-500' : diasRestantes! <= 5 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                              {diasRestantes! < 0
-                                ? `Atrasado ${Math.abs(diasRestantes!)} dias`
-                                : diasRestantes === 0
-                                  ? 'Vence Hoje'
-                                  : `Faltam ${diasRestantes} dias`}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-[9px] italic text-slate-400">Sem vencimento</span>
-                        )}
+                        <GlassDueDateButton tenant={tenant} canEdit={canAdjustDueDate} onUpdated={(updated, message) => {
+                          setTenants((current) => current.map((item) => item.id === updated.id ? { ...item, ...updated, vencimento_assinatura: updated.vencimento_assinatura || undefined } : item));
+                          setDueDateNotice(message);
+                        }} />
                       </td>
                       <td className="px-2 py-1.5 text-center whitespace-nowrap">
                         <div className="flex flex-col items-center leading-tight">

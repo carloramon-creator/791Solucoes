@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import OverageSettleModal from '@/components/OverageSettleModal';
+import GlassDueDateButton from '@/components/GlassDueDateButton';
+import { glassSubscriptionLabel } from '@/lib/subscription-due-date';
 
 type PanelModule = {
   id: string;
@@ -60,7 +62,7 @@ type PanelData = {
   blocks: Array<{ finance_record_id: string; ref_month: string | null; valor: number; vencimento: string; whatsapp_bloqueado_em: string | null; bloqueia_whatsapp: boolean; bloqueia_consultflex: boolean }>;
   invoices: PanelInvoice[];
   warnings: string[];
-  permissions: { modules: boolean; invoices: boolean };
+  permissions: { modules: boolean; invoices: boolean; dueDate: boolean };
 };
 
 const currency = (value: number) =>
@@ -285,7 +287,7 @@ export default function TenantPanelPage() {
       {/* Resumo */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
-          { label: 'Situação', value: tenant.ativa === false ? 'Bloqueada' : String(tenant.status_assinatura || 'ativa'), tone: tenant.ativa === false ? 'text-red-600' : 'text-emerald-600' },
+          { label: 'Situação', value: glassSubscriptionLabel(tenant), tone: glassSubscriptionLabel(tenant) === 'ATIVA' ? 'text-emerald-600' : 'text-amber-600' },
           { label: 'Vencimento', value: dateBr(tenant.vencimento_assinatura), tone: 'text-slate-800' },
           { label: `Assinatura (${CYCLE_LABEL[tenant.ciclo_pagamento] || 'Mensal'})`, value: currency(pricing.total), tone: 'text-slate-800', hint: data.sponsorName ? 'Combos (plano base patrocinado)' : 'Plano base + combos' },
           { label: `Em aberto (${groups.open.length})`, value: currency(openTotal), tone: groups.open.length ? 'text-amber-600' : 'text-slate-800' },
@@ -293,7 +295,13 @@ export default function TenantPanelPage() {
         ].map((card) => (
           <div key={card.label} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{card.label}</p>
-            <p className={`mt-1 text-lg font-black capitalize ${card.tone}`}>{card.value}</p>
+            {card.label === 'Vencimento' ? <div className="mt-1"><GlassDueDateButton tenant={{
+              id: tenant.id, nome: tenant.nome, ativa: tenant.ativa, status_assinatura: tenant.status_assinatura,
+              vencimento_assinatura: tenant.vencimento_assinatura, updated_at: tenant.updated_at,
+            }} canEdit={data.permissions.dueDate} onUpdated={(updated, message) => {
+              setData((current) => current ? { ...current, tenant: { ...current.tenant, ...updated } } : current);
+              setNotice({ kind: 'ok', text: message });
+            }} /></div> : <p className={`mt-1 text-lg font-black capitalize ${card.tone}`}>{card.value}</p>}
             {'hint' in card && card.hint && <p className="text-[10px] font-semibold text-slate-400">{card.hint}</p>}
           </div>
         ))}

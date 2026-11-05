@@ -11,6 +11,7 @@ export type WebsiteInstallment = {
   kind: 'deposit' | 'balance';
 };
 export type WebsiteContract = {
+  production_stage: import('./website-production').WebsiteProductionStage;
   designer_email?: string | null;
   designer_name?: string | null;
   project_type?: WebsiteProjectType | null;

@@ -404,4 +404,33 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
     assert.equal(audit.previous_installments.length, 3);
     await assert.rejects(db.query("update holding_website_contracts set project_type='store' where id=$1", [editable]), /gestor/);
   });
+  await t.test('productivity integrates with the real contract scope, edit, subscription and lifecycle triggers', async () => {
+    await db.exec(await readFile('supabase/migrations/20261106000000_holding_operations.sql', 'utf8'));
+    await db.exec(`create table system_finance_records(id uuid primary key default gen_random_uuid(),
+      type text,value numeric,description text,category text,status text,metadata jsonb);
+      update holding_permission_resources set active=true where code='menu.websites';
+      insert into holding_permission_resources(code,active) values('action.websites.view',true),('action.websites.edit',true)
+        on conflict(code) do update set active=true;
+      insert into holding_profile_resource_permissions(profile_id,resource_code,enabled)
+        select p.id,r.code,true from holding_permission_profiles p cross join holding_permission_resources r
+        where p.name='Administrador' and r.code in ('menu.websites','action.websites.view','action.websites.edit')
+        on conflict(profile_id,resource_code) do update set enabled=true;`);
+    await db.exec(await readFile('supabase/migrations/20261106007000_website_productivity.sql', 'utf8'));
+    const project = await create(schedule, '30000000-0000-4000-8000-000000000091');
+    await db.query("update holding_website_contracts set designer_email='manager@example.test' where id=$1", [project]);
+    const hosting = (await db.query("select id from holding_website_plans where category='hosting' limit 1")).rows[0].id;
+    await db.query('update holding_website_plans set project_type=null where id=$1', [hosting]);
+    const id = (await db.query("select holding_add_contract_subscription($1,$2,$3,12345,'PIX','2026-12-10','monthly') id",
+      [project, '30000000-0000-4000-8000-000000000092', hosting])).rows[0].id;
+    await db.query("select holding_set_website_productivity_rate('manager@example.test',$1,50025,0)", [plan]);
+    for (const [index, stage] of ['briefing','production','internal_review','customer_review'].entries()) {
+      await db.query("select holding_advance_website_production('manager@example.test',$1,$2,$3)", [project, stage, index + 1]);
+    }
+    await db.query("select holding_approve_website_delivery('manager@example.test',$1,$2)", [requestId, id]);
+    const row = (await db.query('select * from holding_website_contracts where id=$1', [project])).rows[0];
+    assert.equal(row.production_stage, 'completed'); assert.equal(row.project_type, 'institutional');
+    assert.equal(row.edit_revision, 0); assert.equal(row.total_cents, 30001);
+    assert.equal((await db.query('select approval_status from holding_website_subscriptions where id=$1', [id])).rows[0].approval_status, 'approved');
+    assert.equal((await db.query('select value=500.25 exact from system_finance_records')).rows[0].exact, true);
+  });
 });

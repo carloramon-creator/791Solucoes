@@ -220,7 +220,7 @@ export function HoldingOperations({ area }: { area: OperationsArea | 'gestao' })
     </form>}
     {loading && <p role="status">Carregando operações...</p>}
     {!loading && metricsMode && <div className="overflow-x-auto rounded-xl border bg-white">
-      <table className="w-full text-left text-sm"><caption className="p-3 text-left">Conversões e entregas são registros de etapa, não recebimentos financeiros. Sem prazo definido, uma entrega não conta como “no prazo”.</caption>
+      <table className="w-full text-left text-sm"><caption className="p-3 text-left">Conversões e entregas não comprovam recebimento financeiro. Entregas Websites refletem a aprovação final na Holding. Projetos Websites não possuem prazo neste fluxo; não entram em atrasos ou entregas no prazo.</caption>
         <thead><tr>{['Módulo', 'Produto', 'Responsável', 'Abertos agora', 'Atrasados agora', 'Entradas no período', 'Conversões', 'Entregas', 'Entregas no prazo'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead>
         <tbody>{visibleMetrics.map((metric) => <tr key={`${metric.area}-${metric.product}-${metric.owner_email}`} className="border-t">
           <td className="p-3">{metric.area === 'comercial' ? 'Comercial' : 'Produção'}</td>

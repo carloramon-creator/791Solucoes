@@ -78,7 +78,7 @@ export default function WebsiteSubscriptionsPage() {
         : action === 'resume'
           ? `Reativar esta assinatura Websites com próximo vencimento em ${dateLabel(nextDueDate || '')}? Novas cobranças voltarão a ser geradas. Cobranças já emitidas não serão alteradas.`
           : action === 'generate'
-      ? `Confirmo que o cliente aprovou esta assinatura. Ativar ${commercialMoney(row.amount_cents)} por ciclo ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]} para ${row.customer_snapshot.name}?\n\nEm produção, o Asaas gerará cobranças contínuas até a pausa/cancelamento. Cada pagamento confirmado emitirá uma NFS-e real pelo valor do período. No sandbox não haverá nota de produção.`
+      ? `Confirmo que o cliente aprovou a entrega e esta assinatura. Ativar ${commercialMoney(row.amount_cents)} por ciclo ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]} para ${row.customer_snapshot.name}?\n\nPara projetos vinculados, a primeira aprovação conclui a produção e gera uma única produtividade a pagar ao webdesigner, sem pagamento automático.\n\nEm produção, o Asaas gerará cobranças contínuas até a pausa/cancelamento. Cada pagamento confirmado emitirá uma NFS-e real pelo valor do período. No sandbox não haverá nota de produção.`
       : 'Consultar a assinatura no Asaas? Pagamentos confirmados de produção ainda sem operação fiscal reservada poderão gerar NFS-e automaticamente.';
     if (!window.confirm(`${row.customer_snapshot.name} — ${row.plan_snapshot.name}\n\n${prompt}`)) return;
     busy.current = true; setWorking(true); setError(''); setMessage('');

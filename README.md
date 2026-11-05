@@ -2,6 +2,27 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Ajuste administrativo do vencimento Glass
+
+Aplicar primeiro no **Glass** `20261106007000_subscription_due_date.sql` e na
+**Holding** `20261106008000_glass_due_date_permission.sql`, depois publicar os
+dois aplicativos. A data fica clicavel na visao geral e no painel da assinatura.
+Exige `menu.assinaturas` e `action.assinaturas.adjust_due_date` explicitamente
+ativos; a nova acao e atribuida aos perfis Administrador e Dono de sistema.
+
+- Data, justificativa e confirmacao explicita obrigatorias; controle de versao
+  impede sobrescrever alteracoes concorrentes. Antes/depois e responsavel ficam
+  em `glass_subscription_due_date_changes`, no Glass, na mesma transacao.
+- Dias de calendario em America/Sao_Paulo: vencida de 1 a 10 dias aparece
+  atrasada; bloqueia somente a partir do dia 11. A extensao pode reativar uma
+  assinatura bloqueada; inativas/canceladas nao sao reativadas por esse ajuste.
+- Nao registra pagamento, nao muda Asaas, faturas, valores, acessos contratados
+  nem bloqueios de modulos. Uma contratacao de acessos em processamento impede
+  o ajuste. Cotacoes ainda nao confirmadas expiram para serem consultadas
+  novamente; pedidos confirmados preservam seus valores e periodos originais.
+- O cron revalida o vencimento no UPDATE para nao bloquear uma data prorrogada
+  entre a consulta e a gravacao. Nao faz reativacao em massa.
+
 ## Comercial, Producao e Gestao
 
 Aplicar **somente na Holding**
@@ -13,17 +34,58 @@ operacional de nenhum produto.
 - Comercial: carteira atribuida, contatos/atividades com historico, proxima
   acao, prazo, negociacao, conversao e motivo de perda. O gestor cria/distribui;
   vendedores consultam e atualizam somente a propria carteira.
-- Producao: projetos, responsavel operacional, prazo e etapas de materiais,
-  producao, revisao interna, aprovacao do cliente e conclusao. Tempo acumulado
-  inclui somente producao/revisao interna, nao espera de materiais/aprovacao.
-  Essa contagem e tempo decorrido de etapa, nao horas trabalhadas nem controle
-  de ponto. O responsavel operacional nao concede nem substitui permissoes de
-  acesso ao produto ou a atribuicao comercial do webdesigner.
+- Producao: configuracao de remuneracao fixa por plano de criacao Websites,
+  acompanhamento dos projetos e conferencia de produtividades aprovadas.
+  Nao e mais um quadro de tarefas independente. As etapas sao avancadas pela
+  equipe no Websites, com atribuicao e permissoes atuais verificadas no servidor.
 - Gestao: indicadores por modulo, produto, pessoa e periodo de ate 366 dias.
   Carga e atrasos sao atuais; entradas, primeiras conversoes e primeiras
-  entregas usam eventos historicos, com responsavel e prazo daquele momento.
+  entregas comerciais usam eventos historicos, com responsavel e prazo daquele momento.
   Reatribuicoes/reaberturas nao transferem ou duplicam essas entregas.
   Datas usam America/Sao_Paulo; entrega sem prazo nao conta como no prazo.
+  Entregas Websites refletem a aprovacao final do projeto; a produtividade
+  preserva o beneficiario dessa aprovacao. Nao ha prazo de entrega neste fluxo.
+
+### Produtividade Websites
+
+Aplicar **na Holding**, depois das migracoes anteriores,
+`supabase/migrations/20261106007000_website_productivity.sql`.
+Publicar a Holding antes do Websites, que consulta o novo endpoint
+`/api/websites/production` usando a sessao SSO existente.
+
+- Configurar em **Producao > Valores por plano** um valor positivo em reais por
+  plano de criacao; nao sao percentuais nem parcelas da hospedagem. O valor
+  vigente e congelado na aprovacao, junto com plano, versao, webdesigner e ator.
+- Sequencia: Configuracao > Briefing > Producao > Revisao interna >
+  Aprovacao do cliente. Salvar conteudo nao avanca etapas. Cada avanco requer
+  confirmacao explicita e versao atual; apenas uma etapa por vez.
+- **Aprovar entrega e ativar assinaturas**, em Assinaturas > Websites, confirma
+  a aprovacao do cliente: uma transacao conclui a producao, aprova a assinatura
+  e grava uma produtividade por contratacao com despesa pendente no Financeiro.
+  Exige responsavel atribuido, revisao interna concluida e valor configurado.
+  Aprovacoes sem projeto vinculado nao geram produtividade.
+  Quando uma assinatura ja ativa e vinculada a um projeto novo, o mesmo painel
+  oferece **Aprovar entrega - assinaturas ja ativas**, sem reenviar ao Asaas
+  nem alterar a aprovacao historica da recorrencia.
+- Gestores com `action.websites.manage` ou comerciais com
+  `action.websites.approve` podem confirmar, mantendo as permissoes comerciais
+  e fiscais exigidas pelo fluxo de ativacao existente. A permissao especifica
+  nao concede acesso a editar ou distribuir todos os projetos.
+- O Asaas e acionado **depois** da transacao local. Falha remota nao desfaz uma
+  entrega aprovada nem duplica sua produtividade. A interface informa que a
+  aprovacao foi preservada; recorrencias em revisao usam a recuperacao existente.
+- Varias assinaturas, novas mensalidades, reatribuicao e repeticao da aprovacao
+  nao criam nova produtividade. Alterar o valor do plano nao recalcula entregas
+  aprovadas. Pagamento e baixa continuam manuais no Financeiro.
+- Contratos com assinatura ja aprovada na implantacao sao preservados como
+  concluidos, **sem gerar valores retroativos**. Registros do antigo quadro de
+  producao sao preservados, mas novas gravacoes sao recusadas.
+- Paginas de projetos, valores e produtividades usam paginacao; funcionarios
+  sem gestao veem apenas projetos atribuidos e produtividades de seu e-mail.
+  O financeiro vinculado informa a situacao atual, sem presumir pagamento.
+  Saldos gerados por baixas parciais sao somados por contratacao: a conferencia
+  separa pendente, pago e cancelado, sem confundir a baixa da primeira parcela
+  com o pagamento integral da produtividade.
 
 Importacoes sao individuais e exclusivas por modulo/produto/origem. Glass usa o
 conector existente, somente para leitura dos dados comerciais; permite filtrar

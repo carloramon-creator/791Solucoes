@@ -8,6 +8,7 @@ import { buildWebsiteSchedule, WEBSITE_PAYMENT_METHODS, type WebsiteContract, ty
 import { WEBSITE_PROJECT_TYPES, type WebsitePlan, type WebsiteProjectType } from '@/lib/website-plans';
 import { EMPTY_WEBSITE_SUBSCRIPTION, WebsiteSubscriptionFields, type WebsiteSubscriptionForm } from '@/components/WebsiteSubscriptionFields';
 import { WebsiteContractSubscriptions } from '@/components/WebsiteContractSubscriptions';
+import { WebsiteProductionProgress } from '@/components/WebsiteProductionProgress';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialMoney,
   commercialSecondaryClass, HoldingCommercialSelect,
@@ -392,7 +393,8 @@ export default function WebsiteContractsPage() {
       )}
       {subscriptionContract && <WebsiteContractSubscriptions key={subscriptionContract.id}
         contractId={subscriptionContract.id} customerId={subscriptionContract.customer_id}
-        customerName={subscriptionContract.customer_name} projectType={subscriptionContract.project_type} />}
+        customerName={subscriptionContract.customer_name} projectType={subscriptionContract.project_type}
+        productionStage={contracts.find((contract) => contract.id === subscriptionContract.id)?.production_stage} onApproval={load} />}
       {!form && <label className={commercialLabelClass}><span>Filtrar por webdesigner</span>
         <HoldingCommercialSelect value={designerFilter} onChange={(event) => setDesignerFilter(event.target.value)}>
           <option value="all">Todos os contratos</option><option value="unassigned">Sem webdesigner</option><option value="assigned">Com webdesigner</option>
@@ -414,6 +416,7 @@ export default function WebsiteContractsPage() {
                 {contract.asaas_environment && <p className="text-xs font-bold text-[#3b597b]">Asaas: {contract.asaas_environment === 'production' ? 'PRODUÇÃO' : 'SANDBOX'}</p>}
               </div>
             </div>
+            <WebsiteProductionProgress stage={contract.production_stage} />
             <details className="text-sm text-slate-600"><summary className="cursor-pointer">Escopo preservado na contratação</summary><p className="mt-2 whitespace-pre-wrap">{contract.plan_snapshot.scope}</p></details>
             {assignment?.id === contract.id && <form onSubmit={(event) => void saveDesigner(event)} className="space-y-3 rounded-xl border border-slate-200 p-4">
               <fieldset disabled={assigning} className="space-y-3">

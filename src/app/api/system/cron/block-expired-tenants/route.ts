@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { subscriptionBlockDeadline } from '@/lib/subscription-due-date';
 
 export async function GET(req: Request) {
   try {
@@ -15,9 +16,7 @@ export async function GET(req: Request) {
     const glassSupabase = createClient(glassUrl, glassServiceKey);
 
     // 2. Buscar vidraçarias ativas cujo vencimento foi há mais de 10 dias
-    const tenDaysAgo = new Date();
-    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-    const deadlineStr = tenDaysAgo.toISOString().split('T')[0];
+    const deadlineStr = subscriptionBlockDeadline();
 
     console.log(`[CRON] Verificando vidraçarias vencidas antes de ${deadlineStr}`);
 
@@ -36,18 +35,21 @@ export async function GET(req: Request) {
     // 3. Bloquear as vidraçarias encontradas
     const idsToBlock = expired.map(v => v.id);
     
-    const { error: updateError } = await glassSupabase
+    const { data: blocked, error: updateError } = await glassSupabase
       .from('vidracarias')
       .update({ 
         ativa: false, 
         status_assinatura: 'bloqueada',
         updated_at: new Date().toISOString()
       })
-      .in('id', idsToBlock);
+      .in('id', idsToBlock)
+      .eq('ativa', true)
+      .lt('vencimento_assinatura', deadlineStr)
+      .select('id, nome, vencimento_assinatura');
 
     if (updateError) throw updateError;
 
-    console.log(`[CRON] Bloqueadas ${idsToBlock.length} vidraçarias:`, idsToBlock);
+    console.log(`[CRON] Bloqueadas ${blocked?.length || 0} vidraçarias:`, blocked?.map((row) => row.id));
 
     // --- BLOQUEIO DE PATROCINADORES (HOLDING) ---
     const holdingUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -79,9 +81,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      blockedTenantsCount: idsToBlock.length,
+      blockedTenantsCount: blocked?.length || 0,
       blockedSponsorsCount: expiredSponsors?.length || 0,
-      details: { tenants: expired, sponsors: expiredSponsors }
+      details: { tenants: blocked, sponsors: expiredSponsors }
     });
 
   } catch (err: any) {

@@ -1,5 +1,5 @@
-import { HoldingOperations } from '@/components/HoldingOperations';
+import { WebsiteProductivity } from '@/components/WebsiteProductivity';
 
 export default function ProductionPage() {
-  return <HoldingOperations area="producao" />;
+  return <WebsiteProductivity />;
 }

@@ -84,9 +84,12 @@ function harness(path, request, confirm = true, props) {
     '@/lib/website-contracts': terms,
     '@/lib/website-plans': catalog,
     '@/lib/holding-operations': load('src/lib/holding-operations.ts'),
+    '@/lib/website-production': load('src/lib/website-production.ts'),
     '@/components/HoldingCommercialFields': fields,
     '@/components/WebsiteSubscriptionFields': subscriptionFields,
     '@/components/WebsiteContractSubscriptions': { WebsiteContractSubscriptions: () => null },
+    '@/components/WebsiteProductionProgress': { WebsiteProductionProgress: () => null },
+    './WebsiteProductionProgress': { WebsiteProductionProgress: () => null },
     './WebsiteSubscriptionFields': subscriptionFields,
     './HoldingCommercialFields': fields,
     '@/lib/website-subscription-terms': subscriptionTerms,
@@ -99,7 +102,8 @@ function harness(path, request, confirm = true, props) {
   }, { window: { confirm: (message) => { confirmations.push(message); return confirm; } } });
   const render = () => {
     stateIndex = 0; refIndex = 0; effectIndex = 0; callbackIndex = 0;
-    const tree = props ? (page.HoldingOperations ? page.HoldingOperations(props) : page.WebsiteContractSubscriptions(props)) : page.default();
+    const tree = page.WebsiteProductivity ? page.WebsiteProductivity()
+      : props ? (page.HoldingOperations ? page.HoldingOperations(props) : page.WebsiteContractSubscriptions(props)) : page.default();
     while (pending.length) pending.shift()();
     return tree;
   };
@@ -119,6 +123,42 @@ function harness(path, request, confirm = true, props) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('production configures fixed plan cents and shows linked payable status, never a payment button', async () => {
+  let amount = 0, version = 0;
+  const ui = harness('src/components/WebsiteProductivity.tsx', (url, method, body) => {
+    if (method === 'PUT') {
+      amount = body.amount_cents; version++;
+      return Response.json({ success: true });
+    }
+    const mode = new URL(url, 'https://holding.test').searchParams.get('mode');
+    if (mode === 'rates') return Response.json({ manager: true, count: 1, plans: [{
+      id: planId, name: 'Plano teste', active: true,
+      holding_website_productivity_rates: amount ? { amount_cents: amount, version } : null,
+    }] });
+    if (mode === 'earnings') return Response.json({ manager: true, count: 1, earnings: [{
+      contract_id: contractId, amount_cents: 12345, designer_email: 'designer@example.test',
+      approved_at: '2026-11-05T12:00:00Z', approved_by: 'manager@example.test',
+      customer_snapshot: { name: customer.name },
+      finance_record_count: 2, pending_cents: 7345, paid_cents: 5000, cancelled_cents: 0,
+    }] });
+    return Response.json({ projects: [], count: 0, manager: true });
+  });
+  await ui.mount();
+  assert.equal(ui.button('Novo projeto'), undefined);
+  ui.button('Valores por plano').props.onClick(); ui.render(); await settle();
+  assert.match(text(ui.render()), /bloqueia novas aprovações/);
+  ui.button('Configurar valor').props.onClick(); ui.fill('Valor fixo por entrega', '123,45');
+  ui.submit(); await settle(); await settle();
+  assert.equal(amount, 12345);
+  assert.deepEqual(ui.calls.find((call) => call.method === 'PUT').body, { plan_id: planId, amount_cents: 12345, version: 0 });
+  assert.match(text(ui.render()), /não foram alteradas/);
+  ui.button('Produtividades aprovadas').props.onClick(); ui.render(); await settle();
+  assert.match(text(ui.render()), /designer@example.test/); assert.match(text(ui.render()), /Pendente/);
+  assert.equal(ui.calls.some((call) => /billing|settle/.test(call.url)), false);
+  const staff = harness('src/components/WebsiteProductivity.tsx', () => Response.json({ projects: [], count: 0, manager: false }));
+  await staff.mount();
+  assert.equal(staff.button('Valores por plano'), undefined);
+});
 test('operations managers create per-product records and staff cannot see creation, import or assignment controls', async () => {
   const ui = harness('src/components/HoldingOperations.tsx', (url, method, body) => {
     const params = new URL(url, 'https://holding.test').searchParams;
@@ -169,7 +209,7 @@ test('production uses the delivery stages and management keeps financial-free in
   }), true, { area: 'gestao' });
   await metrics.mount();
   assert.match(text(metrics.render()), /Designer fictício/);
-  assert.match(text(metrics.render()), /não recebimentos financeiros/);
+  assert.match(text(metrics.render()), /não comprovam recebimento financeiro/);
   metrics.fill('Responsável nos indicadores', 'unassigned');
   const table = nodes(metrics.render(), (node) => node.type === 'tbody')[0];
   assert.doesNotMatch(text(table), /Designer fictício/);
@@ -230,7 +270,7 @@ test('embedded subscriptions inherit the contract, filter plans, hide activation
   assert.match(text(nodes(disclosure, (node) => node.type === 'summary')[0]), /Expandir \/ recolher/);
   assert.match(text(ui.render()), /Aguardando aprovação do cliente/);
   assert.match(text(ui.render()), /Preparação liberada, sem ativação de cobrança/);
-  ui.button('Ativar assinaturas').props.onClick();
+  ui.button('Aprovar entrega e ativar assinaturas').props.onClick();
   assert.match(ui.confirmations[0], /cliente|aprovou/);
   assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
   ui.button('Adicionar assinatura').props.onClick();
@@ -241,7 +281,7 @@ test('embedded subscriptions inherit the contract, filter plans, hide activation
   const employee = harness('src/components/WebsiteContractSubscriptions.tsx',
     (url) => url.endsWith('/me') ? Response.json({ permissionCodes: [] }) : request(url), true, props);
   await employee.mount();
-  assert.equal(employee.button('Ativar assinaturas'), undefined);
+  assert.equal(employee.button('Aprovar entrega e ativar assinaturas'), undefined);
 
   const create = harness('src/components/WebsiteContractSubscriptions.tsx', (url, method, body) => {
     if (method === 'POST') {

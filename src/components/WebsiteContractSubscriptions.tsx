@@ -6,9 +6,12 @@ import { WEBSITE_BILLING_CYCLES, type WebsitePlan, type WebsiteProjectType } fro
 import { WEBSITE_SUBSCRIPTION_STATES, type WebsiteSubscription } from '@/lib/website-subscription-terms';
 import { EMPTY_WEBSITE_SUBSCRIPTION, WebsiteSubscriptionFields, type WebsiteSubscriptionForm } from './WebsiteSubscriptionFields';
 import { commercialButtonClass, commercialSecondaryClass, commercialMoney, commercialLabelClass, HoldingCommercialSelect } from './HoldingCommercialFields';
+import type { WebsiteProductionStage } from '@/lib/website-production';
 
-export function WebsiteContractSubscriptions({ contractId, customerId, customerName, projectType }: {
+export function WebsiteContractSubscriptions({ contractId, customerId, customerName, projectType, productionStage, onApproval }: {
   contractId: string; customerId: string; customerName: string; projectType: WebsiteProjectType | null;
+  onApproval?: () => Promise<void>;
+  productionStage?: WebsiteProductionStage;
 }) {
   const [rows, setRows] = useState<WebsiteSubscription[]>([]);
   const [plans, setPlans] = useState<WebsitePlan[]>([]);
@@ -34,7 +37,7 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
     }
     setRows(data.subscriptions);
     setPlans(data.plans);
-    setManager(permissions.permissionCodes.includes('action.websites.manage'));
+    setManager(permissions.permissionCodes.includes('action.websites.manage') || permissions.permissionCodes.includes('action.websites.approve'));
   }), []);
   useEffect(() => {
     void load().catch((failure: unknown) => {
@@ -46,6 +49,9 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
   const available = rows.filter((row) => row.customer_id === customerId && !row.contract_id && row.lifecycle_status !== 'cancelled');
   const compatiblePlans = plans.filter((plan) => !plan.project_type || plan.project_type === projectType);
   const pending = linked.filter((row) => row.billing_state === 'local' && row.lifecycle_status === 'active');
+  const existingDelivery = productionStage && productionStage !== 'completed'
+    ? linked.find((row) => row.billing_state === 'issued' && row.lifecycle_status === 'active') : undefined;
+  const approvalTargets = pending.length ? pending : existingDelivery ? [existingDelivery] : [];
 
   async function save(event: FormEvent, existing = false) {
     event.preventDefault();
@@ -69,27 +75,31 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
     } finally { busy.current = false; setWorking(false); }
   }
   async function activate() {
-    if (busy.current || !manager || !pending.length) return;
-    const details = pending.map((row) => `${row.plan_snapshot.name}: ${commercialMoney(row.amount_cents)} / ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]}, primeiro vencimento ${row.first_due_date.split('-').reverse().join('/')}`).join('\n');
-    if (!window.confirm(`Confirmo que ${customerName} aprovou estas assinaturas:\n\n${details}\n\nAtivar no Asaas? Em produção serão geradas cobranças recorrentes, e pagamentos confirmados terão NFS-e automática. A criação do website é cobrada separadamente.`)) return;
+    if (busy.current || !manager || !approvalTargets.length) return;
+    const details = approvalTargets.map((row) => `${row.plan_snapshot.name}: ${commercialMoney(row.amount_cents)} / ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]}, primeiro vencimento ${row.first_due_date.split('-').reverse().join('/')}`).join('\n');
+    const activation = pending.length
+      ? 'Ativar no Asaas? Em produção serão geradas cobranças recorrentes, e pagamentos confirmados terão NFS-e automática. A criação do website é cobrada separadamente.'
+      : 'As assinaturas já estão ativas. Esta confirmação aprova somente a entrega, sem recriar ou alterar a recorrência no Asaas.';
+    if (!window.confirm(`Confirmo que ${customerName} aprovou a entrega e estas assinaturas:\n\n${details}\n\nA primeira aprovação da entrega conclui a produção e gera uma única produtividade a pagar ao webdesigner pelo valor configurado no plano. Não há pagamento automático.\n\n${activation}`)) return;
     busy.current = true; setWorking(true); setError(''); setMessage('');
     let completed = 0;
     try {
-      for (const row of pending) {
+      for (const row of approvalTargets) {
         const response = await holdingAuthFetch('/api/admin/website-subscriptions/billing', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: row.id, action: 'generate', confirmed: true }),
+          body: JSON.stringify({ id: row.id, action: row.billing_state === 'local' ? 'generate' : 'approve_delivery', confirmed: true }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(`${row.plan_snapshot.name}: ${data.error || 'Ativação não confirmada.'}`);
         completed++;
       }
-      setMessage(`${completed} assinatura(s) ativada(s). Confira o ambiente e as cobranças em Assinaturas recorrentes.`);
+      setMessage(pending.length ? `${completed} assinatura(s) ativada(s). Confira a produtividade em Produção e as cobranças em Assinaturas recorrentes.`
+        : 'Entrega aprovada. Confira a produtividade em Produção; a recorrência existente não foi alterada.');
     } catch (failure) {
       console.error('[CONTRACT SUBSCRIPTIONS] Ativação interrompida, sem repetir pedidos.');
       setError(`${completed} assinatura(s) ativada(s) antes da interrupção. ${failure instanceof Error ? failure.message : 'Falha ao ativar.'} Confira o Asaas antes de repetir; as demais não foram enviadas.`);
     } finally {
-      try { await load(); } catch (failure) {
+      try { await load(); await onApproval?.(); } catch (failure) {
         console.error('[CONTRACT SUBSCRIPTIONS] Atualização após ativação falhou.');
         setError((current) => `${current} ${failure instanceof Error ? failure.message : 'Atualize para conferir as assinaturas.'}`.trim());
       }
@@ -103,7 +113,7 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
     </summary>
     <div className="mt-5 space-y-5">
     <p className="text-sm text-slate-600">{customerName} — o cliente e a contratação são herdados automaticamente.</p>
-    <p className="text-sm text-slate-600">Adicione uma ou mais assinaturas, cada uma com seu valor, ciclo, vencimento, pagamento e confirmação fiscal. Salvar libera a preparação do website quando o tipo estiver revisado, mas não gera cobrança. Somente o gestor ativa após aprovação do cliente.</p>
+    <p className="text-sm text-slate-600">Adicione uma ou mais assinaturas, cada uma com seu valor, ciclo, vencimento, pagamento e confirmação fiscal. Salvar libera a preparação, sem cobrança. Após a revisão interna no Websites, o gestor/comercial autorizado aprova a entrega e ativa as assinaturas. A produtividade é gerada uma única vez por contratação.</p>
     {loading && <p role="status">Carregando assinaturas...</p>}
     {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {message && <p role="status" className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
@@ -119,8 +129,8 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
       <button type="button" className={commercialSecondaryClass} disabled={loading || working || Boolean(form)} onClick={() => {
         setError(''); setMessage(''); setForm({ ...EMPTY_WEBSITE_SUBSCRIPTION, request_id: crypto.randomUUID() });
       }}>Adicionar assinatura</button>
-      {manager && pending.length > 0 && <button type="button" className={commercialButtonClass} disabled={loading || working || Boolean(form)} onClick={() => void activate()}>
-        {working ? 'Aguarde...' : `Ativar assinaturas (${pending.length})`}
+      {manager && approvalTargets.length > 0 && <button type="button" className={commercialButtonClass} disabled={loading || working || Boolean(form)} onClick={() => void activate()}>
+        {working ? 'Aguarde...' : pending.length ? `Aprovar entrega e ativar assinaturas (${pending.length})` : 'Aprovar entrega — assinaturas já ativas'}
       </button>}
     </div>
     {form && <form onSubmit={(event) => void save(event)} className="space-y-5 rounded-xl border border-slate-200 p-4">

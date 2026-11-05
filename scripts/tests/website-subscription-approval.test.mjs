@@ -14,33 +14,31 @@ function load(path, dependencies) {
   return mod.exports;
 }
 
-test('only explicit managers can approve, and approval persists verified actor with compare-and-set', async () => {
-  let allowed = false, writes = [], filters = [], reads = 0;
-  let row = { approval_status: 'pending', billing_state: 'local', lifecycle_status: 'active' };
-  const query = {
-    select() { return this; }, eq(...value) { filters.push(value); return this; },
-    single: async () => { reads++; return { data: row, error: null }; },
-    update(value) { writes.push(value); return this; },
-    maybeSingle: async () => ({ data: { id: 'subscription' }, error: null }),
-  };
+test('only managers or explicitly authorized commercial staff can approve through the atomic RPC', async () => {
+  let allowed = false, commercial = false, calls = [], failure = null;
   const { approveWebsiteSubscription } = load('src/lib/website-subscription-approval.ts', {
     '@/lib/holding-admin-auth': { authenticateHoldingAdmin: async () => ({ ok: true, user: { id: 'verified-actor', email: 'manager@example.test' } }) },
     '@/lib/holding-websites-permissions': { getHoldingWebsitesPermissions: async () => ({ manage: allowed }) },
-    '@/lib/supabase-server': { supabaseServer: { from: () => query } },
+    '@/lib/supabase-server': { supabaseServer: {
+      rpc: async (name, args) => {
+        if (name === 'holding_website_permission') return { data: commercial, error: null };
+        calls.push({ name, args });
+        return { error: failure };
+      },
+    } },
   });
-  await assert.rejects(approveWebsiteSubscription(new Request('https://holding.test'), 'subscription'), /Somente gestores/);
-  assert.equal(reads, 0); assert.equal(writes.length, 0);
+  await assert.rejects(approveWebsiteSubscription(new Request('https://holding.test'), 'subscription'), /Somente gestor/);
+  assert.equal(calls.length, 0);
   allowed = true;
   await approveWebsiteSubscription(new Request('https://holding.test'), 'subscription');
-  assert.equal(writes[0].approved_by, 'verified-actor');
-  assert.equal(writes[0].approval_status, 'approved');
-  assert.ok(Number.isFinite(Date.parse(writes[0].approved_at)));
-  assert.ok(filters.some(([key, value]) => key === 'approval_status' && value === 'pending'));
-  row = { ...row, approval_status: 'approved' };
+  assert.deepEqual(calls[0], { name: 'holding_approve_website_delivery', args: {
+    p_actor: 'manager@example.test', p_user_id: 'verified-actor', p_subscription_id: 'subscription',
+  } });
+  allowed = false; commercial = true;
   await approveWebsiteSubscription(new Request('https://holding.test'), 'subscription');
-  assert.equal(writes.length, 1);
-  for (const patch of [{ billing_state: 'issued' }, { lifecycle_status: 'paused' }, { lifecycle_status: 'cancelled' }]) {
-    row = { approval_status: 'pending', billing_state: 'local', lifecycle_status: 'active', ...patch };
-    await assert.rejects(approveWebsiteSubscription(new Request('https://holding.test'), 'subscription'), /não está disponível/);
-  }
+  assert.equal(calls.length, 2);
+  failure = { code: 'P0001', message: 'Configure o valor de produtividade' };
+  await assert.rejects(approveWebsiteSubscription(new Request('https://holding.test'), 'subscription'), /Configure o valor/);
+  failure = { code: 'other', message: 'internal details' };
+  await assert.rejects(approveWebsiteSubscription(new Request('https://holding.test'), 'subscription'), /não foram confirmadas/);
 });

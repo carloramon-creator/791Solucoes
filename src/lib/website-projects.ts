@@ -1,10 +1,11 @@
 import { supabaseServer as db } from '@/lib/supabase-server';
 
-export async function websiteProjects(email: string, manager: boolean) {
+export async function websiteProjects(email: string, manager: boolean, contractId?: string) {
   let query = db.from('holding_website_contracts')
     .select('id,customer_id,customer_snapshot,plan_snapshot,project_type,designer_email,edit_revision')
     .not('project_type', 'is', null);
   if (!manager) query = query.eq('designer_email', email.trim().toLowerCase());
+  if (contractId) query = query.eq('id', contractId);
   const { data, error } = await query.order('created_at');
   if (error) throw error;
   if (!data.length) return [];

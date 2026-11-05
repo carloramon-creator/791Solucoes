@@ -22,16 +22,21 @@ export async function GET(req: Request) {
       if (!auth.codes.includes('menu.gestao')) return failed('Sem acesso aos indicadores.', 403);
       if (!validDate(params.get('start')) || !validDate(params.get('end'))) return failed('Informe o período.');
       const result = await db.rpc('holding_operations_metrics', {
-        p_actor: auth.email, p_start: params.get('start'), p_end: params.get('end'), p_product: product,
+        p_actor: auth.email, p_start: params.get('start'), p_end: params.get('end'), p_product: product || null,
       });
       if (result.error) throw result.error;
       const members = await db.from('equipe_791').select('email,nome').order('nome');
       if (members.error) throw members.error;
-      return json({ metrics: result.data, members: members.data });
+      const production = !product || product === 'websites' ? await db.rpc('holding_website_production_metrics', {
+        p_actor: auth.email, p_start: params.get('start'), p_end: params.get('end'),
+      }) : { data: [], error: null };
+      if (production.error) throw production.error;
+      return json({ metrics: [...result.data.filter((metric: { area: string }) => metric.area === 'comercial'), ...production.data], members: members.data });
     }
     const area = params.get('area');
     if (!isArea(area)) return failed('Módulo inválido.');
     if (!auth.codes.includes(`menu.${area}`)) return failed('Sem acesso ao módulo.', 403);
+    if (area === 'producao') return failed('As etapas são avançadas no Websites. Consulte a produtividade em Produção.', 410);
     const manager = auth.codes.includes(`action.${area}.manage`);
     const page = Number(params.get('page') || 0);
     if (!Number.isSafeInteger(page) || page < 0 || page > 10000) return failed('Página inválida.');

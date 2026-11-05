@@ -4,6 +4,7 @@ import { userCanAccessResource } from '@/lib/holding-permissions';
 import { getGlassClient } from '@/lib/glass-client';
 import { GLASS_COMBOS, comboOfRoot, comboPrice, computeGlassSubscription, rootOfSlug } from '@/lib/glass-pricing';
 import { loadTenantContext, loadTenantInvoices } from '@/lib/glass-tenant-billing';
+import { canAdjustGlassDueDate } from '@/lib/glass-due-date';
 
 /** Painel de controle do tenant: módulos, bloqueios por excedente e faturas. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +26,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!tenant) return NextResponse.json({ error: 'Vidraçaria não encontrada.' }, { status: 404 });
 
     const { invoices, warnings } = await loadTenantInvoices(id, tenant);
+    let canAdjustDueDate = false;
+    try {
+      canAdjustDueDate = await canAdjustGlassDueDate(auth.user.email);
+    } catch (error) {
+      console.error('[TENANT PANEL] Permissão de vencimento indisponível.', error);
+      warnings.push('Não foi possível verificar a permissão para ajustar vencimentos.');
+    }
     const pricing = computeGlassSubscription({ tenant, plan, modules, sponsored: Boolean(sponsorName) });
 
     const active = new Set((tenant.modulos_ativos || []).map((slug) => rootOfSlug(slug, modules)));
@@ -64,7 +72,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       blocks: blocksResult.data || [],
       invoices,
       warnings,
-      permissions: { modules: canModules, invoices: canInvoices },
+      permissions: { modules: canModules, invoices: canInvoices, dueDate: canAdjustDueDate },
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Falha ao carregar o painel.' }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { getAllPermissionResources } from '@/lib/holding-permissions';
+import { authorizePermissionManagement } from '@/lib/holding-permission-management';
 
 function normalizeEmails(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -87,6 +88,8 @@ export async function POST(req: Request) {
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const denied = await authorizePermissionManagement(auth.user.email);
+  if (denied) return denied;
 
   try {
     const body = await req.json();

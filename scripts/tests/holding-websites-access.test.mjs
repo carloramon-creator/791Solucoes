@@ -46,7 +46,9 @@ function permissionsFixture(overrides = {}) {
       return query;
     },
   };
-  return { calls, ...loadModule('src/lib/holding-websites-permissions.ts', { '@/lib/supabase-server': { supabaseServer } }) };
+  const dependencies = { '@/lib/supabase-server': { supabaseServer }, 'next/server': { NextResponse: Response } };
+  return { calls, ...loadModule('src/lib/holding-websites-permissions.ts', dependencies),
+    ...loadModule('src/lib/holding-permission-management.ts', dependencies) };
 }
 
 test('requires explicit grants for each Websites capability and normalizes identity', async () => {
@@ -85,9 +87,45 @@ test('permission query failures propagate instead of granting bootstrap access',
   }
 });
 
+test('only explicit permission managers or the active system owner can change staff grants', async () => {
+  const email = 'staff@example.test';
+  assert.equal((await permissionsFixture().authorizePermissionManagement(email)).status, 403);
+  assert.equal((await permissionsFixture({ tables: { holding_user_permission_profiles: [] } }).authorizePermissionManagement(email)).status, 403);
+  const systemOwner = permissionsFixture({ tables: { holding_permission_profiles: [{ id: 'staff', name: 'Dono', is_system: true, active: true }] } });
+  assert.equal(await systemOwner.authorizePermissionManagement(email), null);
+  const fakeOwner = permissionsFixture({ tables: { holding_permission_profiles: [{ id: 'staff', name: 'Dono', is_system: false, active: true }] } });
+  assert.equal((await fakeOwner.authorizePermissionManagement(email)).status, 403);
+  const managerTables = {
+    holding_permission_resources: [{ code: 'action.permissions.manage_profiles', active: true }],
+    holding_profile_resource_permissions: [{ profile_id: 'staff', resource_code: 'action.permissions.manage_profiles', enabled: true }],
+  };
+  assert.equal(await permissionsFixture({ tables: managerTables }).authorizePermissionManagement(email), null);
+  assert.equal((await permissionsFixture({ tables: { ...managerTables, holding_permission_profiles: [{ id: 'staff', active: false }] } }).authorizePermissionManagement(email)).status, 403);
+  assert.equal((await permissionsFixture({ failedTable: 'holding_user_permission_profiles' }).authorizePermissionManagement(email)).status, 503);
+});
+
+test('all permission mutation endpoints reject nonmanagers before writing to the database', async () => {
+  for (const [path, methods] of [
+    ['src/app/api/admin/permissions/route.ts', ['POST']],
+    ['src/app/api/admin/permissions/[id]/route.ts', ['PATCH', 'DELETE']],
+    ['src/app/api/admin/permissions/users/[email]/route.ts', ['PATCH']],
+  ]) {
+    const route = loadModule(path, {
+      'next/server': { NextResponse: Response },
+      '@/lib/supabase-server': { supabaseServer: { from() { throw new Error('Unauthorized database access'); } } },
+      '@/lib/holding-admin-auth': { authenticateHoldingAdmin: async () => ({ ok: true, user: { email: 'staff@example.test' } }) },
+      '@/lib/holding-permission-management': { authorizePermissionManagement: async () => Response.json({ error: 'Denied' }, { status: 403 }) },
+      '@/lib/holding-permissions': {},
+    });
+    for (const method of methods) assert.equal((await route[method](new Request('https://holding.test', { method }))).status, 403);
+  }
+});
+
 function routeFixture({ authStatus = 200, permissions = { ...denied, menu: true }, fail = false, modulePath = 'src/app/api/admin/websites/access/route.ts' } = {}) {
   let permissionCalls = 0;
   const route = loadModule(modulePath, {
+    '@/lib/supabase-server': { supabaseServer: {} },
+    '@/lib/holding-websites-sso': {},
     'next/server': { NextResponse: Response },
     '@/lib/holding-admin-auth': {
       authenticateHoldingAdmin: async () => authStatus === 200
@@ -121,7 +159,7 @@ test('launcher authenticates and rechecks the menu permission without granting a
   const granted = await routeFixture().request();
   assert.equal(granted.status, 200);
   assert.equal(granted.headers.get('cache-control'), 'private, no-store');
-  assert.deepEqual(await granted.json(), { url: 'https://websites.791solucoes.com.br/painel' });
+  assert.deepEqual(await granted.json(), { url: 'https://websites.791solucoes.com.br/auth/holding/start' });
   assert.equal((await routeFixture({ fail: true }).request()).status, 503);
 });
 

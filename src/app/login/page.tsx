@@ -41,6 +41,12 @@ async function resolveLandingPath(accessToken?: string | null) {
     }
 
     const permissionCodes = new Set(Array.isArray(payload.permissionCodes) ? payload.permissionCodes : []);
+    const sso = new URLSearchParams(window.location.search);
+    const challenge = sso.get('challenge'), state = sso.get('state');
+    if (challenge && state && /^[A-Za-z0-9_-]{43}$/.test(challenge) && /^[A-Za-z0-9_-]{43}$/.test(state)
+      && permissionCodes.has('menu.websites') && permissionCodes.has('action.websites.view')) {
+      return `/websites?${new URLSearchParams({ challenge, state })}`;
+    }
     const firstAllowed = landingRoutes.find((route) => permissionCodes.has(route.resourceCode));
     return firstAllowed?.path || '/acesso-negado';
   } catch {

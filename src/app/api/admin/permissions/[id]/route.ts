@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { authorizePermissionManagement } from '@/lib/holding-permission-management';
 
 function normalizeEmails(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -17,6 +18,8 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const denied = await authorizePermissionManagement(auth.user.email);
+  if (denied) return denied;
 
   const { id } = await context.params;
   const profileId = String(id || '').trim();
@@ -156,6 +159,8 @@ export async function DELETE(req: Request, context: { params: Promise<{ id: stri
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const denied = await authorizePermissionManagement(auth.user.email);
+  if (denied) return denied;
 
   const { id } = await context.params;
   const profileId = String(id || '').trim();

@@ -56,12 +56,39 @@ O menu e o endpoint `/api/admin/websites/access` exigem uma concessao explicita
 de `menu.websites` em perfil ativo, com recurso ativo. Nao ha liberacao por
 cargo, nome de perfil ou bootstrap sem perfis. O acesso abre nova aba e verifica
 novamente a permissao antes de redirecionar. Falhas de consulta bloqueiam o acesso.
-A migration e este atalho ainda nao implementam login unico: a Websites
-continua validando sua propria sessao. As permissoes de operacao estao
-cadastradas para a integracao posterior; nao controlam a plataforma independente
-antes de essa integracao ser implementada. Nenhum usuario e criado ou duplicado.
+O login da equipe e centralizado na Holding. Aplicar tambem
+`supabase/migrations/20261105180000_holding_websites_sso.sql` somente neste banco.
+O navegador inicia a entrada na Websites, que mantem state e verificador PKCE
+em cookie HttpOnly host-only. A Holding valida a sessao autenticada e as
+permissoes de menu/visualizacao e emite codigo de uso unico (90 segundos),
+consumido atomicamente com S256. Senhas, access tokens e refresh tokens da
+Holding nao sao enviados para a Websites. Nenhuma conta Auth e duplicada.
+
+A Websites recebe uma sessao opaca de ate 8 horas e consulta a Holding no
+servidor a cada operacao/imagem, sem cache de permissoes. Revogar menu,
+visualizacao ou perfil ativo bloqueia o proximo acesso; criar/editar sao
+independentes e controlam as respectivas operacoes. Funcionarios autorizados
+trabalham nos projetos da agencia, nao nos bancos Glass/Barber. Clientes
+continuam usando contas locais com RLS por projeto. A biblioteca ainda sera
+implementada, usando essas mesmas permissoes.
+
+Somente hashes de codigos/sessoes ficam nas tabelas internas. A sessao opaca
+esta vinculada a `auth.sessions` da Holding: logout/revogacao dessa sessao
+remove os acessos dependentes; usuario banido ou sessao expirada tambem e
+recusado. Sair da Websites revoga apenas seu acesso opaco, sem sair da Holding.
+Falhas de rede/banco nao liberam acesso. Registros expirados permanecem
+inutilizaveis ate limpeza administrativa; nunca devem ser reutilizados.
+
+A migration remove escrita direta anon/authenticated nas quatro tabelas
+de permissoes. As APIs de alteracao exigem perfil ativo com
+`action.permissions.manage_profiles` ou o perfil de sistema `Dono`;
+nome de cargo e bootstrap nao concedem esse gerenciamento.
+Na Railway da Websites, configurar `SUPABASE_SECRET_KEY` somente no servidor
+com uma secret key do projeto exclusivo Websites. Nunca usar prefixo
+`NEXT_PUBLIC_`, enviar essa chave a Holding ou usar a chave de outro projeto.
 Validacao do menu e das permissoes:
 `node --test scripts/tests/holding-websites-access.test.mjs scripts/tests/holding-commercial-ui.test.mjs`.
+Testes do login: `node --test scripts/tests/holding-websites-sso.test.mjs`.
 
 **Editar contratacao** permite ajustar produto, preco, entrada, parcelas,
 vencimentos e forma de pagamento, mantendo o mesmo cliente. Aplicar antes

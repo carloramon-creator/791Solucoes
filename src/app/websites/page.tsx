@@ -12,13 +12,23 @@ export default function WebsitesPage() {
     const controller = new AbortController();
     async function openWebsites() {
       try {
-        const response = await holdingAuthFetch('/api/admin/websites/access', { signal: controller.signal });
+        const params = new URLSearchParams(window.location.search);
+        const challenge = params.get('challenge');
+        const state = params.get('state');
+        const handoff = challenge !== null || state !== null;
+        const response = await holdingAuthFetch('/api/admin/websites/access', {
+          signal: controller.signal,
+          ...(handoff ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge, state }) } : {}),
+        });
         const payload: { url?: string; error?: string } = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Não foi possível acessar a plataforma.');
-        if (payload.url !== 'https://websites.791solucoes.com.br/painel') {
+        const destination = payload.url ? new URL(payload.url) : null;
+        if (!destination || destination.origin !== 'https://websites.791solucoes.com.br'
+          || destination.pathname !== (handoff ? '/auth/holding/callback' : '/auth/holding/start')
+          || destination.username || destination.password) {
           throw new Error('O servidor não confirmou o destino da plataforma.');
         }
-        if (!controller.signal.aborted) window.location.replace(payload.url);
+        if (!controller.signal.aborted) window.location.replace(destination.toString());
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error('[WEBSITES ACCESS] Falha ao abrir plataforma.', error);

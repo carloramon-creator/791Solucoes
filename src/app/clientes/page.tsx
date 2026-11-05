@@ -112,7 +112,7 @@ export default function HoldingCustomersPage() {
         }
         return next;
       });
-      setMessage(`Dados retornados por ${payload.source}. Confira todos os campos antes de salvar. A consulta não comprova regularidade fiscal.`);
+      setMessage(`Dados retornados por ${payload.source}. ${payload.warning ? `${payload.warning} ` : ''}Confira todos os campos antes de salvar. A consulta não comprova regularidade fiscal.`);
     } catch (failure) {
       if (version === lookupVersion.current) {
         console.error('[HOLDING CUSTOMERS] Falha na consulta cadastral.', {

@@ -24,7 +24,7 @@ function harness({ denied = false, response = () => Response.json({}), failure =
       return denied ? Response.json({ error: 'Forbidden' }, { status: 403 }) : null;
     } },
     '@/lib/holding-customers': customers,
-  }, { fetch: async (url, init) => { calls.push({ url, init }); if (failure) throw new Error('test timeout'); return response(); } });
+  }, { fetch: async (url, init) => { calls.push({ url, init }); if (failure) throw new Error('test timeout'); return response(url); } });
   return { calls, post: (body) => route.POST(new Request('https://holding.test/api', { method: 'POST', body: JSON.stringify(body) })) };
 }
 test('CPF/CNPJ, Brazilian phones and CEP masks preserve all digits, including incremental typing', () => {
@@ -56,7 +56,7 @@ test('lookup authenticates before calling services, rejects CPF and invalid CNPJ
 test('CNPJ lookup validates returned identifier and whitelists corporate fields without sending personal CPF', async () => {
   const h = harness({ response: () => Response.json({
     cnpj: '11222333000181', razao_social: 'Empresa ficticia', nome_fantasia: ' Marca ficticia ', cep: '01001000',
-    descricao_tipo_de_logradouro: 'RUA', logradouro: 'Teste', numero: '10', municipio: 'SAO PAULO', uf: 'SP',
+    descricao_tipo_de_logradouro: 'RUA', logradouro: 'Teste', numero: '10', bairro: 'Centro', municipio: 'SAO PAULO', uf: 'SP',
     qsa: [{ nome_socio: 'must not expose' }],
   }) });
   const response = await h.post({ kind: 'cnpj', value: '11.222.333/0001-81' });
@@ -64,6 +64,9 @@ test('CNPJ lookup validates returned identifier and whitelists corporate fields 
   const data = await response.json();
   assert.equal(data.fields.name, 'Empresa ficticia'); assert.equal(data.fields.address, 'RUA Teste');
   assert.equal(data.fields.trade_name, 'Marca ficticia');
+  assert.equal(data.fields.address_number, '10');
+  assert.equal(data.warning, undefined);
+  assert.equal(h.calls.length, 1);
   assert.equal(data.fields.qsa, undefined);
   assert.equal(h.calls[0].url, 'https://brasilapi.com.br/api/cnpj/v1/11222333000181');
   assert.equal(h.calls[0].init.redirect, 'error');
@@ -72,6 +75,57 @@ test('CNPJ lookup validates returned identifier and whitelists corporate fields 
   assert.match(response.headers.get('cache-control'), /no-store/);
   const wrong = harness({ response: () => Response.json({ cnpj: 'other', razao_social: 'Wrong' }) });
   assert.equal((await wrong.post({ kind: 'cnpj', value: '11222333000181' })).status, 502);
+});
+test('incomplete CNPJ address is supplemented by its CEP without replacing corporate address data or inventing a number', async () => {
+  const h = harness({ response: (url) => Response.json(url.includes('/cnpj/') ? {
+    cnpj: '11222333000181', razao_social: 'Empresa ficticia', cep: '01001-000',
+    descricao_tipo_de_logradouro: 'RUA', logradouro: '', numero: '', complemento: 'Sala 2', bairro: 'Bairro cadastral',
+  } : {
+    cep: '01001-000', logradouro: 'Rua ficticia', bairro: 'Centro', localidade: 'Sao Paulo', uf: 'SP', complemento: 'lado par',
+  }) });
+  const response = await h.post({ kind: 'cnpj', value: '11222333000181' });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.fields.address, 'Rua ficticia');
+  assert.equal(data.fields.address_number, '');
+  assert.equal(data.fields.complement, 'Sala 2');
+  assert.equal(data.fields.district, 'Bairro cadastral');
+  assert.equal(data.fields.city, 'Sao Paulo');
+  assert.equal(data.fields.state, 'SP');
+  assert.match(data.source, /ViaCEP/);
+  assert.match(data.warning, /não forneceu: número/);
+  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls[1].url, 'https://viacep.com.br/ws/01001000/json/');
+  assert.equal(h.calls[1].init.redirect, 'error');
+  assert.equal(h.calls[1].init.cache, 'no-store');
+});
+test('failed, inconsistent and generic CEP supplements explicitly warn and preserve CNPJ data', async () => {
+  for (const supplement of [
+    () => { throw new Error('timeout'); },
+    () => Response.json({}, { status: 429 }),
+    () => Response.json({ erro: true }),
+    () => Response.json({ cep: '99999-999', logradouro: 'Wrong', localidade: 'Wrong', uf: 'SP' }),
+    () => Response.json({ cep: '01001-000', logradouro: '', localidade: 'Sao Paulo', uf: 'SP' }),
+  ]) {
+    const h = harness({ response: (url) => url.includes('/cnpj/') ? Response.json({
+      cnpj: '11222333000181', razao_social: 'Empresa ficticia', cep: '01001000', numero: '10',
+    }) : supplement() });
+    const response = await h.post({ kind: 'cnpj', value: '11222333000181' });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.fields.name, 'Empresa ficticia');
+    assert.equal(data.fields.address, '');
+    assert.equal(data.fields.address_number, '10');
+    assert.match(data.warning, /não forneceu: endereço/);
+  }
+});
+test('CNPJ without a valid CEP warns about incomplete address without a secondary request', async () => {
+  for (const cep of [null, '', '123']) {
+    const h = harness({ response: () => Response.json({ cnpj: '11222333000181', razao_social: 'Empresa ficticia', cep }) });
+    const data = await (await h.post({ kind: 'cnpj', value: '11222333000181' })).json();
+    assert.match(data.warning, /endereço/);
+    assert.equal(h.calls.length, 1);
+  }
 });
 test('CNPJ without trade name keeps it empty instead of copying the legal name', async () => {
   for (const nome_fantasia of [undefined, null, '']) {
@@ -106,6 +160,15 @@ test('lookup response reader validates JSON and whitelists fields without relyin
   for (const payload of [null, [], {}, { fields: {}, source: 'Test' }, { fields: { name: 123 }, source: 'Test' }, { fields: [], source: 'Test' }]) {
     await assert.rejects(customers.readHoldingCustomerLookup(Response.json(payload)), /inválid|Nenhum dado|não retornou dados cadastrais válidos/);
   }
+});
+test('lookup reader preserves partial-data warnings and rejects malformed warnings', async () => {
+  const fields = { address: 'Rua ficticia' };
+  assert.deepEqual(await customers.readHoldingCustomerLookup(Response.json({
+    fields, source: 'BrasilAPI + ViaCEP', warning: 'Preencha o número.',
+  })), { fields, source: 'BrasilAPI + ViaCEP', warning: 'Preencha o número.' });
+  await assert.rejects(customers.readHoldingCustomerLookup(Response.json({
+    fields, source: 'BrasilAPI', warning: {},
+  })), /aviso cadastral inválido/);
 });
 
 test('lookup response reader gives actionable Portuguese errors for expired sessions, blocked requests, HTML, redirects and malformed JSON', async () => {

@@ -38,7 +38,7 @@ export function maskCustomerPhone(value: string) {
 export const maskCustomerCep = (value: string) => value.replace(/\D/g, '').slice(0, 8).replace(/^(\d{5})(\d)/, '$1-$2');
 
 export async function readHoldingCustomerLookup(response: Response): Promise<{
-  fields: Partial<HoldingCustomerInput>; source: string;
+  fields: Partial<HoldingCustomerInput>; source: string; warning?: string;
 }> {
   if (response.status === 401) throw new Error('Sua sessão expirou. Entre novamente para consultar o cadastro.');
   if (response.status === 403) throw new Error('A consulta foi bloqueada. Confira sua permissão em Clientes; se ela estiver correta, atualize a página e tente novamente.');
@@ -73,7 +73,11 @@ export async function readHoldingCustomerLookup(response: Response): Promise<{
     }
   }
   if (!Object.keys(fields).length) throw new Error('Nenhum dado cadastral foi retornado pela consulta. Preencha manualmente.');
-  return { fields, source: payload.source };
+  const warning = 'warning' in payload ? payload.warning : undefined;
+  if (warning !== undefined && typeof warning !== 'string') {
+    throw new Error('O serviço retornou um aviso cadastral inválido. Tente novamente ou preencha manualmente.');
+  }
+  return { fields, source: payload.source, ...(warning !== undefined ? { warning } : {}) };
 }
 
 export function validDocument(value: string) {

@@ -39,11 +39,44 @@ export async function POST(req: Request) {
     if (!cnpj && (text('cep').replace(/\D/g, '') !== value || !text('localidade') || !/^[A-Z]{2}$/.test(text('uf')))) throw new Error('CEP retornado inconsistente.');
     const fields = cnpj ? {
       name: text('razao_social'), trade_name: text('nome_fantasia'), postal_code: text('cep').replace(/\D/g, ''),
-      address: [text('descricao_tipo_de_logradouro'), text('logradouro')].filter(Boolean).join(' '),
+      address: text('logradouro') ? [text('descricao_tipo_de_logradouro'), text('logradouro')].filter(Boolean).join(' ') : '',
       address_number: text('numero'), complement: text('complemento'), district: text('bairro'),
       city: text('municipio'), state: text('uf'), phone: text('ddd_telefone_1').replace(/\D/g, ''), email: text('email'),
     } : { postal_code: value, address: text('logradouro'), district: text('bairro'), city: text('localidade'), state: text('uf') };
-    return NextResponse.json({ fields, source: cnpj ? 'BrasilAPI (dados cadastrais do CNPJ)' : 'ViaCEP' },
+    let source = cnpj ? 'BrasilAPI (dados cadastrais do CNPJ)' : 'ViaCEP';
+    const warnings: string[] = [];
+    if (cnpj && /^\d{8}$/.test(fields.postal_code) && (!fields.address || !fields.district || !fields.city || !fields.state)) {
+      try {
+        const cepResponse = await fetch(`https://viacep.com.br/ws/${fields.postal_code}/json/`, {
+          cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(8000),
+          headers: { Accept: 'application/json', 'User-Agent': '791holding/1.0 (+https://admin.791solucoes.com.br)' },
+        });
+        if (!cepResponse.ok) throw new Error(`CEP HTTP ${cepResponse.status}.`);
+        const cepData: unknown = await cepResponse.json();
+        if (!cepData || typeof cepData !== 'object' || Array.isArray(cepData)) throw new Error('Resposta CEP inválida.');
+        const cep = cepData as Record<string, unknown>;
+        const cepText = (key: string) => typeof cep[key] === 'string' ? cep[key].trim() : '';
+        if (cep.erro || cepText('cep').replace(/\D/g, '') !== fields.postal_code
+          || !cepText('localidade') || !/^[A-Z]{2}$/.test(cepText('uf'))) throw new Error('CEP retornado inconsistente.');
+        for (const [field, key] of [['address', 'logradouro'], ['district', 'bairro'], ['city', 'localidade'], ['state', 'uf']] as const) {
+          if (!fields[field]) fields[field] = cepText(key);
+        }
+        source += ' + ViaCEP';
+      } catch (failure) {
+        console.warn('[HOLDING LOOKUP] Falha ao complementar endereço por CEP.', {
+          type: failure instanceof Error ? failure.name : 'unknown',
+        });
+        warnings.push('Não foi possível complementar o endereço pelo CEP. Tente Consultar CEP ou preencha manualmente.');
+      }
+    }
+    if (cnpj) {
+      const missing = ([
+        ['postal_code', 'CEP'], ['address', 'endereço'], ['address_number', 'número'],
+        ['district', 'bairro'], ['city', 'município'], ['state', 'UF'],
+      ] as const).filter(([field]) => !fields[field]).map(([, label]) => label);
+      if (missing.length) warnings.push(`A consulta não forneceu: ${missing.join(', ')}. Preencha os campos faltantes manualmente; o CEP não informa o número do imóvel.`);
+    }
+    return NextResponse.json({ fields, source, ...(warnings.length ? { warning: warnings.join(' ') } : {}) },
       { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (failure) {
     console.error('[HOLDING LOOKUP] Falha na consulta cadastral.', {

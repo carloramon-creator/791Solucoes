@@ -204,6 +204,22 @@ test('customer UI reopens an existing CPF and deletion requires confirmation, pr
   }
 });
 
+test('customer CNPJ lookup displays incomplete-address warnings and preserves manually filled numbers', async () => {
+  const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'
+    ? Response.json({ customers: [] }) : Response.json({
+      fields: { postal_code: '01001000', address: 'Rua ficticia', address_number: '' },
+      source: 'BrasilAPI + ViaCEP', warning: 'A consulta não forneceu: número. Preencha manualmente.',
+    }));
+  await ui.mount(); ui.button('Novo cliente').props.onClick();
+  ui.fill('CPF / CNPJ', '11222333000181');
+  ui.fill('Número', '42');
+  ui.field('CPF / CNPJ').props.onBlur(); await settle();
+  assert.equal(ui.field('Endereço').props.value, 'Rua ficticia');
+  assert.equal(ui.field('CEP').props.value, '01001-000');
+  assert.equal(ui.field('Número').props.value, '42');
+  assert.match(text(ui.render()), /A consulta não forneceu: número/);
+});
+
 test('customer lookup keeps manual data on cancellation or failure, allows edits while pending and ignores responses after unmount', async () => {
   for (const confirm of [true, false]) {
     const ui = harness('src/app/clientes/page.tsx', (_url, method) => method === 'GET'

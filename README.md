@@ -133,11 +133,18 @@ continuam disponiveis para repetir explicitamente uma consulta.
 na Holding, abre seu cadastro para edicao em vez de duplicar. Para CNPJ,
 mediante confirmacao explicita, consulta a BrasilAPI e preenche razao social,
 endereco e contatos disponiveis (a consulta automatica nao pede confirmacao;
-a substituicao manual pelo botao continua pedindo). **Consultar CEP** usa o ViaCEP e preenche
+a substituicao manual pelo botao continua pedindo). Se o CNPJ retornar CEP
+valido e endereco incompleto, a API complementa os campos vazios pelo ViaCEP,
+sem substituir os dados fornecidos pelo CNPJ. Falhas nessa complementacao e
+campos ainda ausentes sao informados no formulario, mantendo os demais dados.
+Numero do imovel e complemento nao podem ser deduzidos do CEP e devem ser
+conferidos/preenchidos manualmente quando nao vierem no CNPJ.
+**Consultar CEP** usa o ViaCEP e preenche
 logradouro, bairro, municipio e UF, preservando numero/complemento. Confira
 os dados antes de salvar; os campos continuam editaveis, e a consulta nao
 comprova regularidade fiscal. CNPJ e CEP sao enviados apenas ao servico
-respectivo por API administrativa autenticada; nao ha consultas durante a
+respectivo por API administrativa autenticada (inclusive o CEP retornado pelo
+CNPJ para completar o endereco); nao ha consultas durante a
 digitacao nem alteracao de clientes/contratos/Asaas ao consultar. Os provedores
 recebem `Accept: application/json` e `User-Agent` proprio da Holding, seguindo
 o padrao do wizard Glass, sem chamar suas APIs nem alterar seu codigo.

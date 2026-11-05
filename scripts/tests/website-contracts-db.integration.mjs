@@ -381,4 +381,27 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
       await db.exec('reset role');
     }
   });
+  await t.test('manager correction changes the plan and technical snapshot atomically, retaining billing guards and audit', async () => {
+    await db.exec(`create table holding_user_permission_profiles(user_email text,profile_id uuid);
+      insert into holding_user_permission_profiles select 'manager@example.test',id from holding_permission_profiles where name='Administrador';`);
+    await db.exec(await readFile('supabase/migrations/20261106001000_website_manager_scope_correction.sql', 'utf8'));
+    await db.query("update holding_website_plans set project_type='institutional' where id=$1", [plan]);
+    const editable = await create(schedule, '30000000-0000-4000-8000-000000000088');
+    const target = '20000000-0000-4000-8000-000000000088';
+    await db.query(`insert into holding_website_plans(id,name,scope,category,billing_cycle,price_cents,project_type)
+      values($1,'Portfólio','Escopo corrigido','creation','one_time',30001,'portfolio')`, [target]);
+    await assert.rejects(db.query('update holding_website_contracts set plan_id=$1 where id=$2', [target, editable]), /gestor/);
+    const locked = (await db.query("update holding_website_contracts set billing_state='processing' where id=$1 returning updated_at::text as stamp", [editable])).rows[0].stamp;
+    const correct = (actor) => db.query('select holding_correct_website_contract($1,$2,0,$3,\'local\',$4,30001,\'PIX\',$5)', [actor, editable, locked, target, JSON.stringify(schedule)]);
+    await assert.rejects(correct('seller@example.test'), /Somente gestores/);
+    await correct('manager@example.test');
+    const row = (await db.query('select * from holding_website_contracts where id=$1', [editable])).rows[0];
+    assert.equal(row.project_type, 'portfolio'); assert.equal(row.plan_snapshot.project_type, 'portfolio');
+    assert.equal(row.plan_id, target); assert.equal(row.edit_revision, 1); assert.equal(row.billing_state, 'local');
+    const audit = (await db.query('select * from holding_website_contract_edits where contract_id=$1', [editable])).rows[0];
+    assert.equal(audit.changed_by, 'manager@example.test');
+    assert.equal(audit.previous_contract.project_type, 'institutional');
+    assert.equal(audit.previous_installments.length, 3);
+    await assert.rejects(db.query("update holding_website_contracts set project_type='store' where id=$1", [editable]), /gestor/);
+  });
 });

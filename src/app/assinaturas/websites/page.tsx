@@ -158,6 +158,9 @@ export default function WebsiteContractsPage() {
     event.preventDefault();
     if (!form || !scheduleInput || busy.current) return;
     if (previewError) { setError(previewError); return; }
+    if (form.id && contracts.find((contract) => contract.id === form.id)?.plan_id !== form.plan_id && !window.confirm(
+      'Trocar o produto contratado? O tipo do website vinculado será sincronizado ao novo plano no próximo acesso, preservando o conteúdo. Recursos fora do novo tipo deixarão de aparecer. As assinaturas não serão alteradas automaticamente.',
+    )) return;
     busy.current = true; setSaving(true); setError(''); setMessage('');
     try {
       const response = await holdingAuthFetch('/api/admin/website-contracts', {

@@ -4,6 +4,8 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { validateWebsiteContract } from '@/lib/website-contracts';
 import { validateWebsiteSubscription } from '@/lib/website-subscription-terms';
 import { editWebsiteContract } from '@/lib/website-contract-edit';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { getHoldingWebsitesPermissions } from '@/lib/holding-websites-permissions';
 
 const PERMISSIONS = ['menu.assinaturas', 'submenu.assinaturas.websites'];
 
@@ -15,7 +17,13 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Envie um JSON válido.' }, { status: 400 });
   }
   try {
-    return NextResponse.json(await editWebsiteContract(body));
+    return NextResponse.json(await editWebsiteContract(body, async () => {
+      const auth = await authenticateHoldingAdmin(req);
+      if (!auth.ok || !auth.user.email) throw new Error('Entre novamente pela Holding.');
+      const permissions = await getHoldingWebsitesPermissions(auth.user.email);
+      if (!permissions.menu || !permissions.view || !permissions.manage) throw new Error('Somente gestores podem trocar o produto contratado.');
+      return auth.user.email.trim().toLowerCase();
+    }));
   } catch (failure) {
     console.error('[WEBSITE CONTRACTS] Edição interrompida, sem emitir cobranças.');
     return NextResponse.json({ error: failure instanceof Error ? failure.message : 'Não foi possível editar a contratação.' }, { status: 409 });

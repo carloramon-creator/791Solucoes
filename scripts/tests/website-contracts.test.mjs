@@ -482,6 +482,8 @@ function apiHarness(path, { denied = false, deniedFiscal = false, customerError 
       permissions.push(required);
       return denied || (deniedFiscal && required.includes('menu.notas_fiscais')) ? Response.json({ error: 'Denied' }, { status: 403 }) : null;
     } },
+    '@/lib/holding-admin-auth': {},
+    '@/lib/holding-websites-permissions': {},
     '@/lib/holding-customers': customers,
     '@/lib/website-contracts': terms,
     '@/lib/website-subscription-terms': load('src/lib/website-subscription-terms.ts', {

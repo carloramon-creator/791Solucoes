@@ -22,7 +22,7 @@ const input = {
 };
 function harness(patch = {}) {
   const local = {
-    id, customer_id: id, billing_state: 'review', asaas_environment: 'production',
+    id, customer_id: id, plan_id: id, billing_state: 'review', asaas_environment: 'production',
     edit_revision: 0, updated_at: 'before', holding_website_invoices: [],
     holding_website_installments: [{ asaas_payment_id: 'pay_test' }], ...patch.local,
   };
@@ -101,4 +101,17 @@ test('malformed edits and subscriptions are rejected without touching data', asy
     await assert.rejects(h.editWebsiteContract(body));
     assert.equal(h.calls.length, 0); assert.equal(h.writes.length, 0);
   }
+});
+
+test('changing product requires a verified manager before locking and uses the audited correction RPC', async () => {
+  const changedInput = { ...input, plan_id: '20000000-0000-4000-8000-000000000001' };
+  const denied = harness();
+  await assert.rejects(denied.editWebsiteContract(changedInput), /Somente gestores/);
+  assert.equal(denied.writes.length, 0);
+  await assert.rejects(denied.editWebsiteContract(changedInput, async () => { throw new Error('Sem acesso'); }), /Sem acesso/);
+  assert.equal(denied.writes.length, 0);
+  const h = harness();
+  await h.editWebsiteContract(changedInput, async () => 'manager@example.test');
+  assert.equal(h.rpcs[0].name, 'holding_correct_website_contract');
+  assert.equal(h.rpcs[0].args.p_actor, 'manager@example.test');
 });

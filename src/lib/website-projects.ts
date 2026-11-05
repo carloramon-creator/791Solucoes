@@ -2,7 +2,7 @@ import { supabaseServer as db } from '@/lib/supabase-server';
 
 export async function websiteProjects(email: string, manager: boolean) {
   let query = db.from('holding_website_contracts')
-    .select('id,customer_id,customer_snapshot,plan_snapshot,project_type,designer_email')
+    .select('id,customer_id,customer_snapshot,plan_snapshot,project_type,designer_email,edit_revision')
     .not('project_type', 'is', null);
   if (!manager) query = query.eq('designer_email', email.trim().toLowerCase());
   const { data, error } = await query.order('created_at');
@@ -18,5 +18,6 @@ export async function websiteProjects(email: string, manager: boolean) {
       customerName: contract.customer_snapshot.name, planName: contract.plan_snapshot.name,
       scope: contract.plan_snapshot.scope, websiteType: contract.project_type,
       designerEmail: contract.designer_email,
+      scopeRevision: contract.edit_revision || 0,
     }));
 }

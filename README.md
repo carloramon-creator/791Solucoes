@@ -26,8 +26,14 @@ Aplicar tambem `supabase/migrations/20261105235000_website_inherit_plan_type.sql
 para preencher contratos sem tipo e herdar futuras definicoes dos planos somente
 enquanto o contrato nao tiver tipo. O snapshot recebe o mesmo tipo herdado.
 **Assinaturas > Websites > Distribuicao e revisao de projetos** exibe o tipo
-somente para leitura e permite atribuir/revogar o responsavel. O tipo definido fica bloqueado;
-para outro produto registre outra contratacao.
+somente para leitura e permite atribuir/revogar o responsavel. O webdesigner nao
+pode trocar o tipo. Para corrigir o produto, o gestor usa **Editar contratacao**:
+as mesmas restricoes fiscais e de cobrancas continuam valendo, as assinaturas
+restritas a outro tipo impedem a troca, e o produto anterior fica no historico
+com o gestor responsavel. Aplicar
+`supabase/migrations/20261106001000_website_manager_scope_correction.sql`.
+O Websites recebe `scopeRevision` e sincroniza somente o tipo tecnico no proximo
+acesso, sem apagar conteudo ou aceitar uma revisao anterior.
 Os cards de contratacao mostram o nome do webdesigner (ou email se nao houver
 nome cadastrado), permitem escolher/alterar o responsavel e filtrar contratos
 com ou sem atribuicao. A gravacao exige permissao de gestor e valida o acesso

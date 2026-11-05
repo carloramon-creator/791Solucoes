@@ -133,6 +133,9 @@ test('embedded subscriptions inherit the contract, filter plans, hide activation
   const props = { contractId, customerId, customerName: customer.name, projectType: 'institutional' };
   const ui = harness('src/components/WebsiteContractSubscriptions.tsx', request, false, props);
   await ui.mount();
+  const disclosure = nodes(ui.render(), (node) => node.type === 'details')[0];
+  assert.equal(disclosure.props.open, true);
+  assert.match(text(nodes(disclosure, (node) => node.type === 'summary')[0]), /Expandir \/ recolher/);
   assert.match(text(ui.render()), /Aguardando aprovação do cliente/);
   assert.match(text(ui.render()), /Preparação liberada, sem ativação de cobrança/);
   ui.button('Ativar assinaturas').props.onClick();
@@ -161,6 +164,8 @@ test('embedded subscriptions inherit the contract, filter plans, hide activation
   create.fill('Valor personalizado', '123.45');
   create.fill('Primeiro vencimento', '2026-12-10');
   create.fill('Confirmo o enquadramento', true);
+  assert.equal(nodes(create.render(), (node) => node.type === 'details').length, 1);
+  assert.equal(nodes(create.render(), (node) => node.type === 'form').length, 1);
   create.submit(); await settle(); await settle();
   assert.equal(create.calls.filter((call) => call.method === 'POST').length, 1);
   assert.match(text(create.render()), /Nenhuma cobrança foi gerada/);

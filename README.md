@@ -63,6 +63,8 @@ Em **Editar contratacao**, a secao **Assinaturas vinculadas** herda cliente e
 projeto e permite adicionar varias assinaturas com valores, ciclos, vencimentos,
 pagamentos e confirmacoes fiscais independentes. O botao **Assinaturas / ativar**
 no card abre a mesma secao mesmo quando as parcelas nao podem mais ser editadas.
+O cabecalho **Assinaturas vinculadas** expande/recolhe o card sem desmontar os
+campos: recolher nao salva, descarta ou ativa assinaturas.
 Depois de salvar uma nova contratacao, essa secao tambem fica disponivel.
 Assinaturas existentes do mesmo cliente, sem outro projeto e nao encerradas,
 podem ser vinculadas sem recriar cobrancas; o banco valida compatibilidade de tipo.

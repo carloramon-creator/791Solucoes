@@ -96,9 +96,13 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
       busy.current = false; setWorking(false);
     }
   }
-  return <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-label="Assinaturas vinculadas à contratação">
-    <div><h2 className="text-lg font-bold text-slate-800">Assinaturas vinculadas</h2>
-      <p className="text-sm text-slate-600">{customerName} — o cliente e a contratação são herdados automaticamente.</p></div>
+  return <details open className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" aria-label="Assinaturas vinculadas à contratação">
+    <summary className="cursor-pointer text-slate-800">
+      <h2 className="inline text-lg font-bold">Assinaturas vinculadas</h2>
+      <span className="ml-3 text-sm text-slate-500">Expandir / recolher</span>
+    </summary>
+    <div className="mt-5 space-y-5">
+    <p className="text-sm text-slate-600">{customerName} — o cliente e a contratação são herdados automaticamente.</p>
     <p className="text-sm text-slate-600">Adicione uma ou mais assinaturas, cada uma com seu valor, ciclo, vencimento, pagamento e confirmação fiscal. Salvar libera a preparação do website quando o tipo estiver revisado, mas não gera cobrança. Somente o gestor ativa após aprovação do cliente.</p>
     {loading && <p role="status">Carregando assinaturas...</p>}
     {error && <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -140,5 +144,6 @@ export function WebsiteContractSubscriptions({ contractId, customerId, customerN
         <button type="submit" className={commercialSecondaryClass}>Vincular sem alterar cobrança</button>
       </fieldset>
     </form>}
-  </section>;
+    </div>
+  </details>;
 }

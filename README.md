@@ -220,6 +220,17 @@ nao foi abolido: preencher o complemento de 3 digitos somente quando exigido.
 Fonte oficial: [documentacao atual da NFS-e nacional](https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual),
 pacote `nfse-esquemas_xsd-v1-01-20260209.zip`.
 
+### Nome fantasia dos clientes
+
+Aplicar somente na Holding a migration
+`supabase/migrations/20261105010000_holding_customer_trade_name.sql`
+antes de publicar a atualizacao do cadastro. O nome fantasia e opcional,
+editavel e preenchido pela consulta CNPJ quando a BrasilAPI o disponibiliza.
+A consulta automatica preserva valores manuais; ausencia de nome fantasia
+na fonte nao copia a razao social nem apaga um nome ja preenchido.
+Razao social continua sendo o nome fiscal enviado ao Asaas e a NFS-e.
+Contratos e assinaturas existentes nao sao alterados.
+
 ### Transicao de leiaute nacional e bloqueio de 2027
 
 O gerador compartilhado seleciona o leiaute pelo **ambiente e instante de

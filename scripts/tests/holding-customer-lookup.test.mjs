@@ -55,7 +55,7 @@ test('lookup authenticates before calling services, rejects CPF and invalid CNPJ
 });
 test('CNPJ lookup validates returned identifier and whitelists corporate fields without sending personal CPF', async () => {
   const h = harness({ response: () => Response.json({
-    cnpj: '11222333000181', razao_social: 'Empresa ficticia', cep: '01001000',
+    cnpj: '11222333000181', razao_social: 'Empresa ficticia', nome_fantasia: ' Marca ficticia ', cep: '01001000',
     descricao_tipo_de_logradouro: 'RUA', logradouro: 'Teste', numero: '10', municipio: 'SAO PAULO', uf: 'SP',
     qsa: [{ nome_socio: 'must not expose' }],
   }) });
@@ -63,6 +63,7 @@ test('CNPJ lookup validates returned identifier and whitelists corporate fields 
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.fields.name, 'Empresa ficticia'); assert.equal(data.fields.address, 'RUA Teste');
+  assert.equal(data.fields.trade_name, 'Marca ficticia');
   assert.equal(data.fields.qsa, undefined);
   assert.equal(h.calls[0].url, 'https://brasilapi.com.br/api/cnpj/v1/11222333000181');
   assert.equal(h.calls[0].init.redirect, 'error');
@@ -71,6 +72,15 @@ test('CNPJ lookup validates returned identifier and whitelists corporate fields 
   assert.match(response.headers.get('cache-control'), /no-store/);
   const wrong = harness({ response: () => Response.json({ cnpj: 'other', razao_social: 'Wrong' }) });
   assert.equal((await wrong.post({ kind: 'cnpj', value: '11222333000181' })).status, 502);
+});
+test('CNPJ without trade name keeps it empty instead of copying the legal name', async () => {
+  for (const nome_fantasia of [undefined, null, '']) {
+    const h = harness({ response: () => Response.json({
+      cnpj: '11222333000181', razao_social: 'Empresa ficticia', nome_fantasia,
+    }) });
+    const response = await h.post({ kind: 'cnpj', value: '11222333000181' });
+    assert.equal((await response.json()).fields.trade_name, '');
+  }
 });
 test('CEP lookup returns address fields but never replaces building number/complement and handles not found/timeout explicitly', async () => {
   const h = harness({ response: () => Response.json({ cep: '01001-000', logradouro: 'Praca ficticia', bairro: 'Centro', localidade: 'Sao Paulo', uf: 'SP', complemento: 'ignored' }) });
@@ -90,9 +100,9 @@ test('CEP lookup returns address fields but never replaces building number/compl
 });
 
 test('lookup response reader validates JSON and whitelists fields without relying on browser Response.json errors', async () => {
-  const response = Response.json({ fields: { name: 'Empresa ficticia', active: true, document: 'ignored' }, source: 'BrasilAPI' });
+  const response = Response.json({ fields: { name: 'Empresa ficticia', trade_name: 'Marca', active: true, document: 'ignored' }, source: 'BrasilAPI' });
   response.json = async () => { throw new SyntaxError('The string did not match the expected pattern.'); };
-  assert.deepEqual(await customers.readHoldingCustomerLookup(response), { fields: { name: 'Empresa ficticia' }, source: 'BrasilAPI' });
+  assert.deepEqual(await customers.readHoldingCustomerLookup(response), { fields: { name: 'Empresa ficticia', trade_name: 'Marca' }, source: 'BrasilAPI' });
   for (const payload of [null, [], {}, { fields: {}, source: 'Test' }, { fields: { name: 123 }, source: 'Test' }, { fields: [], source: 'Test' }]) {
     await assert.rejects(customers.readHoldingCustomerLookup(Response.json(payload)), /inválid|Nenhum dado|não retornou dados cadastrais válidos/);
   }

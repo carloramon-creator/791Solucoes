@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     if (cnpj && (text('cnpj').replace(/\D/g, '') !== value || !text('razao_social'))) throw new Error('CNPJ retornado inconsistente.');
     if (!cnpj && (text('cep').replace(/\D/g, '') !== value || !text('localidade') || !/^[A-Z]{2}$/.test(text('uf')))) throw new Error('CEP retornado inconsistente.');
     const fields = cnpj ? {
-      name: text('razao_social'), postal_code: text('cep').replace(/\D/g, ''),
+      name: text('razao_social'), trade_name: text('nome_fantasia'), postal_code: text('cep').replace(/\D/g, ''),
       address: [text('descricao_tipo_de_logradouro'), text('logradouro')].filter(Boolean).join(' '),
       address_number: text('numero'), complement: text('complemento'), district: text('bairro'),
       city: text('municipio'), state: text('uf'), phone: text('ddd_telefone_1').replace(/\D/g, ''), email: text('email'),

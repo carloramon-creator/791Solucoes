@@ -51,10 +51,13 @@ test('validates CPF/CNPJ check digits and normalized customer data without accep
   assert.equal(normalized.data.postal_code, '01001000');
   assert.equal(normalized.data.asaas_customer_id, undefined);
   assert.equal(normalized.data.id, undefined);
+  assert.equal(normalized.data.trade_name, '');
+  assert.equal(customers.validateHoldingCustomer({ ...customer, trade_name: ' Marca ficticia ' }).data.trade_name, 'Marca ficticia');
   for (const value of [
     null, [], {}, { ...customer, email: 'invalid' }, { ...customer, active: 'true' },
     { ...customer, name: ' ' }, { ...customer, state: 'XX' }, { ...customer, postal_code: '1' },
     { ...customer, phone: '123' }, { ...customer, address: 'a'.repeat(201) },
+    { ...customer, trade_name: 'a'.repeat(161) }, { ...customer, trade_name: 123 },
   ]) assert.equal(customers.validateHoldingCustomer(value).ok, false);
 });
 

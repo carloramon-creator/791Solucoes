@@ -3,7 +3,7 @@ import { authorizeHoldingCommercial } from '@/lib/holding-commercial-auth';
 import { isUuid, validateHoldingCustomer } from '@/lib/holding-customers';
 import { supabaseServer } from '@/lib/supabase-server';
 
-const COLUMNS = 'id,name,document,email,phone,postal_code,address,address_number,complement,district,city,state,active';
+const COLUMNS = 'id,name,trade_name,document,email,phone,postal_code,address,address_number,complement,district,city,state,active';
 
 export async function GET(req: Request) {
   try {

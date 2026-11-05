@@ -9,12 +9,13 @@ import {
 } from '@/components/HoldingCommercialFields';
 
 const EMPTY: HoldingCustomerInput = {
-  name: '', document: '', email: '', phone: '', postal_code: '', address: '',
+  name: '', trade_name: '', document: '', email: '', phone: '', postal_code: '', address: '',
   address_number: '', complement: '', district: '', city: '', state: '', active: true,
 };
 const fields: Array<{ key: Exclude<keyof HoldingCustomerInput, 'active'>; label: string; required?: boolean; max: number }> = [
   { key: 'document', label: 'CPF / CNPJ', required: true, max: 20 },
   { key: 'name', label: 'Nome / razão social', required: true, max: 160 },
+  { key: 'trade_name', label: 'Nome fantasia', max: 160 },
   { key: 'email', label: 'E-mail', required: true, max: 254 },
   { key: 'phone', label: 'Telefone com DDD', max: 25 },
   { key: 'postal_code', label: 'CEP', max: 10 },
@@ -105,7 +106,7 @@ export default function HoldingCustomersPage() {
         if (current.document.replace(/\D/g, '') !== snapshot.document.replace(/\D/g, '')
           || current.postal_code.replace(/\D/g, '') !== snapshot.postal_code.replace(/\D/g, '')) return current;
         const next = { ...current };
-        for (const key of ['name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
+        for (const key of ['name', 'trade_name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
           if (current[key] === snapshot[key] && (!automatic || !current[key] || key === 'postal_code')
             && typeof values[key] === 'string' && (kind === 'cep' || values[key])) next[key] = values[key];
         }
@@ -248,6 +249,7 @@ export default function HoldingCustomersPage() {
             {customers.map((customer) => (
               <article key={customer.id} className="rounded-xl border border-slate-200 bg-white p-5">
                 <h2 className="font-bold text-slate-800">{customer.name}</h2>
+                {customer.trade_name && <p className="text-sm text-slate-600">Nome fantasia: {customer.trade_name}</p>}
                 <p className="mt-2 text-sm text-slate-500">CPF/CNPJ: {maskCustomerDocument(customer.document)}</p>
                 <p className="text-sm text-slate-500">{customer.email}</p>
                 {customer.phone && <p className="text-sm text-slate-500">{maskCustomerPhone(customer.phone)}</p>}

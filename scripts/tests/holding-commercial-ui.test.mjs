@@ -140,14 +140,17 @@ test('customer UI creates and edits a Holding-only customer with immutable docum
   assert.ok(ui.field('CPF / CNPJ').props.ref);
   assert.equal(ui.field('Nome / razão social').props.ref, undefined);
   ui.fill('Nome / razão social', customer.name); ui.fill('CPF / CNPJ', customer.document); ui.fill('E-mail', customer.email);
+  ui.fill('Nome fantasia', 'Marca ficticia');
   for (const field of nodes(ui.render(), (node) => node.type === 'input' && node.props.type !== 'checkbox')) {
     assert.ok(field.props.className.split(' ').includes('h-11'));
   }
   await ui.submit();
   assert.equal(ui.calls.at(-1).method, 'POST');
+  assert.equal(ui.calls.at(-1).body.trade_name, 'Marca ficticia');
   assert.equal(ui.calls.at(-1).url, '/api/admin/holding-customers');
   assert.match(text(ui.render()), /Nenhum cadastro foi criado no Glass ou no Barber/);
   ui.button('Editar').props.onClick();
+  assert.equal(ui.field('Nome fantasia').props.value, 'Marca ficticia');
   assert.equal(ui.field('CPF / CNPJ').props.readOnly, true);
   assert.equal(ui.field('CPF / CNPJ').props.ref, undefined);
   assert.ok(ui.field('Nome / razão social').props.ref);
@@ -260,12 +263,13 @@ test('CNPJ lookup never exposes Safari pattern errors or clears manual fields on
 test('document and CEP lookup run on blur without confirmation, deduplicate and preserve filled fields', async () => {
   const ui = harness('src/app/clientes/page.tsx', (_url, method, body) => method === 'GET'
     ? Response.json({ customers: [] }) : Response.json({ source: 'Test', fields: body.kind === 'cnpj'
-      ? { name: 'Empresa ficticia', email: 'company@example.test', postal_code: '01001000', address: 'Rua ficticia', city: 'Sao Paulo', state: 'SP' }
+      ? { name: 'Empresa ficticia', trade_name: 'Marca consultada', email: 'company@example.test', postal_code: '01001000', address: 'Rua ficticia', city: 'Sao Paulo', state: 'SP' }
       : { postal_code: '01001000', address: 'Endereco do CEP', city: 'Sao Paulo', state: 'SP' } }));
   await ui.mount(); ui.button('Novo cliente').props.onClick();
   ui.fill('E-mail', 'manual@example.test'); ui.fill('CPF / CNPJ', '11222333000181');
   ui.field('CPF / CNPJ').props.onBlur({ relatedTarget: { tagName: 'INPUT' } }); await settle();
   assert.equal(ui.field('Nome / razão social').props.value, 'Empresa ficticia');
+  assert.equal(ui.field('Nome fantasia').props.value, 'Marca consultada');
   assert.equal(ui.field('E-mail').props.value, 'manual@example.test');
   assert.equal(ui.confirmations.length, 0);
   assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 1);

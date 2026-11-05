@@ -1,5 +1,6 @@
 export type HoldingCustomerInput = {
   name: string;
+  trade_name: string;
   document: string;
   email: string;
   phone: string;
@@ -64,7 +65,7 @@ export async function readHoldingCustomerLookup(response: Response): Promise<{
     throw new Error('O serviço não retornou dados cadastrais válidos. Tente novamente ou preencha manualmente.');
   }
   const fields: Partial<HoldingCustomerInput> = {};
-  for (const key of ['name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
+  for (const key of ['name', 'trade_name', 'email', 'phone', 'postal_code', 'address', 'address_number', 'complement', 'district', 'city', 'state'] as const) {
     if (key in payload.fields) {
       const value = Reflect.get(payload.fields, key);
       if (typeof value !== 'string') throw new Error('O serviço retornou um campo cadastral inválido. Preencha manualmente.');
@@ -96,6 +97,9 @@ export function validateHoldingCustomer(body: unknown):
   | { ok: false; error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, error: 'Informe os dados do cliente.' };
   const value = body as Record<string, unknown>;
+  if (value.trade_name !== undefined && (typeof value.trade_name !== 'string' || value.trade_name.trim().length > 160)) {
+    return { ok: false, error: 'Nome fantasia inválido (máximo 160 caracteres).' };
+  }
   const limits = {
     name: 160, document: 20, email: 254, phone: 25, postal_code: 10, address: 200,
     address_number: 30, complement: 100, district: 100, city: 100, state: 2,
@@ -120,7 +124,8 @@ export function validateHoldingCustomer(body: unknown):
   }
   if (typeof value.active !== 'boolean') return { ok: false, error: 'Informe a situação do cliente.' };
   return { ok: true, data: {
-    name: text('name'), document, email: text('email'), phone, postal_code: postalCode,
+    name: text('name'), trade_name: typeof value.trade_name === 'string' ? value.trade_name.trim() : '',
+    document, email: text('email'), phone, postal_code: postalCode,
     address: text('address'), address_number: text('address_number'), complement: text('complement'),
     district: text('district'), city: text('city'), state, active: value.active,
   } };

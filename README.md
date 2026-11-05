@@ -4,6 +4,28 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Planos de Websites
 
+O produto de criacao exige **Tipo de projeto**: landing page, institucional,
+portfolio, catalogo ou loja virtual. Hospedagem/manutencao podem especificar um
+tipo ou permanecer genericas; quando especificado, o tipo deve corresponder a
+criacao vinculada. O tipo da criacao e copiado para a contratacao, nunca inferido
+pelo nome nem alterado por edicoes futuras no catalogo. Contratos antigos ficam
+pendentes de revisao explicita. Precos nao sao preenchidos automaticamente.
+
+Aplicar somente na Holding
+`supabase/migrations/20261105220000_website_project_scope.sql`.
+Ela adiciona o tipo tecnico, atribuicao por funcionario e a permissao explicita
+`action.websites.manage`, inicialmente concedida aos mesmos perfis administrativos
+do Websites. Sem essa permissao, o funcionario so recebe seus projetos atribuidos.
+**Assinaturas > Websites > Distribuicao e revisao de projetos** permite confirmar
+o tipo antigo e atribuir/revogar o responsavel. O tipo confirmado fica bloqueado;
+para outro produto registre outra contratacao.
+
+`/api/websites/projects` exige a sessao opaca de Websites, introspeccao e permissoes
+atuais; nao retorna documentos, enderecos, valores financeiros nem credenciais.
+Libera somente contratacoes com assinatura vinculada ativa do mesmo cliente,
+independentemente do pagamento. Um projeto por contratacao e garantido tambem
+no banco separado do Websites. A publicacao nao e automatica.
+
 `/planos/websites` e o catalogo de produtos proprios da Holding, sem acesso ao
 banco do Glass ou do Barber. Permite cadastrar, editar e inativar confeccao de
 websites, hospedagem, manutencao e alteracoes adicionais, com preco em reais,

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Globe, Loader2, Plus } from 'lucide-react';
 import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { buildWebsiteSchedule, WEBSITE_PAYMENT_METHODS, type WebsiteContract, type WebsitePaymentMethod } from '@/lib/website-contracts';
-import type { WebsitePlan } from '@/lib/website-plans';
+import { WEBSITE_PROJECT_TYPES, type WebsitePlan, type WebsiteProjectType } from '@/lib/website-plans';
 import { EMPTY_WEBSITE_SUBSCRIPTION, WebsiteSubscriptionFields, type WebsiteSubscriptionForm } from '@/components/WebsiteSubscriptionFields';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialMoney,
@@ -14,7 +14,7 @@ import {
 
 type Options = {
   customers: Array<{ id: string; name: string; document: string }>;
-  plans: Array<{ id: string; name: string; price_cents: number; scope: string }>;
+  plans: Array<{ id: string; name: string; price_cents: number; scope: string; project_type: WebsiteProjectType | null }>;
   recurring_plans: WebsitePlan[];
 };
 type Form = {
@@ -200,6 +200,7 @@ export default function WebsiteContractsPage() {
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-800"><Globe size={24} /> Websites — contratações</h1>
           <p className="mt-1 text-sm text-slate-500">Projetos e parcelas da Holding, sem integração operacional com Glass ou Barber.</p>
           <Link href="/assinaturas/websites/recorrentes" className="text-sm text-blue-700 underline">Hospedagem e manutenção — assinaturas recorrentes</Link>
+          <Link href="/assinaturas/websites/projetos" className="ml-4 text-sm text-blue-700 underline">Distribuição e revisão de projetos</Link>
         </div>
         <div className="flex gap-2">
           <button type="button" className={commercialSecondaryClass} disabled={loading || Boolean(form) || Boolean(billingId) || Boolean(invoiceForm)} onClick={() => {
@@ -302,7 +303,9 @@ export default function WebsiteContractsPage() {
             </div>
             {form.plan_id && <p className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm text-slate-600">
               <strong>Escopo contratado: </strong>{options.plans.find((plan) => plan.id === form.plan_id)?.scope}
+              <br /><strong>Tipo de projeto: </strong>{WEBSITE_PROJECT_TYPES[options.plans.find((plan) => plan.id === form.plan_id)?.project_type as WebsiteProjectType] || 'Pendente de revisão no produto'}
             </p>}
+            {!form.id && !form.subscription && <p className="text-sm text-amber-700">Para liberar a criação no 791 Websites, inclua uma assinatura vinculada. Salvar somente a criação não libera o projeto.</p>}
             {!options.customers.length && <p className="text-sm text-amber-700">Cadastre primeiro um cliente ativo em Clientes.</p>}
             {!options.plans.length && <p className="text-sm text-amber-700">Cadastre primeiro um produto ativo de confecção ou alterações em Planos → Websites.</p>}
             {preview.length > 0 ? (

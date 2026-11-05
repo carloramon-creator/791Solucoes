@@ -5,10 +5,11 @@ export const WEBSITE_PERMISSION_CODES = {
   view: 'action.websites.view',
   create: 'action.websites.create',
   edit: 'action.websites.edit',
+  manage: 'action.websites.manage',
 } as const;
 
 export async function getHoldingWebsitesPermissions(email: string | null | undefined) {
-  const denied = { menu: false, view: false, create: false, edit: false };
+  const denied = { menu: false, view: false, create: false, edit: false, manage: false };
   const normalized = email?.trim().toLowerCase();
   if (!normalized) return denied;
 
@@ -41,5 +42,6 @@ export async function getHoldingWebsitesPermissions(email: string | null | undef
     view: allows(WEBSITE_PERMISSION_CODES.view),
     create: allows(WEBSITE_PERMISSION_CODES.create),
     edit: allows(WEBSITE_PERMISSION_CODES.edit),
+    manage: allows(WEBSITE_PERMISSION_CODES.manage),
   };
 }

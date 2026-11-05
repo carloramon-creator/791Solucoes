@@ -14,6 +14,14 @@ export const WEBSITE_BILLING_CYCLES = {
 } as const;
 
 export type WebsiteCategory = keyof typeof WEBSITE_CATEGORIES;
+export const WEBSITE_PROJECT_TYPES = {
+  landing: 'Landing page',
+  institutional: 'Institucional',
+  portfolio: 'Portfólio',
+  catalog: 'Catálogo',
+  store: 'Loja virtual',
+} as const;
+export type WebsiteProjectType = keyof typeof WEBSITE_PROJECT_TYPES;
 export type WebsiteBillingCycle = keyof typeof WEBSITE_BILLING_CYCLES;
 export type WebsiteRecurringCycle = Exclude<WebsiteBillingCycle, 'one_time'>;
 export type WebsiteRecurringPrices = Partial<Record<WebsiteRecurringCycle, number>>;
@@ -70,6 +78,7 @@ export function validateWebsiteFiscalConfig(value: unknown):
 }
 
 export type WebsitePlanInput = {
+  project_type: WebsiteProjectType | null;
   name: string;
   description: string;
   scope: string;
@@ -113,6 +122,11 @@ export function validateWebsitePlan(value: unknown):
     return { ok: false, error: 'Selecione uma categoria válida.' };
   }
   const category = body.category as WebsiteCategory;
+  const projectType = body.project_type ?? null;
+  if ((category === 'creation' && projectType === null)
+    || (projectType !== null && (typeof projectType !== 'string' || !Object.hasOwn(WEBSITE_PROJECT_TYPES, projectType)))) {
+    return { ok: false, error: 'Selecione o tipo de projeto contratado.' };
+  }
   if (!websiteBillingCycles(category).some((cycle) => cycle === body.billing_cycle)) {
     return { ok: false, error: 'A modalidade de cobrança não corresponde à categoria do serviço.' };
   }
@@ -147,6 +161,7 @@ export function validateWebsitePlan(value: unknown):
   return {
     ok: true,
     data: {
+      project_type: projectType as WebsiteProjectType | null,
       name: body.name.trim(),
       description: body.description.trim(),
       scope: body.scope.trim(),

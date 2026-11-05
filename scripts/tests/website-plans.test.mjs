@@ -23,6 +23,7 @@ function loadModule(path, dependencies = {}) {
 const catalog = loadModule('src/lib/website-plans.ts');
 const id = '11111111-1111-4111-8111-111111111111';
 const valid = {
+  project_type: 'institutional',
   name: 'Website institucional',
   description: 'Apresentação da empresa',
   scope: 'Até cinco páginas e duas revisões. Hospedagem contratada separadamente.',
@@ -350,6 +351,7 @@ test('UI creates, reloads, edits and inactivates a product with exact price and 
   assert.match(text(ui.render()), /Nenhum produto cadastrado/);
   ui.button('Novo produto').props.onClick();
   ui.fill('Nome do produto', 'Website institucional');
+  ui.fill('Tipo de projeto', 'institutional');
   ui.fill('Escopo, limites', valid.scope);
   ui.fill('Preço total', '2500.99');
   await ui.submit();
@@ -465,6 +467,7 @@ test('UI retains form data and reports failed saves, without showing success', a
   await ui.mount();
   ui.button('Novo produto').props.onClick();
   ui.fill('Nome do produto', valid.name);
+  ui.fill('Tipo de projeto', 'institutional');
   ui.fill('Escopo, limites', valid.scope);
   ui.fill('Preço total', '0');
   await ui.submit();

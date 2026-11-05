@@ -8,7 +8,7 @@ export async function GET(req: Request) {
     if (denied) return denied;
     const [customers, plans, recurringPlans] = await Promise.all([
       supabaseServer.from('holding_customers').select('id,name,document').eq('active', true).order('name'),
-      supabaseServer.from('holding_website_plans').select('id,name,price_cents,scope')
+      supabaseServer.from('holding_website_plans').select('id,name,price_cents,scope,project_type')
         .eq('active', true).eq('billing_cycle', 'one_time').order('name'),
       supabaseServer.from('holding_website_plans').select('id,name,scope,billing_cycle,price_cents,recurring_prices,fiscal_config')
         .eq('active', true).neq('billing_cycle', 'one_time').order('name'),

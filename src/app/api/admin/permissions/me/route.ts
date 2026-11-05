@@ -15,7 +15,7 @@ export async function GET(req: Request) {
       getUserPermissionCodes(auth.user.email),
       getHoldingWebsitesPermissions(auth.user.email),
     ]);
-    for (const permission of ['menu', 'view', 'create', 'edit'] as const) {
+    for (const permission of ['menu', 'view', 'create', 'edit', 'manage'] as const) {
       const code = WEBSITE_PERMISSION_CODES[permission];
       permissionCodes.delete(code);
       if (websites[permission]) permissionCodes.add(code);

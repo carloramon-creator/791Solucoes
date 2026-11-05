@@ -10,6 +10,8 @@ import {
 import {
   WEBSITE_BILLING_CYCLES,
   WEBSITE_CATEGORIES,
+  WEBSITE_PROJECT_TYPES,
+  type WebsiteProjectType,
   validateWebsitePlan,
   websiteBillingCycles,
   websiteRecurringPrices,
@@ -21,6 +23,7 @@ import {
 } from '@/lib/website-plans';
 
 type PlanForm = {
+  project_type: WebsiteProjectType | '';
   name: string;
   description: string;
   scope: string;
@@ -37,6 +40,7 @@ const EMPTY_FISCAL: WebsiteFiscalConfig = {
   simples_percent: null,
 };
 const EMPTY_FORM: PlanForm = {
+  project_type: '',
   name: '', description: '', scope: '', category: 'creation',
   billing_cycle: 'one_time', price: '', active: true,
   fiscal_config: EMPTY_FISCAL,
@@ -90,6 +94,7 @@ export default function PlanosWebsitesPage() {
     setSuccess('');
     setEditingId(plan?.id || null);
     setForm(plan ? {
+      project_type: plan.project_type || '',
       name: plan.name,
       description: plan.description,
       scope: plan.scope,
@@ -108,6 +113,7 @@ export default function PlanosWebsitesPage() {
     setSaveError('');
     setSuccess('');
     const validated = validateWebsitePlan({
+      project_type: form.project_type || null,
       name: form.name,
       description: form.description,
       scope: form.scope,
@@ -196,6 +202,18 @@ export default function PlanosWebsitesPage() {
                 <span>Nome do produto *</span>
                 <input ref={nameInput} className={inputClass} value={form.name} required maxLength={120}
                   onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ex.: Website institucional" />
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
+                <span>Tipo de projeto {form.category === 'creation' ? '*' : '(opcional)'}</span>
+                <span className="relative block">
+                  <select className={selectClass} value={form.project_type} required={form.category === 'creation'}
+                    onChange={(event) => setForm({ ...form, project_type: event.target.value as WebsiteProjectType | '' })}>
+                    <option value="">{form.category === 'creation' ? 'Selecione o tipo' : 'Sem restrição de tipo'}</option>
+                    {Object.entries(WEBSITE_PROJECT_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                  <ChevronDown aria-hidden="true" size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                </span>
+                <span className="text-xs font-normal text-slate-500">A criação exige um tipo. A contratação preserva esse tipo; mudanças futuras neste produto não alteram projetos vendidos.</span>
               </label>
               <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-700">
                 <span>Categoria *</span>

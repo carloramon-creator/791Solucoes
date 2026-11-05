@@ -16,8 +16,8 @@ function loadModule(path, dependencies) {
   return mod.exports;
 }
 
-const codes = ['menu.websites', 'action.websites.view', 'action.websites.create', 'action.websites.edit'];
-const denied = { menu: false, view: false, create: false, edit: false };
+const codes = ['menu.websites', 'action.websites.view', 'action.websites.create', 'action.websites.edit', 'action.websites.manage'];
+const denied = { menu: false, view: false, create: false, edit: false, manage: false };
 
 function permissionsFixture(overrides = {}) {
   const tables = {
@@ -54,8 +54,8 @@ function permissionsFixture(overrides = {}) {
 test('requires explicit grants for each Websites capability and normalizes identity', async () => {
   const helper = permissionsFixture();
   assert.deepEqual(await helper.getHoldingWebsitesPermissions(' STAFF@EXAMPLE.TEST '),
-    { menu: true, view: true, create: true, edit: true });
-  for (const [index, capability] of ['menu', 'view', 'create', 'edit'].entries()) {
+    { menu: true, view: true, create: true, edit: true, manage: true });
+  for (const [index, capability] of ['menu', 'view', 'create', 'edit', 'manage'].entries()) {
     const helper = permissionsFixture({
       tables: { holding_profile_resource_permissions: [{ profile_id: 'staff', resource_code: codes[index], enabled: true }] },
     });
@@ -133,7 +133,7 @@ function routeFixture({ authStatus = 200, permissions = { ...denied, menu: true 
         : { ok: false, status: authStatus, error: 'Access denied' },
     },
     '@/lib/holding-websites-permissions': {
-      WEBSITE_PERMISSION_CODES: Object.fromEntries(['menu', 'view', 'create', 'edit'].map((key, index) => [key, codes[index]])),
+      WEBSITE_PERMISSION_CODES: Object.fromEntries(['menu', 'view', 'create', 'edit', 'manage'].map((key, index) => [key, codes[index]])),
       getHoldingWebsitesPermissions: async () => {
         permissionCalls++;
         if (fail) throw new Error('Database unavailable');

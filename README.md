@@ -13,17 +13,25 @@ O produto de criacao exige **Tipo de projeto**: landing page, institucional,
 portfolio, catalogo ou loja virtual. Hospedagem/manutencao podem especificar um
 tipo ou permanecer genericas; quando especificado, o tipo deve corresponder a
 criacao vinculada. O tipo da criacao e copiado para a contratacao, nunca inferido
-pelo nome nem alterado por edicoes futuras no catalogo. Contratos antigos ficam
-pendentes de revisao explicita. Precos nao sao preenchidos automaticamente.
+pelo nome nem alterado por edicoes futuras no catalogo. Contratos antigos sem
+tipo herdam automaticamente o tipo do plano vinculado quando ele estiver definido.
+Precos nao sao preenchidos automaticamente.
 
 Aplicar somente na Holding
 `supabase/migrations/20261105220000_website_project_scope.sql`.
 Ela adiciona o tipo tecnico, atribuicao por funcionario e a permissao explicita
 `action.websites.manage`, inicialmente concedida aos mesmos perfis administrativos
 do Websites. Sem essa permissao, o funcionario so recebe seus projetos atribuidos.
-**Assinaturas > Websites > Distribuicao e revisao de projetos** permite confirmar
-o tipo antigo e atribuir/revogar o responsavel. O tipo confirmado fica bloqueado;
+Aplicar tambem `supabase/migrations/20261105235000_website_inherit_plan_type.sql`
+para preencher contratos sem tipo e herdar futuras definicoes dos planos somente
+enquanto o contrato nao tiver tipo. O snapshot recebe o mesmo tipo herdado.
+**Assinaturas > Websites > Distribuicao e revisao de projetos** exibe o tipo
+somente para leitura e permite atribuir/revogar o responsavel. O tipo definido fica bloqueado;
 para outro produto registre outra contratacao.
+Os cards de contratacao mostram o nome do webdesigner (ou email se nao houver
+nome cadastrado), permitem escolher/alterar o responsavel e filtrar contratos
+com ou sem atribuicao. A gravacao exige permissao de gestor e valida o acesso
+atual do funcionario ao Websites; nao altera cobrancas.
 
 `/api/websites/projects` exige a sessao opaca de Websites, introspeccao e permissoes
 atuais; nao retorna documentos, enderecos, valores financeiros nem credenciais.

@@ -29,7 +29,12 @@ export async function GET(req: Request) {
     const { data, error } = await supabaseServer.from('holding_website_contracts')
       .select('*,holding_website_installments(*),holding_website_invoices(id,status,competence)').order('created_at', { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ contracts: data }, { headers: { 'Cache-Control': 'private, no-store' } });
+    const emails = [...new Set(data.flatMap((contract) => contract.designer_email ? [contract.designer_email] : []))];
+    const members = emails.length ? await supabaseServer.from('equipe_791').select('email,nome').in('email', emails) : { data: [], error: null };
+    if (members.error) throw members.error;
+    return NextResponse.json({ contracts: data.map((contract) => ({
+      ...contract, designer_name: members.data?.find((member) => member.email === contract.designer_email)?.nome || null,
+    })) }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch {
     console.error('[WEBSITE CONTRACTS] Falha ao carregar contratos.');
     return NextResponse.json({ error: 'Não foi possível carregar as contratações de Websites.' }, { status: 500 });

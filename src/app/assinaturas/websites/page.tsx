@@ -42,6 +42,9 @@ export default function WebsiteContractsPage() {
   const [form, setForm] = useState<Form | null>(null);
   const [subscriptionContract, setSubscriptionContract] = useState<{ id: string; customer_id: string; customer_name: string; project_type: WebsiteProjectType | null } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [designerFilter, setDesignerFilter] = useState('all');
+  const [assignment, setAssignment] = useState<{ id: string; email: string; designers: Array<{ email: string; name: string }> } | null>(null);
+  const [assigning, setAssigning] = useState(false);
   const [billingId, setBillingId] = useState<string | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<{
     id: string; competence: string;
@@ -49,6 +52,38 @@ export default function WebsiteContractsPage() {
   } | null>(null);
   const [invoicing, setInvoicing] = useState(false);
   const busy = useRef(false);
+
+  async function chooseDesigner(contract: WebsiteContract) {
+    setAssigning(true); setError('');
+    try {
+      const response = await holdingAuthFetch('/api/admin/website-projects');
+      const body = await response.json();
+      if (!response.ok || !Array.isArray(body.designer_options)) throw new Error(body.error || 'Não foi possível carregar os webdesigners.');
+      setAssignment({ id: contract.id, email: contract.designer_email || '', designers: body.designer_options });
+    } catch (failure) {
+      console.error('[WEBSITE CONTRACTS] Falha ao carregar webdesigners.');
+      setError(failure instanceof Error ? failure.message : 'Não foi possível carregar os webdesigners.');
+    } finally { setAssigning(false); }
+  }
+
+  async function saveDesigner(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!assignment || assigning) return;
+    setAssigning(true); setError('');
+    try {
+      const response = await holdingAuthFetch('/api/admin/website-projects', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: assignment.id, designer_email: assignment.email }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.success) throw new Error(body.error || 'Atribuição não confirmada.');
+      setAssignment(null); setMessage('Webdesigner atualizado. Nenhuma cobrança foi alterada.');
+      await load();
+    } catch (failure) {
+      console.error('[WEBSITE CONTRACTS] Falha ao atribuir webdesigner.');
+      setError(failure instanceof Error ? failure.message : 'Não foi possível salvar o webdesigner.');
+    } finally { setAssigning(false); }
+  }
 
   const load = useCallback((signal?: AbortSignal) => (
     Promise.all([
@@ -83,6 +118,8 @@ export default function WebsiteContractsPage() {
     first_due_date: form.first_due_date, deposit_cents: Math.round(Number(form.deposit || 0) * 100),
     deposit_due_date: form.deposit_due_date,
   } : null;
+  const visibleContracts = contracts.filter((contract) => designerFilter === 'all'
+    || (designerFilter === 'unassigned' ? !contract.designer_email : Boolean(contract.designer_email)));
   let preview: ReturnType<typeof buildWebsiteSchedule> = [];
   let previewError = '';
   if (scheduleInput) {
@@ -353,13 +390,20 @@ export default function WebsiteContractsPage() {
       {subscriptionContract && <WebsiteContractSubscriptions key={subscriptionContract.id}
         contractId={subscriptionContract.id} customerId={subscriptionContract.customer_id}
         customerName={subscriptionContract.customer_name} projectType={subscriptionContract.project_type} />}
+      {!form && <label className={commercialLabelClass}><span>Filtrar por webdesigner</span>
+        <HoldingCommercialSelect value={designerFilter} onChange={(event) => setDesignerFilter(event.target.value)}>
+          <option value="all">Todos os contratos</option><option value="unassigned">Sem webdesigner</option><option value="assigned">Com webdesigner</option>
+        </HoldingCommercialSelect>
+      </label>}
       {loading ? <p role="status" className="py-8 text-center text-slate-500">Carregando contratações...</p> : !form && !loadError && (
-        contracts.length ? contracts.map((contract) => (
+        visibleContracts.length ? visibleContracts.map((contract) => (
           <article key={contract.id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-slate-800">{contract.plan_snapshot.name}</h2>
                 <p className="text-sm text-slate-500">{contract.customer_snapshot.name}</p>
+                <p className="mt-2 text-sm text-slate-700"><strong>Webdesigner: </strong>{contract.designer_name || contract.designer_email || 'Sem webdesigner'}</p>
+                <p className="text-sm text-slate-500">Tipo contratado: {contract.project_type ? WEBSITE_PROJECT_TYPES[contract.project_type] : 'Defina o tipo no plano'}</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-slate-800">{commercialMoney(contract.total_cents)}</p>
@@ -368,6 +412,19 @@ export default function WebsiteContractsPage() {
               </div>
             </div>
             <details className="text-sm text-slate-600"><summary className="cursor-pointer">Escopo preservado na contratação</summary><p className="mt-2 whitespace-pre-wrap">{contract.plan_snapshot.scope}</p></details>
+            {assignment?.id === contract.id && <form onSubmit={(event) => void saveDesigner(event)} className="space-y-3 rounded-xl border border-slate-200 p-4">
+              <fieldset disabled={assigning} className="space-y-3">
+                <label className={commercialLabelClass}><span>Webdesigner responsável</span>
+                  <HoldingCommercialSelect value={assignment.email} onChange={(event) => setAssignment({ ...assignment, email: event.target.value })}>
+                    <option value="">Sem atribuição — somente gestores</option>
+                    {assignment.email && !assignment.designers.some((designer) => designer.email === assignment.email) && <option value={assignment.email}>{assignment.email} · acesso revogado</option>}
+                    {assignment.designers.map((designer) => <option key={designer.email} value={designer.email}>{designer.name} · {designer.email}</option>)}
+                  </HoldingCommercialSelect>
+                </label>
+                <div className="flex gap-3"><button type="button" className={commercialSecondaryClass} onClick={() => setAssignment(null)}>Cancelar atribuição</button>
+                  <button type="submit" className={commercialButtonClass}>Salvar webdesigner</button></div>
+              </fieldset>
+            </form>}
             {contract.bundled_subscription && <Link href="/assinaturas/websites/recorrentes" className="block text-sm text-blue-700 underline">Hospedagem/manutenção contratada junto — gerenciar assinatura recorrente</Link>}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -390,6 +447,9 @@ export default function WebsiteContractsPage() {
               <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">Confira o painel Asaas antes de qualquer nova emissão. Consultar Asaas apenas recupera cobranças existentes, sem criar outras. Emissão parcial ou processamento interrompido exige revisão administrativa.</p>
             )}
             <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" className={commercialSecondaryClass} disabled={assigning} onClick={() => void chooseDesigner(contract)}>
+                {contract.designer_email ? 'Alterar webdesigner' : 'Escolher webdesigner'}
+              </button>
               <button type="button" className={commercialSecondaryClass} disabled={Boolean(billingId) || Boolean(invoiceForm)}
                 onClick={() => setSubscriptionContract({ id: contract.id, customer_id: contract.customer_id, customer_name: contract.customer_snapshot.name, project_type: contract.project_type || null })}>
                 Assinaturas / ativar
@@ -414,7 +474,7 @@ export default function WebsiteContractsPage() {
               )}
             </div>
           </article>
-        )) : <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">Nenhuma contratação cadastrada.</p>
+        )) : <p className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">{contracts.length ? 'Nenhum contrato corresponde ao filtro de webdesigner.' : 'Nenhuma contratação cadastrada.'}</p>
       )}
     </div>
   );

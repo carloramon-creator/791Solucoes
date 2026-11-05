@@ -97,4 +97,39 @@ test('PostgreSQL preserves old contracts pending review and snapshots technical 
   await db.exec("insert into holding_website_subscriptions values(gen_random_uuid(),'20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001')");
   await db.exec("update holding_website_plans set project_type='landing';");
   await db.exec("update holding_website_subscriptions set customer_id=customer_id;");
+  await db.exec("insert into holding_website_contracts values('20000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','{}',null,null)");
+  await db.exec("alter table holding_website_contracts disable trigger holding_website_project_scope; update holding_website_contracts set project_type=null where id='20000000-0000-4000-8000-000000000003'; alter table holding_website_contracts enable trigger holding_website_project_scope;");
+  await db.exec(readFileSync('supabase/migrations/20261105235000_website_inherit_plan_type.sql', 'utf8'));
+  const inherited = (await db.query("select project_type,plan_snapshot->>'project_type' as snapshot from holding_website_contracts where id='20000000-0000-4000-8000-000000000003'")).rows[0];
+  assert.deepEqual(inherited, { project_type: 'landing', snapshot: 'landing' });
+  await db.exec("update holding_website_plans set project_type='catalog'");
+  assert.equal((await db.query("select project_type from holding_website_contracts where id='20000000-0000-4000-8000-000000000003'")).rows[0].project_type, 'landing');
+  await db.exec("insert into holding_website_plans(id,category) values('10000000-0000-4000-8000-000000000002','creation'); alter table holding_website_contracts disable trigger holding_website_project_scope; insert into holding_website_contracts values(gen_random_uuid(),'10000000-0000-4000-8000-000000000002',null,'{}',null,null); alter table holding_website_contracts enable trigger holding_website_project_scope;");
+  await db.exec("update holding_website_contracts set project_type='store' where plan_id='10000000-0000-4000-8000-000000000002'");
+  assert.equal((await db.query("select project_type from holding_website_contracts where plan_id='10000000-0000-4000-8000-000000000002'")).rows[0].project_type, null);
+  await db.exec("update holding_website_plans set project_type='portfolio' where id='10000000-0000-4000-8000-000000000002'");
+  assert.equal((await db.query("select project_type from holding_website_contracts where plan_id='10000000-0000-4000-8000-000000000002'")).rows[0].project_type, 'portfolio');
+});
+
+test('assignment ignores client-supplied type and updates only the designer', async () => {
+  let update;
+  const route = load('src/app/api/admin/website-projects/route.ts', {
+    'next/server': { NextResponse: Response },
+    '@/lib/holding-admin-auth': { authenticateHoldingAdmin: async () => ({ ok: true, user: { email: 'manager@example.test' } }) },
+    '@/lib/holding-websites-permissions': { getHoldingWebsitesPermissions: async () => ({ menu: true, view: true, edit: true, manage: true }) },
+    '@/lib/holding-customers': { isUuid: () => true },
+    '@/lib/supabase-server': { supabaseServer: { from(table) {
+      return {
+        select() { return this; }, eq() { return this; },
+        single() { return Promise.resolve({ data: table === 'holding_website_plans' ? { category: 'creation', project_type: 'catalog' } : { id: 'contract', plan_id: 'plan', project_type: 'institutional' }, error: null }); },
+        update(value) { update = value; return this; },
+        then(resolve) { return Promise.resolve({ error: null }).then(resolve); },
+      };
+    } } },
+  });
+  for (const project_type of [undefined, 'store']) {
+    const response = await route.PUT(new Request('https://holding.test', { method: 'PUT', body: JSON.stringify({ id: 'contract', designer_email: ' DESIGNER@example.test ', project_type }) }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(update, { designer_email: 'designer@example.test' });
+  }
 });

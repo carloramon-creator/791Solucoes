@@ -117,6 +117,36 @@ function harness(path, request, confirm = true, props) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('contract cards show designer names, filter unassigned contracts and save assignment without billing', async () => {
+  const rows = [
+    { id: contractId, customer_snapshot: { name: 'Cliente sem responsável' }, plan_snapshot: { name: 'Plano', scope: '' }, total_cents: 100, payment_method: 'PIX', billing_state: 'local', holding_website_installments: [], project_type: 'catalog' },
+    { id: planId, customer_snapshot: { name: 'Cliente atribuído' }, plan_snapshot: { name: 'Plano', scope: '' }, total_cents: 100, payment_method: 'PIX', billing_state: 'local', holding_website_installments: [], designer_email: 'designer@example.test', designer_name: 'Designer Teste' },
+  ];
+  const ui = harness('src/app/assinaturas/websites/page.tsx', (url, method, body) => {
+    if (url.endsWith('/options')) return optionsResponse();
+    if (url.endsWith('/website-projects')) {
+      if (method === 'PUT') {
+        rows[0].designer_email = body.designer_email; rows[0].designer_name = 'Designer Teste';
+        return Response.json({ success: true });
+      }
+      return Response.json({ designer_options: [{ email: 'designer@example.test', name: 'Designer Teste' }] });
+    }
+    return Response.json({ contracts: rows });
+  });
+  await ui.mount();
+  assert.match(text(ui.render()), /Designer Teste/);
+  ui.fill('Filtrar por webdesigner', 'unassigned');
+  assert.doesNotMatch(text(ui.render()), /Cliente atribuído/);
+  ui.button('Escolher webdesigner').props.onClick(); await settle();
+  ui.fill('Webdesigner responsável', 'designer@example.test');
+  ui.submit(); await settle(); await settle();
+  assert.match(text(ui.render()), /Nenhum contrato corresponde ao filtro/);
+  assert.deepEqual(ui.calls.filter((call) => call.method === 'PUT').map((call) => call.body), [{ id: contractId, designer_email: 'designer@example.test' }]);
+  assert.equal(ui.calls.some((call) => /billing/.test(call.url)), false);
+  ui.fill('Filtrar por webdesigner', 'assigned');
+  assert.match(text(ui.render()), /Cliente sem responsável/);
+  assert.match(text(ui.render()), /Designer Teste/);
+});
 test('embedded subscriptions inherit the contract, filter plans, hide activation from nonmanagers and require client confirmation', async () => {
   const rows = [{
     id: '40000000-0000-4000-8000-000000000001', customer_id: customerId, contract_id: contractId,

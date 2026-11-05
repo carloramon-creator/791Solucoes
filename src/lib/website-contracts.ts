@@ -11,6 +11,8 @@ export type WebsiteInstallment = {
   kind: 'deposit' | 'balance';
 };
 export type WebsiteContract = {
+  designer_email?: string | null;
+  designer_name?: string | null;
   project_type?: WebsiteProjectType | null;
   edit_revision?: number;
   updated_at?: string;

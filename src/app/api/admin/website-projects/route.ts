@@ -3,7 +3,6 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { getHoldingWebsitesPermissions } from '@/lib/holding-websites-permissions';
 import { supabaseServer as db } from '@/lib/supabase-server';
 import { isUuid } from '@/lib/holding-customers';
-import { WEBSITE_PROJECT_TYPES } from '@/lib/website-plans';
 
 async function authorize(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
@@ -30,9 +29,13 @@ export async function GET(req: Request) {
     const emails = [...new Set(assignments.data.map((row) => row.user_email as string))];
     const checks = await Promise.all(emails.map(async (email) => ({ email, permissions: await getHoldingWebsitesPermissions(email) })));
     const designers = checks.filter(({ permissions }) => permissions.menu && permissions.view && permissions.edit).map(({ email }) => email);
+    const members = designers.length ? await db.from('equipe_791').select('email,nome').in('email', designers) : { data: [], error: null };
+    if (members.error) throw members.error;
     return NextResponse.json({ contracts: contracts.data.map((contract) => ({
       ...contract, holding_website_subscriptions: subscriptions.data.filter((subscription) => subscription.contract_id === contract.id),
-    })), designers }, { headers: { 'Cache-Control': 'private, no-store' } });
+    })), designers, designer_options: designers.map((email) => ({
+      email, name: members.data?.find((member) => member.email === email)?.nome || email,
+    })) }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch {
     console.error('[WEBSITE PROJECTS] Falha ao carregar distribuição.');
     return NextResponse.json({ error: 'Não foi possível carregar a distribuição de projetos.' }, { status: 503 });
@@ -47,9 +50,8 @@ export async function PUT(req: Request) {
     try { body = await req.json(); } catch {
       return NextResponse.json({ error: 'Envie um JSON válido.' }, { status: 400 });
     }
-    if (!body || !isUuid(body.id) || typeof body.project_type !== 'string'
-      || !Object.hasOwn(WEBSITE_PROJECT_TYPES, body.project_type) || typeof body.designer_email !== 'string') {
-      return NextResponse.json({ error: 'Confira contratação, tipo e funcionário.' }, { status: 400 });
+    if (!body || !isUuid(body.id) || typeof body.designer_email !== 'string') {
+      return NextResponse.json({ error: 'Confira contratação e funcionário.' }, { status: 400 });
     }
     const email = body.designer_email.trim().toLowerCase();
     if (email) {
@@ -61,13 +63,13 @@ export async function PUT(req: Request) {
     const { data: contract, error: loadError } = await db.from('holding_website_contracts')
       .select('id,project_type,plan_id').eq('id', body.id).single();
     if (loadError || !contract) throw loadError || new Error('Contratação não encontrada.');
-    const plan = await db.from('holding_website_plans').select('category').eq('id', contract.plan_id).single();
+    const plan = await db.from('holding_website_plans').select('category,project_type').eq('id', contract.plan_id).single();
     if (plan.error) throw plan.error;
-    if (plan.data.category !== 'creation' || (contract.project_type && contract.project_type !== body.project_type)) {
-      return NextResponse.json({ error: 'Somente contratos de criação podem ser revisados. O tipo já confirmado não pode ser trocado.' }, { status: 409 });
+    if (plan.data.category !== 'creation' || (!contract.project_type && !plan.data.project_type)) {
+      return NextResponse.json({ error: 'Defina o tipo de site no plano de criação antes de atribuir o projeto.' }, { status: 409 });
     }
     const { error } = await db.from('holding_website_contracts')
-      .update({ project_type: body.project_type, designer_email: email || null }).eq('id', body.id);
+      .update({ designer_email: email || null }).eq('id', body.id);
     if (error) throw error;
     return NextResponse.json({ success: true });
   } catch {

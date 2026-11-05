@@ -43,8 +43,8 @@ export default function WebsiteProjects() {
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error(body.error || 'Distribuição não confirmada.');
       setContracts((current) => current.map((contract) => contract.id === values.id
-        ? { ...contract, project_type: values.project_type as WebsiteProjectType, designer_email: String(values.designer_email) || null } : contract));
-      setMessage('Escopo confirmado e atribuição salva. O Websites verifica este acesso a cada operação.');
+        ? { ...contract, designer_email: String(values.designer_email) || null } : contract));
+      setMessage('Atribuição salva. O Websites verifica este acesso a cada operação.');
     } catch (failure) {
       console.error('[WEBSITE PROJECTS] Falha ao salvar.');
       setError(failure instanceof Error ? failure.message : 'Falha ao salvar.');
@@ -54,7 +54,7 @@ export default function WebsiteProjects() {
   return <div className="mx-auto max-w-[1200px] space-y-6 pb-12">
     <header><Link href="/assinaturas/websites">← Contratações de Websites</Link><h1 className="mt-4 text-2xl font-bold">Distribuição de projetos</h1></header>
     <p>Gestores veem todos os projetos. Cada webdesigner vê somente os que lhe forem atribuídos e não pode mudar o tipo vendido. A criação exige contratação e assinatura vinculada ativa, sem exigir pagamento.</p>
-    <p>Contratos antigos exigem revisão explícita do tipo abaixo. Projetos existentes serão vinculados pelo gestor dentro do Websites, sem apagar seu conteúdo.</p>
+    <p>O tipo contratado vem automaticamente do plano e não pode ser alterado aqui. Contratos antigos sem tipo herdam o plano vinculado; tipos já definidos permanecem preservados. Escolha somente o webdesigner responsável.</p>
     {loading && <p role="status">Carregando…</p>}
     {error && <p role="alert" className="text-red-700">{error}</p>}
     {message && <p role="status" className="text-emerald-700">{message}</p>}
@@ -66,9 +66,7 @@ export default function WebsiteProjects() {
       <input type="hidden" name="id" value={contract.id} />
       <fieldset disabled={busy} className="grid gap-4 md:grid-cols-2">
         <label className={commercialLabelClass}>Tipo contratado
-          {contract.project_type ? <><input type="hidden" name="project_type" value={contract.project_type} /><input className={commercialInputClass} readOnly value={WEBSITE_PROJECT_TYPES[contract.project_type]} /></>
-            : <select name="project_type" className={commercialInputClass} required defaultValue=""><option value="">Revisar tipo contratado</option>
-              {Object.entries(WEBSITE_PROJECT_TYPES).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select>}
+          <input className={commercialInputClass} readOnly value={contract.project_type ? WEBSITE_PROJECT_TYPES[contract.project_type] : 'Defina o tipo no plano vinculado'} />
         </label>
         <label className={commercialLabelClass}>Webdesigner responsável
           <select name="designer_email" className={commercialInputClass} defaultValue={contract.designer_email || ''}>
@@ -77,7 +75,7 @@ export default function WebsiteProjects() {
             {designers.map((email) => <option key={email}>{email}</option>)}
           </select>
         </label>
-        <button className={commercialButtonClass} type="submit">Confirmar escopo e atribuição</button>
+        <button className={commercialButtonClass} type="submit" disabled={!contract.project_type}>Confirmar webdesigner</button>
       </fieldset>
     </form>)}
   </div>;

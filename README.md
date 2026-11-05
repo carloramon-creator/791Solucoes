@@ -57,6 +57,31 @@ Testes: `node --test scripts/tests/website-plans.test.mjs`.
 
 ## Clientes e contratacoes de Websites (Holding)
 
+### Assinaturas dentro da contratacao e aprovacao
+
+Em **Editar contratacao**, a secao **Assinaturas vinculadas** herda cliente e
+projeto e permite adicionar varias assinaturas com valores, ciclos, vencimentos,
+pagamentos e confirmacoes fiscais independentes. O botao **Assinaturas / ativar**
+no card abre a mesma secao mesmo quando as parcelas nao podem mais ser editadas.
+Depois de salvar uma nova contratacao, essa secao tambem fica disponivel.
+Assinaturas existentes do mesmo cliente, sem outro projeto e nao encerradas,
+podem ser vinculadas sem recriar cobrancas; o banco valida compatibilidade de tipo.
+Os salvamentos de parcelas e assinaturas sao independentes e nunca cobram.
+
+Novas assinaturas aguardam aprovacao. O gestor com `action.websites.manage`
+confirma a aprovacao do cliente e ativa as recorrencias no Asaas, respeitando o
+primeiro vencimento individual. Toda geracao, inclusive pela tela recorrente,
+exige essa confirmacao e permissao no servidor. A aprovacao registra data e
+usuario; assinaturas anteriores preservam sua situacao, sem ativacao automatica.
+A assinatura vinculada em preparacao ja permite desenvolver o projeto, sem
+exigir cobranca ou pagamento; pausa e encerramento continuam bloqueando o acesso
+conforme as regras vigentes. Em ativacao de varias assinaturas, uma falha
+interrompe a sequencia e mostra quantas foram ativadas; pedidos nao sao repetidos.
+
+Aplicar somente na Holding `20261105233000_website_subscription_approval.sql`
+antes do deploy. Remove o limite de uma assinatura por contratacao, mantendo
+uma unica contratacao por assinatura e sem alterar WM, Glass ou Barber.
+
 Aplicar **somente na Holding**, depois da migration do catalogo:
 `supabase/migrations/20261104184500_holding_website_plan_fiscal.sql`, seguida de
 `supabase/migrations/20261104190000_holding_website_contracts.sql` e

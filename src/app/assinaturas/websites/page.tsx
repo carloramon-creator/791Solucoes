@@ -7,6 +7,7 @@ import { holdingAuthFetch } from '@/lib/holding-auth-fetch';
 import { buildWebsiteSchedule, WEBSITE_PAYMENT_METHODS, type WebsiteContract, type WebsitePaymentMethod } from '@/lib/website-contracts';
 import { WEBSITE_PROJECT_TYPES, type WebsitePlan, type WebsiteProjectType } from '@/lib/website-plans';
 import { EMPTY_WEBSITE_SUBSCRIPTION, WebsiteSubscriptionFields, type WebsiteSubscriptionForm } from '@/components/WebsiteSubscriptionFields';
+import { WebsiteContractSubscriptions } from '@/components/WebsiteContractSubscriptions';
 import {
   commercialButtonClass, commercialInputClass, commercialLabelClass, commercialMoney,
   commercialSecondaryClass, HoldingCommercialSelect,
@@ -39,6 +40,7 @@ export default function WebsiteContractsPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [form, setForm] = useState<Form | null>(null);
+  const [subscriptionContract, setSubscriptionContract] = useState<{ id: string; customer_id: string; customer_name: string; project_type: WebsiteProjectType | null } | null>(null);
   const [saving, setSaving] = useState(false);
   const [billingId, setBillingId] = useState<string | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<{
@@ -90,6 +92,7 @@ export default function WebsiteContractsPage() {
   }
   function newContract() {
     setError(''); setMessage('');
+    setSubscriptionContract(null);
     setForm({
       request_id: crypto.randomUUID(), customer_id: '', plan_id: '', total: '', count: '1',
       first_due_date: '', deposit: '', deposit_due_date: '', payment_method: 'PIX',
@@ -105,6 +108,7 @@ export default function WebsiteContractsPage() {
     const deposit = rows.find((row) => row.kind === 'deposit');
     const balance = rows.filter((row) => row.kind === 'balance');
     setError(''); setMessage('');
+    setSubscriptionContract({ id: contract.id, customer_id: contract.customer_id, customer_name: contract.customer_snapshot.name, project_type: contract.project_type || null });
     setForm({
       id: contract.id, revision: contract.edit_revision ?? 0, request_id: crypto.randomUUID(),
       customer_id: contract.customer_id, plan_id: contract.plan_id, total: (contract.total_cents / 100).toFixed(2),
@@ -132,8 +136,13 @@ export default function WebsiteContractsPage() {
       if (!response.ok || !payload.id) throw new Error(payload.error || 'O banco não confirmou a contratação.');
       if (form.subscription && !payload.subscription_id) throw new Error('O banco não confirmou a assinatura conjunta. Atualize e confira os cadastros antes de repetir.');
       setForm(null);
-      setMessage(form.id ? 'Contratação editada, com histórico preservado e sem cobrar. A assinatura recorrente não foi alterada.' : payload.subscription_id
-        ? 'Criação e assinatura salvas juntas, sem cobrar. Gere as parcelas do projeto aqui e ative a hospedagem/manutenção em Assinaturas recorrentes.'
+      setSubscriptionContract({
+        id: payload.id, customer_id: form.customer_id,
+        customer_name: options.customers.find((customer) => customer.id === form.customer_id)?.name || 'Cliente da contratação',
+        project_type: options.plans.find((plan) => plan.id === form.plan_id)?.project_type || null,
+      });
+      setMessage(form.id ? 'Contratação editada, com histórico preservado e sem cobrar. Gerencie as assinaturas vinculadas abaixo.' : payload.subscription_id
+        ? 'Criação e assinatura salvas juntas, sem cobrar. Adicione outras assinaturas abaixo e ative somente após aprovação do cliente.'
         : 'Contratação e parcelas salvas somente na Holding. Para cobrar, use Gerar no Asaas.');
       await load();
     } catch (failure) {
@@ -254,7 +263,7 @@ export default function WebsiteContractsPage() {
       {form && (
         <form onSubmit={save} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-800">{form.id ? 'Editar contratação de projeto' : 'Nova contratação de projeto'}</h2>
-          {form.id && <p className="text-sm text-amber-800">A edição exige ausência de nota fiscal e exclusão das cobranças anteriores no Asaas. O histórico será preservado. Hospedagem/manutenção é gerenciada separadamente.</p>}
+          {form.id && <p className="text-sm text-amber-800">A edição das parcelas exige ausência de nota fiscal e exclusão das cobranças anteriores no Asaas. O histórico será preservado. As assinaturas vinculadas possuem salvamento independente na seção abaixo.</p>}
           <fieldset disabled={saving} className="space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
               <label className={commercialLabelClass}><span>Cliente *</span>
@@ -341,6 +350,9 @@ export default function WebsiteContractsPage() {
           </fieldset>
         </form>
       )}
+      {subscriptionContract && <WebsiteContractSubscriptions key={subscriptionContract.id}
+        contractId={subscriptionContract.id} customerId={subscriptionContract.customer_id}
+        customerName={subscriptionContract.customer_name} projectType={subscriptionContract.project_type} />}
       {loading ? <p role="status" className="py-8 text-center text-slate-500">Carregando contratações...</p> : !form && !loadError && (
         contracts.length ? contracts.map((contract) => (
           <article key={contract.id} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
@@ -378,6 +390,10 @@ export default function WebsiteContractsPage() {
               <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">Confira o painel Asaas antes de qualquer nova emissão. Consultar Asaas apenas recupera cobranças existentes, sem criar outras. Emissão parcial ou processamento interrompido exige revisão administrativa.</p>
             )}
             <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" className={commercialSecondaryClass} disabled={Boolean(billingId) || Boolean(invoiceForm)}
+                onClick={() => setSubscriptionContract({ id: contract.id, customer_id: contract.customer_id, customer_name: contract.customer_snapshot.name, project_type: contract.project_type || null })}>
+                Assinaturas / ativar
+              </button>
               <button type="button" className={commercialSecondaryClass}
                 disabled={Boolean(billingId) || Boolean(form) || Boolean(invoiceForm) || contract.billing_state === 'processing' || Boolean(contract.holding_website_invoices?.length)}
                 onClick={() => editContract(contract)}>Editar contratação</button>

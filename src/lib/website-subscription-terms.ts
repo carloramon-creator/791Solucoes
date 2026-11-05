@@ -15,6 +15,9 @@ export type WebsiteSubscription = {
   asaas_subscription_id: string | null; asaas_customer_id: string | null; remote_status: string | null;
   last_error: string | null;
   contract_id: string | null;
+  approval_status: 'pending' | 'approved';
+  approved_at: string | null;
+  approved_by: string | null;
   lifecycle_status: 'active' | 'paused' | 'cancelled';
   pending_action: 'pause' | 'resume' | 'cancel' | null;
   resume_due_date: string | null;

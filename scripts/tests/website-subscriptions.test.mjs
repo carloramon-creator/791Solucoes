@@ -27,7 +27,7 @@ const row = (patch = {}) => ({
   plan_snapshot: { name: 'Hospedagem', scope: 'Backup', invoice_policy: 'automatic_after_payment', billing_cycle: 'quarterly' },
   amount_cents: 25550, payment_method: 'PIX', first_due_date: '2026-11-20',
   asaas_environment: 'production', asaas_subscription_id: 'sub_test', asaas_customer_id: 'cus_test',
-  billing_state: 'issued', remote_status: 'ACTIVE', lifecycle_status: 'active', pending_action: null, resume_due_date: null, ...patch,
+  billing_state: 'issued', remote_status: 'ACTIVE', lifecycle_status: 'active', approval_status: 'approved', pending_action: null, resume_due_date: null, ...patch,
 });
 const payment = (patch = {}) => ({
   id: 'pay_test', subscription: 'sub_test', customer: 'cus_test', value: 255.5, dueDate: '2026-11-20',
@@ -37,6 +37,13 @@ const payment = (patch = {}) => ({
 const remote = (patch = {}) => ({
   id: 'sub_test', customer: 'cus_test', billingType: 'PIX', cycle: 'QUARTERLY', value: 255.5,
   externalReference: terms.websiteSubscriptionReference(id), status: 'ACTIVE', nextDueDate: '2027-02-20', ...patch,
+});
+
+test('pending client approval cannot reach the Asaas adapter even through direct generation', async () => {
+  const h = harness({ local: row({ billing_state: 'local', approval_status: 'pending' }) });
+  await assert.rejects(h.billWebsiteSubscription(id, true), /aprovação do cliente/);
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.writes.length, 0);
 });
 
 function harness({ local = row(), current = payment(), environment = 'production', sendFail = false, lookupFail = false, createTimeout = false, matches = [remote()] } = {}) {
@@ -253,6 +260,7 @@ test('subscription APIs enforce fiscal permissions, validate input, and only per
     '@/lib/supabase-server': { supabaseServer: { rpc: async (name, args) => { rpcs.push({ name, args }); return { data: id, error: null }; } } },
     '@/lib/website-subscription-terms': terms,
     '@/lib/holding-customers': customers,
+    '@/lib/website-subscription-approval': { approveWebsiteSubscription: async () => {} },
     '@/lib/website-subscriptions': {
       billWebsiteSubscription: async (...args) => { bills.push(args); return { message: 'Test' }; },
       changeWebsiteSubscription: async (...args) => { changes.push(args); return { message: 'Test' }; },
@@ -277,7 +285,8 @@ test('subscription APIs enforce fiscal permissions, validate input, and only per
   assert.equal(rpcs[0].name, 'holding_create_website_subscription');
   assert.equal(rpcs[0].args.p_amount_cents, 25550); assert.equal(rpcs[0].args.p_cycle, 'quarterly');
   assert.equal(rpcs[0].args.plan_snapshot, undefined); assert.equal(rpcs[0].args.asaas_subscription_id, undefined);
-  for (const action of ['generate', 'sync']) assert.equal((await billing.POST(request({ id, action }))).status, 200);
+  assert.equal((await billing.POST(request({ id, action: 'generate' }))).status, 400);
+  for (const action of ['generate', 'sync']) assert.equal((await billing.POST(request({ id, action, confirmed: true }))).status, 200);
   assert.deepEqual(bills, [[id, true], [id, false]]);
   assert.equal((await billing.POST(request({ id, action: 'delete' }))).status, 400);
   for (const action of ['pause', 'resume', 'cancel']) {

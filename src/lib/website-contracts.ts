@@ -1,5 +1,6 @@
 import { isUuid } from '@/lib/holding-customers';
 import type { WebsiteFiscalConfig } from '@/lib/website-plans';
+import type { WebsiteProjectType } from '@/lib/website-plans';
 
 export const WEBSITE_PAYMENT_METHODS = { PIX: 'Pix', BOLETO: 'Boleto', CREDIT_CARD: 'Cartão de crédito' } as const;
 export type WebsitePaymentMethod = keyof typeof WEBSITE_PAYMENT_METHODS;
@@ -10,6 +11,7 @@ export type WebsiteInstallment = {
   kind: 'deposit' | 'balance';
 };
 export type WebsiteContract = {
+  project_type?: WebsiteProjectType | null;
   edit_revision?: number;
   updated_at?: string;
   bundled_subscription?: boolean;

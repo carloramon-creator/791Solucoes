@@ -78,14 +78,14 @@ export default function WebsiteSubscriptionsPage() {
         : action === 'resume'
           ? `Reativar esta assinatura Websites com próximo vencimento em ${dateLabel(nextDueDate || '')}? Novas cobranças voltarão a ser geradas. Cobranças já emitidas não serão alteradas.`
           : action === 'generate'
-      ? `Ativar assinatura de ${commercialMoney(row.amount_cents)} por ciclo ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]} para ${row.customer_snapshot.name}?\n\nEm produção, o Asaas gerará cobranças contínuas até a pausa/cancelamento. Cada pagamento confirmado emitirá uma NFS-e real pelo valor do período. No sandbox não haverá nota de produção.`
+      ? `Confirmo que o cliente aprovou esta assinatura. Ativar ${commercialMoney(row.amount_cents)} por ciclo ${WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]} para ${row.customer_snapshot.name}?\n\nEm produção, o Asaas gerará cobranças contínuas até a pausa/cancelamento. Cada pagamento confirmado emitirá uma NFS-e real pelo valor do período. No sandbox não haverá nota de produção.`
       : 'Consultar a assinatura no Asaas? Pagamentos confirmados de produção ainda sem operação fiscal reservada poderão gerar NFS-e automaticamente.';
     if (!window.confirm(`${row.customer_snapshot.name} — ${row.plan_snapshot.name}\n\n${prompt}`)) return;
     busy.current = true; setWorking(true); setError(''); setMessage('');
     try {
       const response = await holdingAuthFetch('/api/admin/website-subscriptions/billing', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-          id: row.id, action, ...(change ? { confirmed: true } : {}), ...(action === 'resume' ? { next_due_date: nextDueDate } : {}),
+          id: row.id, action, ...(change || action === 'generate' ? { confirmed: true } : {}), ...(action === 'resume' ? { next_due_date: nextDueDate } : {}),
         }),
       });
       const payload: { message?: string; error?: string } = await response.json();
@@ -157,7 +157,7 @@ export default function WebsiteSubscriptionsPage() {
         <div><h2 className="font-bold text-slate-800">{row.plan_snapshot.name}</h2><p className="text-sm text-slate-600">{row.customer_snapshot.name}</p></div>
         <div className="text-sm"><strong>{commercialMoney(row.amount_cents)}</strong> · {WEBSITE_BILLING_CYCLES[row.plan_snapshot.billing_cycle]}<p>{STATES[row.billing_state]}{row.remote_status ? ` · ${row.remote_status}` : ''}</p></div>
       </div>
-      <p className="text-sm font-semibold text-slate-700">{WEBSITE_SUBSCRIPTION_STATES[row.lifecycle_status]}</p>
+      <p className="text-sm font-semibold text-slate-700">{row.approval_status === 'pending' ? 'Aguardando aprovação do cliente e ativação pelo gestor' : WEBSITE_SUBSCRIPTION_STATES[row.lifecycle_status]}</p>
       {row.contract_id && <Link href="/assinaturas/websites" className="block text-sm text-blue-700 underline">Contratada junto com a criação — ver projeto</Link>}
       {row.pending_action && <p role="alert" className="text-sm text-amber-800">Alteração pendente de confirmação. Consulte o Asaas antes de qualquer nova ação.</p>}
       {row.last_error && <p role="alert" className="text-sm text-red-700">{row.last_error}</p>}

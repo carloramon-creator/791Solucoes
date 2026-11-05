@@ -343,4 +343,42 @@ test('isolated PostgreSQL: customer and contract migration, grants, snapshots, a
       await db.exec('reset role');
     }
   });
+  await t.test('multiple linked subscriptions keep independent terms, pending approval, atomicity and customer/type isolation', async () => {
+    await db.exec(`alter table holding_permission_profiles add column active boolean default true,add column is_system boolean default false;
+      insert into holding_permission_resources(code) values('menu.websites');`);
+    await db.exec(await readFile('supabase/migrations/20261105220000_website_project_scope.sql', 'utf8'));
+    await db.exec(await readFile('supabase/migrations/20261105233000_website_subscription_approval.sql', 'utf8'));
+    assert.ok((await db.query("select approval_status from holding_website_subscriptions")).rows.every((r) => r.approval_status === 'approved'));
+    const recurringPlan = '20000000-0000-4000-8000-000000000022';
+    await db.query(`insert into holding_website_plans(id,name,scope,category,billing_cycle,price_cents,recurring_prices,fiscal_config)
+      values($1,'Hospedagem teste','Backup','hosting','monthly',10000,'{"monthly":10000,"annual":99000}',$2)`, [recurringPlan, JSON.stringify(fiscalConfig)]);
+    await db.query("update holding_website_contracts set project_type='institutional' where id=$1", [contractId]);
+    const add = (request, cycle = 'monthly') => db.query(
+      "select holding_add_contract_subscription($1,$2,$3,12345,'PIX','2026-12-10',$4) as id",
+      [contractId, request, recurringPlan, cycle],
+    );
+    const firstRequest = '30000000-0000-4000-8000-000000000077';
+    const first = (await add(firstRequest)).rows[0].id;
+    assert.equal((await add(firstRequest)).rows[0].id, first);
+    await assert.rejects(add(firstRequest, 'annual'), /dados diferentes/);
+    const second = (await add('30000000-0000-4000-8000-000000000078', 'annual')).rows[0].id;
+    assert.notEqual(first, second);
+    const linked = (await db.query('select * from holding_website_subscriptions where id in ($1,$2)', [first, second])).rows;
+    assert.ok(linked.every((r) => r.contract_id === contractId && r.customer_id === customer && r.approval_status === 'pending' && r.billing_state === 'local'));
+    assert.deepEqual(linked.map((r) => r.plan_snapshot.billing_cycle).sort(), ['annual', 'monthly']);
+    await db.query("update holding_website_plans set project_type='store' where id=$1", [recurringPlan]);
+    const before = (await db.query('select count(*)::int as n from holding_website_subscriptions')).rows[0].n;
+    await assert.rejects(add('30000000-0000-4000-8000-000000000079'), /mesmo cliente e tipo/);
+    assert.equal((await db.query('select count(*)::int as n from holding_website_subscriptions')).rows[0].n, before);
+    const foreign = (await db.query('select id from holding_website_subscriptions where customer_id<>$1 limit 1', [customer])).rows[0].id;
+    await assert.rejects(db.query('select holding_link_website_subscription($1,$2)', [contractId, foreign]), /mesmo cliente/);
+    await db.query("update holding_website_subscriptions set lifecycle_status='cancelled' where id=$1", [first]);
+    await assert.rejects(db.query('select holding_link_website_subscription($1,$2)', [contractId, first]), /encerrada/);
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec(`set role ${role}`);
+      await assert.rejects(add(firstRequest), /permission denied/);
+      await assert.rejects(db.query('select holding_link_website_subscription($1,$2)', [contractId, second]), /permission denied/);
+      await db.exec('reset role');
+    }
+  });
 });

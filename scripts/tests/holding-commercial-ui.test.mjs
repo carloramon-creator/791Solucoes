@@ -54,7 +54,7 @@ function text(node) {
   return node && typeof node === 'object' ? text(node.props?.children) : '';
 }
 
-function harness(path, request, confirm = true) {
+function harness(path, request, confirm = true, props) {
   const states = [], refs = [], effects = [], callbacks = [], pending = [], calls = [], confirmations = [];
   let stateIndex = 0, refIndex = 0, effectIndex = 0, callbackIndex = 0;
   const changed = (a, b) => !a || a.some((value, i) => value !== b[i]);
@@ -85,6 +85,9 @@ function harness(path, request, confirm = true) {
     '@/lib/website-plans': catalog,
     '@/components/HoldingCommercialFields': fields,
     '@/components/WebsiteSubscriptionFields': subscriptionFields,
+    '@/components/WebsiteContractSubscriptions': { WebsiteContractSubscriptions: () => null },
+    './WebsiteSubscriptionFields': subscriptionFields,
+    './HoldingCommercialFields': fields,
     '@/lib/website-subscription-terms': subscriptionTerms,
     '@/lib/holding-auth-fetch': { holdingAuthFetch: async (url, init = {}) => {
       const method = init.method || 'GET';
@@ -95,7 +98,7 @@ function harness(path, request, confirm = true) {
   }, { window: { confirm: (message) => { confirmations.push(message); return confirm; } } });
   const render = () => {
     stateIndex = 0; refIndex = 0; effectIndex = 0; callbackIndex = 0;
-    const tree = page.default();
+    const tree = props ? page.WebsiteContractSubscriptions(props) : page.default();
     while (pending.length) pending.shift()();
     return tree;
   };
@@ -114,6 +117,54 @@ function harness(path, request, confirm = true) {
   };
 }
 const contractResponse = () => Response.json({ contracts: [] });
+test('embedded subscriptions inherit the contract, filter plans, hide activation from nonmanagers and require client confirmation', async () => {
+  const rows = [{
+    id: '40000000-0000-4000-8000-000000000001', customer_id: customerId, contract_id: contractId,
+    plan_snapshot: { name: 'Hospedagem', billing_cycle: 'monthly' }, first_due_date: '2026-12-10', amount_cents: 7900,
+    approval_status: 'pending', lifecycle_status: 'active', billing_state: 'local',
+  }];
+  const recurringPlans = [
+    { ...plan, id: 'generic', billing_cycle: 'monthly', project_type: null, recurring_prices: { monthly: 7900 } },
+    { ...plan, id: 'foreign-type', billing_cycle: 'monthly', project_type: 'store' },
+  ];
+  const request = (url) => url.endsWith('/me')
+    ? Response.json({ permissionCodes: ['action.websites.manage'] })
+    : Response.json({ subscriptions: rows, plans: recurringPlans });
+  const props = { contractId, customerId, customerName: customer.name, projectType: 'institutional' };
+  const ui = harness('src/components/WebsiteContractSubscriptions.tsx', request, false, props);
+  await ui.mount();
+  assert.match(text(ui.render()), /Aguardando aprovação do cliente/);
+  assert.match(text(ui.render()), /Preparação liberada, sem ativação de cobrança/);
+  ui.button('Ativar assinaturas').props.onClick();
+  assert.match(ui.confirmations[0], /cliente|aprovou/);
+  assert.equal(ui.calls.filter((call) => call.method === 'POST').length, 0);
+  ui.button('Adicionar assinatura').props.onClick();
+  const select = ui.field('Produto recorrente');
+  assert.equal(nodes(select, (node) => node.type === 'option' && node.props.value === 'foreign-type').length, 0);
+  assert.equal(nodes(ui.render(), (node) => node.type === 'label' && text(node).includes('Cliente')).length, 0);
+
+  const employee = harness('src/components/WebsiteContractSubscriptions.tsx',
+    (url) => url.endsWith('/me') ? Response.json({ permissionCodes: [] }) : request(url), true, props);
+  await employee.mount();
+  assert.equal(employee.button('Ativar assinaturas'), undefined);
+
+  const create = harness('src/components/WebsiteContractSubscriptions.tsx', (url, method, body) => {
+    if (method === 'POST') {
+      assert.equal(body.contract_id, contractId); assert.equal(body.customer_id, undefined);
+      assert.equal(body.amount_cents, 12345);
+      return Response.json({ id: 'saved' }, { status: 201 });
+    }
+    return request(url);
+  }, true, props);
+  await create.mount(); create.button('Adicionar assinatura').props.onClick();
+  create.fill('Produto recorrente', 'generic');
+  create.fill('Valor personalizado', '123.45');
+  create.fill('Primeiro vencimento', '2026-12-10');
+  create.fill('Confirmo o enquadramento', true);
+  create.submit(); await settle(); await settle();
+  assert.equal(create.calls.filter((call) => call.method === 'POST').length, 1);
+  assert.match(text(create.render()), /Nenhuma cobrança foi gerada/);
+});
 test('commercial catalog no longer exposes the platform shortcut outside its permission-gated sidebar menu', async () => {
   const ui = harness('src/app/planos/websites/page.tsx', () => Response.json({ plans: [] }));
   await ui.mount();

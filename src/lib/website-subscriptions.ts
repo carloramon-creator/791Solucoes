@@ -170,6 +170,7 @@ export async function billWebsiteSubscription(id: string, generate: boolean) {
   if (error || !data) throw new Error('Assinatura Websites não encontrada.');
   const row: WebsiteSubscription = data;
   if (row.billing_state === 'processing') throw new Error('Assinatura em processamento. Confira o Asaas antes de liberar o estado.');
+  if (generate && row.approval_status !== 'approved') throw new Error('A assinatura aguarda confirmação da aprovação do cliente por um gestor.');
   if (generate && row.billing_state !== 'local') throw new Error('Assinatura já enviada ou em revisão. Use Consultar Asaas, sem gerar outra.');
   if (generate && (row.lifecycle_status === 'paused' || row.lifecycle_status === 'cancelled' || row.pending_action)) {
     throw new Error('Assinatura pausada, encerrada ou com ação pendente. Não será criada recorrência.');

@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase-server';
 import { validateWebsitePlan } from '@/lib/website-plans';
 
 const REQUIRED_RESOURCES = ['menu.planos', 'submenu.planos.websites'];
-const PLAN_COLUMNS = 'id, name, description, scope, category, project_type, billing_cycle, price_cents, recurring_prices, active, fiscal_config, created_at, updated_at';
+const PLAN_COLUMNS = 'id, name, description, scope, category, project_type, billing_cycle, price_cents, recurring_prices, website_features, active, fiscal_config, created_at, updated_at';
 
 async function authorize(req: Request) {
   const auth = await authenticateHoldingAdmin(req);

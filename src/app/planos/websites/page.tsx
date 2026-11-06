@@ -10,9 +10,14 @@ import {
 import {
   WEBSITE_BILLING_CYCLES,
   WEBSITE_CATEGORIES,
+  WEBSITE_FEATURES,
+  WEBSITE_FEATURE_GROUPS,
+  WEBSITE_FEATURE_GROUP_LABELS,
   WEBSITE_PROJECT_TYPES,
   type WebsiteProjectType,
+  type WebsiteFeature,
   validateWebsitePlan,
+  websiteDefaultFeatures,
   websiteBillingCycles,
   websiteRecurringPrices,
   WEBSITE_RECURRING_CYCLES,
@@ -32,6 +37,7 @@ type PlanForm = {
   price: string;
   active: boolean;
   fiscal_config: WebsiteFiscalConfig;
+  website_features: WebsiteFeature[];
   cycle_prices: Record<string, string>;
 };
 
@@ -44,6 +50,7 @@ const EMPTY_FORM: PlanForm = {
   name: '', description: '', scope: '', category: 'creation',
   billing_cycle: 'one_time', price: '', active: true,
   fiscal_config: EMPTY_FISCAL,
+  website_features: [],
   cycle_prices: {},
 };
 const selectClass = `${inputClass} appearance-none pr-10`;
@@ -103,6 +110,8 @@ export default function PlanosWebsitesPage() {
       price: (plan.price_cents / 100).toFixed(2),
       active: plan.active,
       fiscal_config: plan.fiscal_config ? { ...plan.fiscal_config } : { ...EMPTY_FISCAL },
+      website_features: plan.website_features || (plan.category === 'creation' && plan.project_type
+        ? websiteDefaultFeatures(plan.project_type) : []),
       cycle_prices: Object.fromEntries(Object.entries(websiteRecurringPrices(plan)).map(([key, value]) => [key, (value / 100).toFixed(2)])),
     } : { ...EMPTY_FORM });
   }
@@ -122,6 +131,7 @@ export default function PlanosWebsitesPage() {
       price_cents: Math.round(Number(form.price) * 100),
       active: form.active,
       fiscal_config: form.fiscal_config,
+      website_features: form.website_features,
       recurring_prices: form.billing_cycle === 'one_time' ? {} : Object.fromEntries(
         WEBSITE_RECURRING_CYCLES.filter((cycle) => (cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle])?.trim())
           .map((cycle) => [cycle, Math.round(Number(cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle]) * 100)]),
@@ -207,7 +217,13 @@ export default function PlanosWebsitesPage() {
                 <span>Tipo de projeto {form.category === 'creation' ? '*' : '(opcional)'}</span>
                 <span className="relative block">
                   <select className={selectClass} value={form.project_type} required={form.category === 'creation'}
-                    onChange={(event) => setForm({ ...form, project_type: event.target.value as WebsiteProjectType | '' })}>
+                    onChange={(event) => {
+                      const project_type = event.target.value as WebsiteProjectType | '';
+                      setForm({ ...form, project_type,
+                        website_features: form.category === 'creation' && project_type
+                          ? websiteDefaultFeatures(project_type) : [],
+                      });
+                    }}>
                     <option value="">{form.category === 'creation' ? 'Selecione o tipo' : 'Sem restrição de tipo'}</option>
                     {Object.entries(WEBSITE_PROJECT_TYPES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
@@ -223,6 +239,8 @@ export default function PlanosWebsitesPage() {
                     const cycles = websiteBillingCycles(category);
                     const billing_cycle = cycles.includes(form.billing_cycle) ? form.billing_cycle : cycles[0];
                     setForm({ ...form, category, billing_cycle,
+                      website_features: category === 'creation' && form.project_type
+                        ? websiteDefaultFeatures(form.project_type) : [],
                       price: billing_cycle === form.billing_cycle ? form.price : (form.cycle_prices[billing_cycle] || ''),
                     });
                   }}>
@@ -282,6 +300,55 @@ export default function PlanosWebsitesPage() {
                 onChange={(event) => setForm({ ...form, scope: event.target.value })}
                 placeholder="Defina entregas, revisões, prazo, suporte, backups e o que não está incluído." />
             </label>
+            {form.category === 'creation' && form.project_type && (
+              <section aria-labelledby="website-features-title" className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <h3 id="website-features-title" className="font-bold text-slate-800">Recursos incluídos no painel do projeto</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    O tipo de site sugere os recursos iniciais. Esta seleção fica registrada na contratação e não muda quando o catálogo for atualizado.
+                    Recursos em desenvolvimento não podem ser vendidos ainda.
+                  </p>
+                </div>
+                {Object.entries(WEBSITE_FEATURE_GROUPS).map(([group, features]) => {
+                  const visibleFeatures = features.filter((feature) => {
+                    const definition = WEBSITE_FEATURES[feature];
+                    return !('projectTypes' in definition)
+                      || (definition.projectTypes as readonly WebsiteProjectType[]).includes(form.project_type as WebsiteProjectType);
+                  });
+                  if (!visibleFeatures.length) return null;
+                  return <div key={group} className="space-y-2">
+                    <h4 className="text-sm font-semibold text-slate-700">{WEBSITE_FEATURE_GROUP_LABELS[group as keyof typeof WEBSITE_FEATURE_GROUP_LABELS]}</h4>
+                    <fieldset className="grid gap-3 md:grid-cols-2">
+                      {visibleFeatures.map((feature) => {
+                        const definition = WEBSITE_FEATURES[feature];
+                        const included = form.website_features.includes(feature);
+                        return <label key={feature} className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${
+                          definition.available ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-100 text-slate-500'
+                        }`}>
+                          <input type="checkbox" className="mt-0.5" checked={included}
+                            disabled={!definition.available || ('required' in definition && definition.required)}
+                            onChange={(event) => setForm({ ...form, website_features: event.target.checked
+                              ? [...form.website_features, feature]
+                              : form.website_features.filter((value) => value !== feature) })} />
+                          <span>
+                            <span className="block font-semibold text-slate-800">{definition.label}</span>
+                            <span className="mt-0.5 block text-xs font-normal text-slate-600">{definition.description}</span>
+                            {!definition.available && <span className="mt-1 block text-xs font-semibold text-amber-700">Em desenvolvimento · não disponível para contratação</span>}
+                            {definition.available && ('required' in definition && definition.required) && <span className="mt-1 block text-xs text-slate-500">Etapa essencial · sempre incluída</span>}
+                          </span>
+                        </label>;
+                      })}
+                    </fieldset>
+                  </div>;
+                })}
+                {form.project_type === 'landing' && <p className="text-xs text-slate-600">
+                  A landing page permite fotos e imagens. Áudio, vídeo e webmail integrado ainda não estão disponíveis no Websites.
+                </p>}
+                {form.project_type === 'store' && <p className="text-xs text-amber-800">
+                  A loja virtual ainda não possui checkout nem pagamentos online. O catálogo atual é uma vitrine e não deve ser anunciado como venda automatizada.
+                </p>}
+              </section>
+            )}
             <section aria-labelledby="website-fiscal-title" className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <h3 id="website-fiscal-title" className="font-bold text-slate-800">Dados fiscais deste produto</h3>
               <p className="text-sm text-slate-600">
@@ -395,6 +462,13 @@ export default function PlanosWebsitesPage() {
                   <h4 className="text-xs font-bold uppercase text-slate-500">Escopo e condições</h4>
                   <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 break-words">{plan.scope}</p>
                 </div>
+                {plan.category === 'creation' && <div className="mt-4 border-t border-slate-100 pt-4">
+                  <h4 className="text-xs font-bold uppercase text-slate-500">Recursos do projeto</h4>
+                  <p className="mt-2 text-sm text-slate-700">
+                    {(plan.website_features || (plan.project_type ? websiteDefaultFeatures(plan.project_type) : []))
+                      .map((feature) => WEBSITE_FEATURES[feature].label).join(' · ')}
+                  </p>
+                </div>}
                 <p className="mt-3 text-xs text-slate-500">
                   Fiscal: {plan.fiscal_config?.accountant_confirmed ? 'enquadramento confirmado' : 'pendente de validação'}.
                   {' '}{plan.billing_cycle === 'one_time' ? 'Regra: nota manual do total.' : 'Regra: nota após pagamento da assinatura.'}

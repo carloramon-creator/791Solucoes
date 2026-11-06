@@ -17,21 +17,24 @@ function load(path, dependencies = {}) {
 
 test('only active linked subscriptions for the same customer release assigned projects; no payment required', async () => {
   const contracts = [
-    { id: 'a', customer_id: 'c', customer_snapshot: { name: 'Cliente' }, plan_snapshot: { name: 'Plano', scope: 'Escopo' }, project_type: 'store', designer_email: 'designer@example.test' },
+    { id: 'a', customer_id: 'c', customer_snapshot: { name: 'Cliente' }, plan_snapshot: { name: 'Plano', scope: 'Escopo', website_features: ['configuration', 'briefing', 'templates', 'domain_managed', 'customer_dns', 'email_setup'] }, project_type: 'store', designer_email: 'designer@example.test' },
     { id: 'b', customer_id: 'c', customer_snapshot: { name: 'Cliente' }, plan_snapshot: { name: 'Plano', scope: 'Escopo' }, project_type: 'store', designer_email: 'other@example.test' },
   ];
   let subscriptions = [];
-  const { websiteProjects } = load('src/lib/website-projects.ts', { '@/lib/supabase-server': { supabaseServer: {
-    from(table) {
-      let rows = table === 'holding_website_contracts' ? contracts : subscriptions;
-      return {
-        select() { return this; }, not() { return this; }, order() { return this; },
-        in(key, values) { rows = rows.filter((row) => values.includes(row[key])); return this; },
-        eq(key, value) { rows = rows.filter((row) => row[key] === value); return this; },
-        then(resolve, reject) { return Promise.resolve({ data: rows, error: null }).then(resolve, reject); },
-      };
-    },
-  } } });
+  const { websiteProjects } = load('src/lib/website-projects.ts', {
+    '@/lib/website-plans': load('src/lib/website-plans.ts'),
+    '@/lib/supabase-server': { supabaseServer: {
+      from(table) {
+        let rows = table === 'holding_website_contracts' ? contracts : subscriptions;
+        return {
+          select() { return this; }, not() { return this; }, order() { return this; },
+          in(key, values) { rows = rows.filter((row) => values.includes(row[key])); return this; },
+          eq(key, value) { rows = rows.filter((row) => row[key] === value); return this; },
+          then(resolve, reject) { return Promise.resolve({ data: rows, error: null }).then(resolve, reject); },
+        };
+      },
+    } },
+  });
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
   subscriptions = [{ contract_id: 'a', customer_id: 'wrong', lifecycle_status: 'active' }];
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
@@ -39,7 +42,10 @@ test('only active linked subscriptions for the same customer release assigned pr
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
   subscriptions = contracts.map((row) => ({ contract_id: row.id, customer_id: row.customer_id, lifecycle_status: 'active' }));
   assert.deepEqual((await websiteProjects(' DESIGNER@EXAMPLE.TEST ', false)).map((row) => row.contractId), ['a']);
-  assert.deepEqual((await websiteProjects('manager@example.test', true)).map((row) => row.contractId), ['a', 'b']);
+  const managerProjects = await websiteProjects('manager@example.test', true);
+  assert.deepEqual(managerProjects.map((row) => row.contractId), ['a', 'b']);
+  assert.deepEqual(managerProjects[0].websiteFeatures, ['configuration', 'briefing', 'templates', 'domain_managed', 'customer_dns', 'email_setup']);
+  assert.deepEqual(managerProjects[1].websiteFeatures, ['configuration', 'briefing', 'templates', 'content', 'images', 'catalog']);
   contracts[0].designer_email = 'other@example.test';
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
 });

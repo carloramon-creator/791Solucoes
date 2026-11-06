@@ -1,4 +1,5 @@
 import { supabaseServer as db } from '@/lib/supabase-server';
+import { isWebsiteFeature, websiteDefaultFeatures, WEBSITE_FEATURES, type WebsiteFeature, type WebsiteProjectType } from '@/lib/website-plans';
 
 export async function websiteProjects(email: string, manager: boolean, contractId?: string) {
   let query = db.from('holding_website_contracts')
@@ -14,11 +15,28 @@ export async function websiteProjects(email: string, manager: boolean, contractI
   if (subscriptions.error) throw subscriptions.error;
   return data.filter((contract) => subscriptions.data.some((subscription) =>
     subscription.contract_id === contract.id && subscription.customer_id === contract.customer_id))
-    .map((contract) => ({
-      contractId: contract.id, customerId: contract.customer_id,
-      customerName: contract.customer_snapshot.name, planName: contract.plan_snapshot.name,
-      scope: contract.plan_snapshot.scope, websiteType: contract.project_type,
-      designerEmail: contract.designer_email,
-      scopeRevision: contract.edit_revision || 0,
-    }));
+    .map((contract) => {
+      const savedFeatures = contract.plan_snapshot.website_features;
+      let websiteFeatures: WebsiteFeature[];
+      if (savedFeatures === undefined) {
+        websiteFeatures = websiteDefaultFeatures(contract.project_type as WebsiteProjectType);
+      } else if (Array.isArray(savedFeatures)) {
+        websiteFeatures = savedFeatures.map((feature: unknown) => {
+          if (!isWebsiteFeature(feature) || !WEBSITE_FEATURES[feature].available) {
+            throw new Error('Recursos inválidos no retrato da contratação de Websites.');
+          }
+          return feature;
+        });
+      } else {
+        throw new Error('Recursos inválidos no retrato da contratação de Websites.');
+      }
+      return {
+        contractId: contract.id, customerId: contract.customer_id,
+        customerName: contract.customer_snapshot.name, planName: contract.plan_snapshot.name,
+        scope: contract.plan_snapshot.scope, websiteType: contract.project_type,
+        websiteFeatures,
+        designerEmail: contract.designer_email,
+        scopeRevision: contract.edit_revision || 0,
+      };
+    });
 }

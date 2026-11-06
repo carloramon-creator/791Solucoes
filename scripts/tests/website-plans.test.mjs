@@ -46,12 +46,30 @@ test('validates every category and billing combination, without treating project
   }
 });
 
+test('defaults resources by site type and rejects unavailable or incompatible project features', () => {
+  assert.deepEqual(catalog.websiteDefaultFeatures('landing'), ['configuration', 'briefing', 'templates', 'content', 'images']);
+  assert.ok(catalog.websiteDefaultFeatures('catalog').includes('catalog'));
+  for (const website_features of [
+    ['configuration', 'templates'],
+    ['configuration', 'briefing', 'audio_library'],
+    ['configuration', 'briefing', 'catalog'],
+    ['configuration', 'briefing', 'templates', 'templates'],
+  ]) {
+    assert.equal(catalog.validateWebsitePlan({ ...valid, website_features }).ok, false);
+  }
+  assert.equal(catalog.validateWebsitePlan({
+    ...valid, website_features: ['configuration', 'briefing', 'domain_managed', 'customer_dns', 'email_setup'],
+  }).ok, true);
+});
+
 test('preserves exact integer cents, trims text, and whitelists persisted properties', () => {
   const parsed = catalog.validateWebsitePlan({
     ...valid, name: ` ${valid.name} `, description: ' ', scope: ` ${valid.scope} `,
     active: false, system: '791glass', asaas_subscription_id: 'ignored',
   });
-  assert.deepEqual(parsed, { ok: true, data: { ...valid, description: '', active: false } });
+  assert.deepEqual(parsed, { ok: true, data: {
+    ...valid, description: '', active: false, website_features: catalog.websiteDefaultFeatures('institutional'),
+  } });
   for (const price_cents of [1, 999999999]) {
     assert.equal(catalog.validateWebsitePlan({ ...valid, price_cents }).ok, true);
   }
@@ -172,7 +190,7 @@ test('creates a project and lists its persisted shape, with no Glass, Barber or 
   assert.equal(listed.headers.get('cache-control'), 'no-store');
   assert.deepEqual((await listed.json()).plans, [plan]);
   const write = route.calls.find((call) => call.operation === 'insert');
-  assert.deepEqual(write.value, valid);
+  assert.deepEqual(write.value, { ...valid, website_features: catalog.websiteDefaultFeatures('institutional') });
   assert.equal(write.table, 'holding_website_plans');
 });
 
@@ -386,6 +404,7 @@ test('UI creates, reloads, edits and inactivates a product with exact price and 
   await ui.submit();
   assert.equal(ui.calls.at(-1).method, 'POST');
   assert.equal(ui.calls.at(-1).body.price_cents, 250099);
+  assert.deepEqual(ui.calls.at(-1).body.website_features, catalog.websiteDefaultFeatures('institutional'));
   assert.match(text(ui.render()), /2\.500,99/);
   assert.match(text(ui.render()), /Nenhuma cobrança ou nota fiscal foi gerada/);
   assert.equal(nodes(ui.render(), (node) => node.type === 'form').length, 0);
@@ -401,6 +420,27 @@ test('UI creates, reloads, edits and inactivates a product with exact price and 
   assert.equal(reloaded.calls.at(-1).body.id, id);
   assert.equal(api.rows.get(id).active, false);
   assert.match(text(reloaded.render()), /Inativo/);
+});
+
+test('UI starts with site-type defaults and cannot select unavailable landing-page media', async () => {
+  const api = loadRoute();
+  const ui = pageHarness(api.request);
+  await ui.mount();
+  ui.button('Novo produto').props.onClick();
+  ui.fill('Tipo de projeto', 'landing');
+  assert.equal(ui.field('Configuração do projeto').props.checked, true);
+  assert.equal(ui.field('Briefing').props.checked, true);
+  assert.equal(ui.field('Fotos e imagens').props.checked, true);
+  assert.equal(ui.field('Biblioteca de áudio').props.disabled, true);
+  assert.equal(ui.field('Biblioteca de vídeo').props.disabled, true);
+  assert.equal(ui.field('Webmail integrado').props.disabled, true);
+  assert.equal(ui.field('Loja com checkout').props.disabled, true);
+  ui.fill('Personalização de conteúdo', false);
+  ui.fill('Nome do produto', 'Landing essencial');
+  ui.fill('Escopo, limites', 'Página de apresentação com imagens.');
+  ui.fill('Preço total', '1000');
+  await ui.submit();
+  assert.deepEqual(api.rows.get(id).website_features, ['configuration', 'briefing', 'templates', 'images']);
 });
 
 test('UI switches between project and recurring categories with only compatible billing cycles', async () => {

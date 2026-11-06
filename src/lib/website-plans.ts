@@ -22,6 +22,52 @@ export const WEBSITE_PROJECT_TYPES = {
   store: 'Loja virtual',
 } as const;
 export type WebsiteProjectType = keyof typeof WEBSITE_PROJECT_TYPES;
+
+export const WEBSITE_FEATURES = {
+  configuration: { label: 'Configuração do projeto', description: 'Nome e informações gerais do website.', available: true, required: true },
+  briefing: { label: 'Briefing', description: 'Objetivo, identidade, referências e orientações para a equipe.', available: true, required: true },
+  templates: { label: 'Modelos prontos', description: 'Biblioteca de bases de conteúdo compatíveis com o tipo de site.', available: true },
+  content: { label: 'Personalização de conteúdo', description: 'Textos, layout, seções e prévia privada.', available: true },
+  images: { label: 'Fotos e imagens', description: 'Logo, imagem de destaque e imagens de conteúdo.', available: true },
+  catalog: { label: 'Catálogo de produtos e serviços', description: 'Cadastro de itens e modo de apresentação ou contato.', available: true, projectTypes: ['catalog', 'store'] },
+  domain_managed: { label: 'Domínio administrado pela 791', description: 'Registro e configuração do domínio contratado pela 791 para o cliente.', available: true },
+  customer_dns: { label: 'Domínio do cliente com DNS assistido', description: 'A equipe orienta os registros; o cliente aplica ou concede acesso delegado.', available: true },
+  email_setup: { label: 'Configuração de e-mail profissional', description: 'Configuração assistida de contas e servidores de e-mail do domínio.', available: true },
+  forms: { label: 'Formulários do site', description: 'Receber solicitações enviadas pelos visitantes.', available: false },
+  publications: { label: 'Publicações e blog', description: 'Criar e organizar artigos e novidades.', available: false },
+  services: { label: 'Serviços', description: 'Área própria para cadastro e apresentação de serviços.', available: false },
+  albums: { label: 'Álbuns de fotos', description: 'Galerias e coleções de imagens.', available: false },
+  social: { label: 'Redes sociais', description: 'Integração e apresentação dos canais sociais.', available: false },
+  audio_library: { label: 'Biblioteca de áudio', description: 'Envio e organização de arquivos de áudio.', available: false },
+  video_library: { label: 'Biblioteca de vídeo', description: 'Envio e organização de vídeos.', available: false },
+  webmail: { label: 'Webmail integrado', description: 'Acesso a e-mail pelo painel do website.', available: false },
+  online_checkout: { label: 'Loja com checkout e pagamentos', description: 'Pedidos e pagamentos online integrados.', available: false },
+} as const;
+export type WebsiteFeature = keyof typeof WEBSITE_FEATURES;
+export const WEBSITE_FEATURE_GROUPS = {
+  essential: ['configuration', 'briefing', 'templates', 'content', 'images'],
+  commerce: ['catalog', 'online_checkout'],
+  delivery: ['domain_managed', 'customer_dns', 'email_setup', 'webmail'],
+  future: ['forms', 'publications', 'services', 'albums', 'social', 'audio_library', 'video_library'],
+} as const satisfies Record<string, readonly WebsiteFeature[]>;
+export const WEBSITE_FEATURE_GROUP_LABELS = {
+  essential: 'Etapas e ferramentas do projeto',
+  commerce: 'Catálogo e comércio',
+  delivery: 'Domínio e e-mail',
+  future: 'Outros módulos do painel WM',
+} as const satisfies Record<keyof typeof WEBSITE_FEATURE_GROUPS, string>;
+
+export function websiteDefaultFeatures(projectType: WebsiteProjectType): WebsiteFeature[] {
+  return [
+    'configuration', 'briefing', 'templates', 'content', 'images',
+    ...(projectType === 'catalog' || projectType === 'store' ? ['catalog' as const] : []),
+  ];
+}
+
+export function isWebsiteFeature(value: unknown): value is WebsiteFeature {
+  return typeof value === 'string' && Object.hasOwn(WEBSITE_FEATURES, value);
+}
+
 export type WebsiteBillingCycle = keyof typeof WEBSITE_BILLING_CYCLES;
 export type WebsiteRecurringCycle = Exclude<WebsiteBillingCycle, 'one_time'>;
 export type WebsiteRecurringPrices = Partial<Record<WebsiteRecurringCycle, number>>;
@@ -87,6 +133,7 @@ export type WebsitePlanInput = {
   price_cents: number;
   active: boolean;
   fiscal_config: WebsiteFiscalConfig | null;
+  website_features: WebsiteFeature[];
   recurring_prices?: WebsiteRecurringPrices;
 };
 
@@ -126,6 +173,22 @@ export function validateWebsitePlan(value: unknown):
   if ((category === 'creation' && projectType === null)
     || (projectType !== null && (typeof projectType !== 'string' || !Object.hasOwn(WEBSITE_PROJECT_TYPES, projectType)))) {
     return { ok: false, error: 'Selecione o tipo de projeto contratado.' };
+  }
+  const projectFeatures = body.website_features === undefined
+    ? category === 'creation' && projectType ? websiteDefaultFeatures(projectType as WebsiteProjectType) : []
+    : body.website_features;
+  if (!Array.isArray(projectFeatures) || projectFeatures.some((feature) => !isWebsiteFeature(feature)
+    || !WEBSITE_FEATURES[feature].available) || new Set(projectFeatures).size !== projectFeatures.length) {
+    return { ok: false, error: 'Revise os recursos selecionados para este plano.' };
+  }
+  if (category !== 'creation' && projectFeatures.length) {
+    return { ok: false, error: 'Somente produtos de confecção podem definir recursos do painel do projeto.' };
+  }
+  if (category === 'creation' && (!projectFeatures.includes('configuration') || !projectFeatures.includes('briefing'))) {
+    return { ok: false, error: 'Configuração e briefing são etapas essenciais e devem permanecer incluídas.' };
+  }
+  if (projectFeatures.includes('catalog') && projectType !== 'catalog' && projectType !== 'store') {
+    return { ok: false, error: 'O catálogo só pode ser incluído em projetos de catálogo ou loja virtual.' };
   }
   if (!websiteBillingCycles(category).some((cycle) => cycle === body.billing_cycle)) {
     return { ok: false, error: 'A modalidade de cobrança não corresponde à categoria do serviço.' };
@@ -170,6 +233,7 @@ export function validateWebsitePlan(value: unknown):
       price_cents: body.price_cents,
       active: body.active,
       fiscal_config: fiscal.data,
+      website_features: projectFeatures as WebsiteFeature[],
       ...(recurringPrices ? { recurring_prices: recurringPrices } : {}),
     },
   };

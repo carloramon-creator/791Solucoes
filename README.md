@@ -129,6 +129,13 @@ pelo nome nem alterado por edicoes futuras no catalogo. Contratos antigos sem
 tipo herdam automaticamente o tipo do plano vinculado quando ele estiver definido.
 Precos nao sao preenchidos automaticamente.
 
+Os recursos opcionais dos planos de criacao sao limitados no banco. A migration
+`supabase/migrations/20261106009000_website_plan_features.sql` define a lista
+base; para permitir **Redes sociais**, aplicar depois
+`supabase/migrations/20261106010000_website_social_feature.sql` somente na
+Holding. A segunda migration amplia o conjunto permitido sem alterar os
+recursos ja selecionados nos planos.
+
 Aplicar somente na Holding
 `supabase/migrations/20261105220000_website_project_scope.sql`.
 Ela adiciona o tipo tecnico, atribuicao por funcionario e a permissao explicita

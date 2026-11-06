@@ -37,7 +37,7 @@ export const WEBSITE_FEATURES = {
   publications: { label: 'Publicações e blog', description: 'Criar e organizar artigos e novidades.', available: false },
   services: { label: 'Serviços', description: 'Área própria para cadastro e apresentação de serviços.', available: false },
   albums: { label: 'Álbuns de fotos', description: 'Galerias e coleções de imagens.', available: false },
-  social: { label: 'Redes sociais', description: 'Integração e apresentação dos canais sociais.', available: false },
+  social: { label: 'Redes sociais', description: 'Links para os perfis oficiais e WhatsApp do cliente.', available: true },
   audio_library: { label: 'Biblioteca de áudio', description: 'Envio e organização de arquivos de áudio.', available: false },
   video_library: { label: 'Biblioteca de vídeo', description: 'Envio e organização de vídeos.', available: false },
   webmail: { label: 'Webmail integrado', description: 'Acesso a e-mail pelo painel do website.', available: false },
@@ -48,12 +48,14 @@ export const WEBSITE_FEATURE_GROUPS = {
   essential: ['configuration', 'briefing', 'templates', 'content', 'images'],
   commerce: ['catalog', 'online_checkout'],
   delivery: ['domain_managed', 'customer_dns', 'email_setup', 'webmail'],
-  future: ['forms', 'publications', 'services', 'albums', 'social', 'audio_library', 'video_library'],
+  presence: ['social'],
+  future: ['forms', 'publications', 'services', 'albums', 'audio_library', 'video_library'],
 } as const satisfies Record<string, readonly WebsiteFeature[]>;
 export const WEBSITE_FEATURE_GROUP_LABELS = {
   essential: 'Etapas e ferramentas do projeto',
   commerce: 'Catálogo e comércio',
   delivery: 'Domínio e e-mail',
+  presence: 'Presença digital',
   future: 'Outros módulos do painel WM',
 } as const satisfies Record<keyof typeof WEBSITE_FEATURE_GROUPS, string>;
 

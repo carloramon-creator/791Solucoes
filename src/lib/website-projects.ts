@@ -7,14 +7,27 @@ export async function websiteProjects(email: string, manager: boolean, contractI
     .not('project_type', 'is', null);
   if (!manager) query = query.eq('designer_email', email.trim().toLowerCase());
   if (contractId) query = query.eq('id', contractId);
-  const { data, error } = await query.order('created_at');
-  if (error) throw error;
-  if (!data.length) return [];
-  const subscriptions = await db.from('holding_website_subscriptions').select('contract_id,customer_id')
-    .in('contract_id', data.map((contract) => contract.id)).eq('lifecycle_status', 'active');
-  if (subscriptions.error) throw subscriptions.error;
-  return data.filter((contract) => subscriptions.data.some((subscription) =>
-    subscription.contract_id === contract.id && subscription.customer_id === contract.customer_id))
+  query = query.order('created_at').order('id');
+  const eligible = [];
+  for (let offset = 0; ; offset += 500) {
+    const contracts = await query.range(offset, offset + 499);
+    if (contracts.error) throw contracts.error;
+    for (let start = 0; start < contracts.data.length; start += 100) {
+      const batch = contracts.data.slice(start, start + 100);
+      const active = new Set<string>();
+      for (let page = 0; ; page += 500) {
+        const subscriptions = await db.from('holding_website_subscriptions').select('id,contract_id,customer_id')
+          .in('contract_id', batch.map((contract) => contract.id)).eq('lifecycle_status', 'active')
+          .order('id').range(page, page + 499);
+        if (subscriptions.error) throw subscriptions.error;
+        subscriptions.data.forEach((row) => active.add(`${row.contract_id}:${row.customer_id}`));
+        if (subscriptions.data.length < 500) break;
+      }
+      eligible.push(...batch.filter((contract) => active.has(`${contract.id}:${contract.customer_id}`)));
+    }
+    if (contracts.data.length < 500) break;
+  }
+  return eligible
     .map((contract) => {
       const savedFeatures = contract.plan_snapshot.website_features;
       let websiteFeatures: WebsiteFeature[];

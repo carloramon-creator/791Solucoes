@@ -116,6 +116,59 @@ Validacao:
 
 ## Planos de Websites
 
+### Sincronizacao por eventos com o Websites
+
+A navegacao do Websites nao consulta mais a Holding. No login SSO inicial, o
+servidor Websites troca o codigo de uso unico e carrega uma projecao local por
+`GET /api/websites/snapshot`, autenticado exclusivamente por HMAC entre servidores.
+Essa carga inclui escopo contratado, atribuicoes, permissoes, sessoes e evolucao
+da producao. Nunca expor essa resposta ao navegador nem aceitar um token de
+funcionario como autorizacao para esse endpoint.
+
+Aplicar `20261106011000_websites_event_outbox.sql` somente na Holding e
+`20261106011000_holding_local_projection.sql` somente no Websites. Configurar
+`WEBSITES_SYNC_SECRET` identico, aleatorio e com pelo menos 32 caracteres nos
+dois servidores, sem prefixo `NEXT_PUBLIC_`. O segredo HMAC nao e o segredo do
+agendador: este ultimo e criado automaticamente no Vault da Holding.
+Planejar uma janela para as duas migracoes e publicar a Holding antes do
+consumidor Websites. Durante essa janela, novos logins e criacoes podem ficar
+indisponiveis ate a primeira sincronizacao. Nao alterar nem publicar a WM.
+
+- Triggers transacionais enfileiram alteracoes de contratos, atribuicao,
+  assinaturas, perfis, recursos/permissoes, sessoes, logout de origem e banimentos.
+  Editar apenas o catalogo nao altera o snapshot comercial de contratos existentes.
+- `pg_net` acorda o emissor apos o commit. O cron `websites-sync-retry` verifica
+  a fila a cada minuto e so chama o emissor se houver revisao pendente; nao ha
+  consultas do Websites a Holding durante a navegacao.
+- A fila consolida mudancas em uma projecao completa e versionada. Coleta
+  concorrente a outra alteracao e refeita; entrega so e confirmada depois de
+  o Websites persistir a revisao. Falhas preservam a pendencia e `last_error`.
+- `POST /api/holding/events` no Websites exige assinatura HMAC do corpo e
+  timestamp recente. Revisoes repetidas/anteriores nao reaplicam alteracoes.
+  Escopo e permissoes sao gravados atomicamente com a sincronizacao do tipo
+  tecnico, sem mudar conteudo, imagens ou cobrancas.
+- Revogacoes valem no Websites assim que o evento e aplicado, nao por uma nova
+  introspeccao a cada pagina. Se a entrega falhar, o ultimo estado confirmado
+  continua valido ate a entrega ou expiracao local da sessao (no maximo 8 horas,
+  limitada tambem pelo vencimento da sessao de origem). Monitorar pendencias.
+- Avancar producao e sair sao acoes explicitas que ainda escrevem na Holding.
+  Ler lista, editor, biblioteca, imagens e etapas usa somente o banco Websites.
+
+Monitoramento no banco Holding: `holding_websites_sync_outbox` deve ter
+`revision = delivered_revision`; conferir `last_error` se houver atraso.
+No banco Websites, conferir `holding_projection.revision` e `received_at`.
+Para reenviar pendencias: `select public.request_websites_sync();`.
+Para reconstruir manualmente a projecao mesmo sem alteracoes comerciais,
+incrementar `revision` na fila e chamar essa funcao; o login SSO tambem faz uma
+carga inicial autenticada. Nenhuma dessas operacoes ativa assinaturas ou Asaas.
+
+Implantacao: migracao da fila aplicada no Supabase Holding em 06/11/2026;
+11 triggers e agendamento de reenvio ativos, sem acesso autenticado a fila.
+Chave de comunicacao configurada nos servidores Holding e Websites.
+
+Testes:
+`PGLITE_MODULE=file:///caminho/para/@electric-sql/pglite/dist/index.js node --test scripts/tests/websites-sync.test.mjs scripts/tests/holding-websites-sso.test.mjs scripts/tests/website-projects.test.mjs`.
+
 O catálogo agrupa os cards por categoria comercial: confecção de website,
 hospedagem, manutenção e alterações adicionais. Cada card informa o tipo de site;
 criações antigas sem tipo aparecem como pendentes, e serviços sem restrição de
@@ -151,8 +204,8 @@ as mesmas restricoes fiscais e de cobrancas continuam valendo, as assinaturas
 restritas a outro tipo impedem a troca, e o produto anterior fica no historico
 com o gestor responsavel. Aplicar
 `supabase/migrations/20261106001000_website_manager_scope_correction.sql`.
-O Websites recebe `scopeRevision` e sincroniza somente o tipo tecnico no proximo
-acesso, sem apagar conteudo ou aceitar uma revisao anterior.
+O Websites recebe `scopeRevision` por evento e sincroniza somente o tipo tecnico,
+sem apagar conteudo ou aceitar uma revisao anterior.
 Os cards de contratacao mostram o nome do webdesigner (ou email se nao houver
 nome cadastrado), permitem escolher/alterar o responsavel e filtrar contratos
 com ou sem atribuicao. A gravacao exige permissao de gestor e valida o acesso

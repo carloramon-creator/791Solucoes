@@ -15,6 +15,34 @@ function load(path, dependencies = {}) {
   return mod.exports;
 }
 
+test('legacy project endpoint still validates access and never exposes session tokens', async () => {
+  let session = { user: { id: 'staff-id', email: 'staff@example.test' }, permissions: { manage: true } };
+  let inspections = 0;
+  const queries = [];
+  const { GET } = load('src/app/api/websites/projects/route.ts', {
+    'next/server': { NextResponse: Response },
+    '@/lib/holding-websites-sso': {
+      isSsoValue: (token) => token === 't'.repeat(43),
+      ssoHeaders: { 'Cache-Control': 'private, no-store' },
+      inspectWebsitesSession: async () => { inspections++; return session; },
+    },
+    '@/lib/website-projects': { websiteProjects: async (...args) => { queries.push(args); return []; } },
+  });
+  const request = () => new Request('https://holding.test/api/websites/projects', {
+    headers: { authorization: `Bearer ${'t'.repeat(43)}` },
+  });
+  const response = await GET(request());
+  assert.deepEqual(await response.json(), { projects: [], manager: true });
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.equal(inspections, 1);
+  assert.deepEqual(queries, [['staff@example.test', true]]);
+  session = null;
+  assert.equal((await GET(request())).status, 401);
+  assert.equal(queries.length, 1);
+  assert.equal((await GET(new Request('https://holding.test'))).status, 401);
+  assert.equal(inspections, 2);
+});
+
 test('only active linked subscriptions for the same customer release assigned projects; no payment required', async () => {
   const contracts = [
     { id: 'a', customer_id: 'c', customer_snapshot: { name: 'Cliente' }, plan_snapshot: { name: 'Plano', scope: 'Escopo', website_features: ['configuration', 'briefing', 'templates', 'domain_managed', 'customer_dns', 'email_setup'] }, project_type: 'store', designer_email: 'designer@example.test' },
@@ -28,6 +56,7 @@ test('only active linked subscriptions for the same customer release assigned pr
         let rows = table === 'holding_website_contracts' ? contracts : subscriptions;
         return {
           select() { return this; }, not() { return this; }, order() { return this; },
+          range(start, end) { rows = rows.slice(start, end + 1); return this; },
           in(key, values) { rows = rows.filter((row) => values.includes(row[key])); return this; },
           eq(key, value) { rows = rows.filter((row) => row[key] === value); return this; },
           then(resolve, reject) { return Promise.resolve({ data: rows, error: null }).then(resolve, reject); },
@@ -48,6 +77,35 @@ test('only active linked subscriptions for the same customer release assigned pr
   assert.deepEqual(managerProjects[1].websiteFeatures, ['configuration', 'briefing', 'templates', 'content', 'images', 'catalog']);
   contracts[0].designer_email = 'other@example.test';
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
+});
+
+test('projection source paginates contracts and subscriptions without dropping projects beyond the first database page', async () => {
+  const contracts = Array.from({ length: 501 }, (_, index) => ({
+    id: `contract-${index}`, customer_id: 'customer', customer_snapshot: { name: 'Cliente' },
+    plan_snapshot: { name: 'Plano', scope: 'Escopo' }, project_type: 'institutional', designer_email: null,
+  }));
+  const subscriptions = [
+    ...Array.from({ length: 500 }, (_, index) => ({ id: index, contract_id: contracts[0].id, customer_id: 'wrong', lifecycle_status: 'active' })),
+    ...contracts.map((row, index) => ({ id: index + 500, contract_id: row.id, customer_id: row.customer_id, lifecycle_status: 'active' })),
+  ];
+  const { websiteProjects } = load('src/lib/website-projects.ts', {
+    '@/lib/website-plans': load('src/lib/website-plans.ts'),
+    '@/lib/supabase-server': { supabaseServer: { from(table) {
+      let rows = table === 'holding_website_contracts' ? contracts : subscriptions;
+      let start = 0, end = Infinity;
+      return {
+        select() { return this; }, not() { return this; }, order() { return this; },
+        in(key, values) { rows = rows.filter((row) => values.includes(row[key])); return this; },
+        eq(key, value) { rows = rows.filter((row) => row[key] === value); return this; },
+        range(first, last) { start = first; end = last; return this; },
+        then(resolve, reject) { return Promise.resolve({ data: rows.slice(start, end + 1), error: null }).then(resolve, reject); },
+      };
+    } } },
+  });
+  const projects = await websiteProjects('', true);
+  assert.equal(projects.length, 501);
+  assert.equal(projects[0].contractId, contracts[0].id);
+  assert.equal(projects[500].contractId, contracts[500].id);
 });
 
 test('project type is mandatory for creation and strictly validated for every plan category', () => {

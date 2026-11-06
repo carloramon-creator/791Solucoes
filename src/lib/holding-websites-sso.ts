@@ -18,12 +18,12 @@ export function holdingAuthSessionId(verifiedToken: string): string | null {
   }
 }
 
-export async function inspectWebsitesSession(token: string) {
-  const { data, error } = await supabaseServer.rpc('inspect_holding_websites_session', { p_token_hash: hashSsoValue(token) });
+export async function inspectWebsitesSession(token: string, hashed = false, permissionsFor = getHoldingWebsitesPermissions) {
+  const { data, error } = await supabaseServer.rpc('inspect_holding_websites_session', { p_token_hash: hashed ? token : hashSsoValue(token) });
   if (error) throw error;
   const session = data?.[0];
   if (!session) return null;
-  const permissions = await getHoldingWebsitesPermissions(session.email);
+  const permissions = await permissionsFor(session.email);
   if (!permissions.menu || !permissions.view) return null;
   return { user: { id: session.user_id, email: session.email }, permissions, expiresAt: session.expires_at };
 }

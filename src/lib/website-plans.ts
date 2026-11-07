@@ -38,6 +38,7 @@ export const WEBSITE_FEATURES = {
   services: { label: 'Serviços', description: 'Área própria para cadastro e apresentação de serviços.', available: false },
   albums: { label: 'Álbuns de fotos', description: 'Galerias e coleções de imagens.', available: false },
   social: { label: 'Redes sociais', description: 'Links para os perfis oficiais e WhatsApp do cliente.', available: true },
+  translation: { label: 'Tradução PT/EN/ES', description: 'Traduções salvas com Microsoft Azure e seletor de idiomas por bandeiras.', available: true },
   audio_library: { label: 'Biblioteca de áudio', description: 'Envio e organização de arquivos de áudio.', available: false },
   video_library: { label: 'Biblioteca de vídeo', description: 'Envio e organização de vídeos.', available: false },
   webmail: { label: 'Webmail integrado', description: 'Acesso a e-mail pelo painel do website.', available: false },
@@ -48,7 +49,7 @@ export const WEBSITE_FEATURE_GROUPS = {
   essential: ['configuration', 'briefing', 'templates', 'content', 'images'],
   commerce: ['catalog', 'online_checkout'],
   delivery: ['domain_managed', 'customer_dns', 'email_setup', 'webmail'],
-  presence: ['social'],
+  presence: ['social', 'translation'],
   future: ['forms', 'publications', 'services', 'albums', 'audio_library', 'video_library'],
 } as const satisfies Record<string, readonly WebsiteFeature[]>;
 export const WEBSITE_FEATURE_GROUP_LABELS = {
@@ -136,6 +137,7 @@ export type WebsitePlanInput = {
   active: boolean;
   fiscal_config: WebsiteFiscalConfig | null;
   website_features: WebsiteFeature[];
+  translation_monthly_characters?: number;
   recurring_prices?: WebsiteRecurringPrices;
 };
 
@@ -192,6 +194,11 @@ export function validateWebsitePlan(value: unknown):
   if (projectFeatures.includes('catalog') && projectType !== 'catalog' && projectType !== 'store') {
     return { ok: false, error: 'O catálogo só pode ser incluído em projetos de catálogo ou loja virtual.' };
   }
+  const translationLimit = body.translation_monthly_characters ?? 0;
+  if (!Number.isSafeInteger(translationLimit) || typeof translationLimit !== 'number'
+    || (projectFeatures.includes('translation') ? translationLimit < 1 || translationLimit > 1800000 : translationLimit !== 0)) {
+    return { ok: false, error: 'Tradução exige uma franquia mensal de 1 a 1.800.000 caracteres. Sem o recurso, use zero.' };
+  }
   if (!websiteBillingCycles(category).some((cycle) => cycle === body.billing_cycle)) {
     return { ok: false, error: 'A modalidade de cobrança não corresponde à categoria do serviço.' };
   }
@@ -236,6 +243,7 @@ export function validateWebsitePlan(value: unknown):
       active: body.active,
       fiscal_config: fiscal.data,
       website_features: projectFeatures as WebsiteFeature[],
+      ...(projectFeatures.includes('translation') ? { translation_monthly_characters: translationLimit } : { translation_monthly_characters: 0 }),
       ...(recurringPrices ? { recurring_prices: recurringPrices } : {}),
     },
   };

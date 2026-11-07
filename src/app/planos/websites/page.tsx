@@ -38,6 +38,7 @@ type PlanForm = {
   active: boolean;
   fiscal_config: WebsiteFiscalConfig;
   website_features: WebsiteFeature[];
+  translation_monthly_characters: string;
   cycle_prices: Record<string, string>;
 };
 
@@ -51,6 +52,7 @@ const EMPTY_FORM: PlanForm = {
   billing_cycle: 'one_time', price: '', active: true,
   fiscal_config: EMPTY_FISCAL,
   website_features: [],
+  translation_monthly_characters: '',
   cycle_prices: {},
 };
 const selectClass = `${inputClass} appearance-none pr-10`;
@@ -112,6 +114,7 @@ export default function PlanosWebsitesPage() {
       fiscal_config: plan.fiscal_config ? { ...plan.fiscal_config } : { ...EMPTY_FISCAL },
       website_features: plan.website_features || (plan.category === 'creation' && plan.project_type
         ? websiteDefaultFeatures(plan.project_type) : []),
+      translation_monthly_characters: String(plan.translation_monthly_characters || ''),
       cycle_prices: Object.fromEntries(Object.entries(websiteRecurringPrices(plan)).map(([key, value]) => [key, (value / 100).toFixed(2)])),
     } : { ...EMPTY_FORM });
   }
@@ -132,6 +135,7 @@ export default function PlanosWebsitesPage() {
       active: form.active,
       fiscal_config: form.fiscal_config,
       website_features: form.website_features,
+      translation_monthly_characters: form.website_features.includes('translation') ? Number(form.translation_monthly_characters) : 0,
       recurring_prices: form.billing_cycle === 'one_time' ? {} : Object.fromEntries(
         WEBSITE_RECURRING_CYCLES.filter((cycle) => (cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle])?.trim())
           .map((cycle) => [cycle, Math.round(Number(cycle === form.billing_cycle ? form.price : form.cycle_prices[cycle]) * 100)]),
@@ -341,6 +345,12 @@ export default function PlanosWebsitesPage() {
                     </fieldset>
                   </div>;
                 })}
+                {form.website_features.includes('translation') && <label className="block space-y-2 text-sm font-semibold text-slate-700">
+                  Franquia mensal de tradução (caracteres)
+                  <input className={inputClass} type="number" min={1} max={1800000} step={1} required
+                    value={form.translation_monthly_characters} onChange={event => setForm({ ...form, translation_monthly_characters: event.target.value })} />
+                  <span className="block text-xs font-normal text-slate-600">Origem × 2 idiomas (EN/ES), incluindo tentativas. Visitas reutilizam traduções salvas. Renova no início do mês UTC; não representa saldo oficial Azure.</span>
+                </label>}
                 {form.project_type === 'landing' && <p className="text-xs text-slate-600">
                   A landing page permite fotos e imagens. Áudio, vídeo e webmail integrado ainda não estão disponíveis no Websites.
                 </p>}

@@ -75,6 +75,11 @@ test('only active linked subscriptions for the same customer release assigned pr
   assert.deepEqual(managerProjects.map((row) => row.contractId), ['a', 'b']);
   assert.deepEqual(managerProjects[0].websiteFeatures, ['configuration', 'briefing', 'templates', 'domain_managed', 'customer_dns', 'email_setup']);
   assert.deepEqual(managerProjects[1].websiteFeatures, ['configuration', 'briefing', 'templates', 'content', 'images', 'catalog']);
+  contracts[0].plan_snapshot.website_features.push('translation');
+  contracts[0].plan_snapshot.translation_monthly_characters = 25000;
+  const translatedProject = (await websiteProjects('manager@example.test', true))[0];
+  assert.equal(translatedProject.websiteFeatures.includes('translation'), true);
+  assert.equal(translatedProject.translationMonthlyCharacters, 25000);
   contracts[0].designer_email = 'other@example.test';
   assert.deepEqual(await websiteProjects('designer@example.test', false), []);
 });

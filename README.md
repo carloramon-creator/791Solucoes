@@ -116,6 +116,18 @@ Validacao:
 
 ## Planos de Websites
 
+O recurso `translation` oferece PT/EN/ES com Azure e traducoes persistidas
+no Websites. O plano de confeccao precisa definir
+`translation_monthly_characters` entre 1 e 1.800.000; sem traducao, use zero.
+A franquia e copiada para `plan_snapshot` na contratacao/revisao comercial,
+sem modificar contratos existentes quando o catalogo muda. O escopo SSO e
+os eventos enviam `translationMonthlyCharacters` ao Websites.
+
+Aplicar `20261106011000_website_translation_feature.sql` somente na Holding
+antes de publicar sua API/UI. No Websites, aplicar a migracao
+`20261106036000_site_translations.sql`. O uso e contado por projeto/mes UTC,
+nao por visita; nao representa o saldo oficial Azure compartilhado com a WM.
+
 ### Sincronizacao por eventos com o Websites
 
 A navegacao do Websites nao consulta mais a Holding. No login SSO inicial, o

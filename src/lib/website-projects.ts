@@ -48,6 +48,7 @@ export async function websiteProjects(email: string, manager: boolean, contractI
         customerName: contract.customer_snapshot.name, planName: contract.plan_snapshot.name,
         scope: contract.plan_snapshot.scope, websiteType: contract.project_type,
         websiteFeatures,
+        translationMonthlyCharacters: websiteFeatures.includes('translation') ? contract.plan_snapshot.translation_monthly_characters : 0,
         designerEmail: contract.designer_email,
         scopeRevision: contract.edit_revision || 0,
       };

@@ -67,8 +67,35 @@ test('preserves exact integer cents, trims text, and whitelists persisted proper
     ...valid, name: ` ${valid.name} `, description: ' ', scope: ` ${valid.scope} `,
     active: false, system: '791glass', asaas_subscription_id: 'ignored',
   });
+  test('translation is opt-in and requires a bounded monthly quota, separate from visited pages',()=>{
+    const website_features=[...catalog.websiteDefaultFeatures('institutional'),'translation'];
+    for(const translation_monthly_characters of [0,-1,1.5,1800001,'100',null]) {
+      assert.equal(catalog.validateWebsitePlan({...valid,website_features,translation_monthly_characters}).ok,false);
+    }
+    const parsed=catalog.validateWebsitePlan({...valid,website_features,translation_monthly_characters:100000});
+    assert.equal(parsed.ok,true);assert.equal(parsed.data.translation_monthly_characters,100000);
+    assert.equal(catalog.validateWebsitePlan({...valid,translation_monthly_characters:100}).ok,false);
+  });
+  test('PostgreSQL snapshots translation quota without enabling it retroactively',async()=>{
+    const {PGlite}=await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
+    const db=new PGlite();
+    const features=['configuration','briefing','translation'];
+    try {
+      await db.exec(`create role anon;create role authenticated;
+        create table holding_website_plans(id uuid primary key,website_features text[],category text,project_type text,
+          constraint holding_website_plan_features_check check(true));
+        create table holding_website_contracts(id uuid primary key,plan_id uuid,plan_snapshot jsonb);`);
+      await db.exec(readFileSync('supabase/migrations/20261106011000_website_translation_feature.sql','utf8'));
+      await db.query("insert into holding_website_plans values($1,$2,'creation','institutional',100000)",[id,features]);
+      await db.query('insert into holding_website_contracts values($1,$1,$2)',[id,{website_features:features,name:'Plano'}]);
+      assert.equal((await db.query('select plan_snapshot from holding_website_contracts')).rows[0].plan_snapshot.translation_monthly_characters,100000);
+      await db.query('update holding_website_plans set translation_monthly_characters=200000 where id=$1',[id]);
+      assert.equal((await db.query('select plan_snapshot from holding_website_contracts')).rows[0].plan_snapshot.translation_monthly_characters,100000);
+      await assert.rejects(db.query('update holding_website_plans set translation_monthly_characters=0 where id=$1',[id]),/check constraint/);
+    } finally {await db.close();}
+  });
   assert.deepEqual(parsed, { ok: true, data: {
-    ...valid, description: '', active: false, website_features: catalog.websiteDefaultFeatures('institutional'),
+    ...valid, description: '', active: false, website_features: catalog.websiteDefaultFeatures('institutional'), translation_monthly_characters: 0,
   } });
   for (const price_cents of [1, 999999999]) {
     assert.equal(catalog.validateWebsitePlan({ ...valid, price_cents }).ok, true);
@@ -190,7 +217,7 @@ test('creates a project and lists its persisted shape, with no Glass, Barber or 
   assert.equal(listed.headers.get('cache-control'), 'no-store');
   assert.deepEqual((await listed.json()).plans, [plan]);
   const write = route.calls.find((call) => call.operation === 'insert');
-  assert.deepEqual(write.value, { ...valid, website_features: catalog.websiteDefaultFeatures('institutional') });
+  assert.deepEqual(write.value, { ...valid, website_features: catalog.websiteDefaultFeatures('institutional'), translation_monthly_characters: 0 });
   assert.equal(write.table, 'holding_website_plans');
 });
 

@@ -41,6 +41,9 @@ export default function PlanosGlassPage() {
   // Catálogo por linha de system_plans: o vigente mantém sistema='791glass' intocado
   // e o Mini vive em sistema='791glass-mini', preservando todas as consultas .single() existentes.
   const [planoSistema, setPlanoSistema] = useState<'791glass' | '791glass-mini'>('791glass');
+  const isMini = planoSistema === '791glass-mini';
+  // Nome comercial editável de cada plano (Prime, Mini, etc.), salvo na linha do plano selecionado.
+  const [planName, setPlanName] = useState('');
   
   // Estados do formulário por COMBOS
   const [basePrice, setBasePrice] = useState('');
@@ -103,7 +106,7 @@ export default function PlanosGlassPage() {
     };
     
     const payload = {
-      name: planoSistema === '791glass-mini' ? 'Mini' : '791glass', 
+      name: planName.trim() || (planoSistema === '791glass-mini' ? 'Mini' : '791glass'), 
       sistema: planoSistema, 
       base_price: parseCurrency(basePrice) || 0,
       bundle_prices: Object.fromEntries(
@@ -248,6 +251,7 @@ export default function PlanosGlassPage() {
 
         // Plano ainda não cadastrado (ex.: Mini novo): formulário limpo para criar.
         setSelectedBasicModules(planData?.included_modules || []);
+        setPlanName(planData?.name || '');
         setBasePrice(planData ? formatCurrency(String((planData.base_price || 0) * 100)) : '');
         const formattedBundles: Record<string, string> = { financeiro: '', producao: '', comunicacao: '', rh: '', fiscal: '' };
         Object.entries(planData?.bundle_prices || {}).forEach(([k, v]: [string, any]) => {
@@ -348,7 +352,7 @@ export default function PlanosGlassPage() {
               onChange={(e) => setPlanoSistema(e.target.value as '791glass' | '791glass-mini')}
               className="bg-transparent text-[12px] font-semibold text-slate-700 focus:outline-none"
             >
-              <option value="791glass">Vigente (791glass)</option>
+              <option value="791glass">791 Prime (vigente)</option>
               <option value="791glass-mini">Mini</option>
             </select>
           </div>
@@ -398,15 +402,29 @@ export default function PlanosGlassPage() {
         </div>
       )}
 
-      {/* Box 1: Valor do Plano Básico */}
+      {/* Box 1: Valor do Plano */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Plano Básico (Orçamentos/Materiais)</h2>
+          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+            {isMini ? 'Plano Único (Sistema Completo)' : 'Plano Básico (Orçamentos/Materiais)'}
+          </h2>
         </div>
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
-              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Valor mensal do plano base (R$)</label>
+              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Nome do plano</label>
+              <input
+                type="text"
+                placeholder={isMini ? 'Mini' : '791 Prime'}
+                value={planName}
+                onChange={(e) => setPlanName(e.target.value)}
+                className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-black rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">
+                {isMini ? 'Valor mensal do plano único (R$)' : 'Valor mensal do plano base (R$)'}
+              </label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">R$</span>
                 <input 
@@ -419,21 +437,33 @@ export default function PlanosGlassPage() {
               </div>
             </div>
 
-            <div className="bg-slate-50/80 p-4 rounded-xl border border-dashed border-slate-200">
-              <label className="block text-[11px] font-bold text-[#3b597b] mb-1.5 uppercase tracking-widest">Valor de Todos os Combos Somados</label>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-[#3b597b]">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFullValue)}
-                </span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">/ Mês</span>
+            {isMini ? (
+              <div className="bg-emerald-50/60 p-4 rounded-xl border border-dashed border-emerald-200">
+                <label className="block text-[11px] font-bold text-emerald-700 mb-1.5 uppercase tracking-widest">Valor fixo</label>
+                <p className="text-[11px] font-semibold text-emerald-700">Todos os módulos inclusos no preço, sem combos adicionais.</p>
               </div>
-            </div>
+            ) : (
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-dashed border-slate-200">
+                <label className="block text-[11px] font-bold text-[#3b597b] mb-1.5 uppercase tracking-widest">Valor de Todos os Combos Somados</label>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-[#3b597b]">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalFullValue)}
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">/ Mês</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-6 pt-6 border-t border-slate-100">
-            <label className="block text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Recursos Inclusos no Plano Base:</label>
+            <label className="block text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-widest">
+              {isMini ? 'Recursos Inclusos no Plano Único (sistema completo):' : 'Recursos Inclusos no Plano Base:'}
+            </label>
             <div className="flex flex-wrap gap-2">
-              {['ORÇAMENTOS', 'MATERIAIS (VIDROS/ALUMÍNIOS)', 'PESSOAS (CLIENTES/FORNEC.)', 'DASHBOARD', 'CONFIGURAÇÕES'].map(tag => (
+              {(isMini
+                ? ['ORÇAMENTOS', 'MATERIAIS (VIDROS/ALUMÍNIOS)', 'PESSOAS (CLIENTES/FORNEC.)', 'DASHBOARD', 'CONFIGURAÇÕES',
+                  'FINANCEIRO', 'PRODUÇÃO & ENGENHARIA', 'COMUNICAÇÃO (WHATSAPP/CRM)', 'RECURSOS HUMANOS', 'NOTAS FISCAIS']
+                : ['ORÇAMENTOS', 'MATERIAIS (VIDROS/ALUMÍNIOS)', 'PESSOAS (CLIENTES/FORNEC.)', 'DASHBOARD', 'CONFIGURAÇÕES']).map(tag => (
                 <span key={tag} className="bg-emerald-50 text-emerald-600 text-[9px] font-black px-3 py-1.5 rounded-lg border border-emerald-100 uppercase tracking-tight">
                   {tag}
                 </span>
@@ -443,7 +473,8 @@ export default function PlanosGlassPage() {
         </div>
       </div>
 
-      {/* Box 2: Combos Opcionais */}
+      {/* Box 2: Combos Opcionais (ocultos no Mini: plano único com tudo incluso) */}
+      {!isMini && (
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Módulos de Expansão (Combos)</h2>
@@ -456,6 +487,7 @@ export default function PlanosGlassPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Limitadores e Extras Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -534,16 +566,17 @@ export default function PlanosGlassPage() {
             <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Cotas de IA (por vidraçaria)</h2>
             <p className="text-[11px] text-slate-500 mt-1">Somente execuções concluídas com sucesso consomem a cota. Vazio = sem limite.</p>
           </div>
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-6 space-y-5">
             <div>
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA de Estoque: usos por período</label>
-              <div className="flex gap-2">
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA de Estoque</label>
+              <div className="flex items-center gap-3">
                 <input
                   type="number" min={0} placeholder="Ex: 1"
                   value={limits.iaEstoqueUsos}
                   onChange={(e) => setLimits(prev => ({ ...prev, iaEstoqueUsos: e.target.value }))}
-                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] text-center focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 shrink-0">uso(s)</span>
                 <select
                   value={limits.iaEstoquePeriodo}
                   onChange={(e) => setLimits(prev => ({ ...prev, iaEstoquePeriodo: e.target.value }))}
@@ -555,15 +588,16 @@ export default function PlanosGlassPage() {
                 </select>
               </div>
             </div>
-            <div>
-              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA Financeira: usos por período</label>
-              <div className="flex gap-2">
+            <div className="pt-5 border-t border-slate-100">
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA Financeira</label>
+              <div className="flex items-center gap-3">
                 <input
                   type="number" min={0} placeholder="Ex: 1"
                   value={limits.iaFinanceiroUsos}
                   onChange={(e) => setLimits(prev => ({ ...prev, iaFinanceiroUsos: e.target.value }))}
-                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] text-center focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 shrink-0">uso(s)</span>
                 <select
                   value={limits.iaFinanceiroPeriodo}
                   onChange={(e) => setLimits(prev => ({ ...prev, iaFinanceiroPeriodo: e.target.value }))}

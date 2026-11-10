@@ -328,7 +328,7 @@ export default function ConfigureSubscriptionPage() {
               <h2 className="text-[10px] font-medium uppercase tracking-widest text-slate-400">📦 Plano da Assinatura</h2>
               <div className="flex gap-2">
                 {[
-                  { id: 'padrao', label: 'Vigente (791glass)' },
+                  { id: 'padrao', label: '791 Prime' },
                   { id: 'mini', label: 'Mini' }
                 ].map((plano) => (
                   <button

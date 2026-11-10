@@ -38,6 +38,9 @@ export default function PlanosGlassPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  // Catálogo por linha de system_plans: o vigente mantém sistema='791glass' intocado
+  // e o Mini vive em sistema='791glass-mini', preservando todas as consultas .single() existentes.
+  const [planoSistema, setPlanoSistema] = useState<'791glass' | '791glass-mini'>('791glass');
   
   // Estados do formulário por COMBOS
   const [basePrice, setBasePrice] = useState('');
@@ -59,7 +62,11 @@ export default function PlanosGlassPage() {
     consultflexBasicPrice: '',
     consultflexCompletePrice: '',
     mktMessages: '', 
-    extraMktMessagePrice: ''
+    extraMktMessagePrice: '',
+    iaEstoqueUsos: '',
+    iaEstoquePeriodo: '',
+    iaFinanceiroUsos: '',
+    iaFinanceiroPeriodo: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
     usersIncluded: number;
@@ -88,10 +95,16 @@ export default function PlanosGlassPage() {
     const nextUsersIncluded = Number(limits.usersIncluded || 0);
     const nextWppDevices = Number(limits.wppDevices || 0);
     const nextWppMessages = Number(limits.wppMessages || 0);
+    const nextIaLimits = {
+      iaEstoqueUsos: limits.iaEstoqueUsos === '' ? null : Number(limits.iaEstoqueUsos),
+      iaEstoquePeriodo: limits.iaEstoquePeriodo || null,
+      iaFinanceiroUsos: limits.iaFinanceiroUsos === '' ? null : Number(limits.iaFinanceiroUsos),
+      iaFinanceiroPeriodo: limits.iaFinanceiroPeriodo || null,
+    };
     
     const payload = {
-      name: '791glass', 
-      sistema: '791glass', 
+      name: planoSistema === '791glass-mini' ? 'Mini' : '791glass', 
+      sistema: planoSistema, 
       base_price: parseCurrency(basePrice) || 0,
       bundle_prices: Object.fromEntries(
         Object.entries(bundlePrices).map(([k, v]) => [k, parseCurrency(v)])
@@ -108,6 +121,7 @@ export default function PlanosGlassPage() {
         consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice),
         mktMessages: Number(limits.mktMessages || 0),  
         extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
+        ...nextIaLimits,
       },
       included_modules: selectedBasicModules
     };
@@ -131,6 +145,7 @@ export default function PlanosGlassPage() {
           },
           body: JSON.stringify({
             mode: propagationMode,
+            plano: planoSistema === '791glass-mini' ? 'mini' : 'padrao',
             loadedLimits,
             nextLimits: {
               usersIncluded: nextUsersIncluded,
@@ -140,6 +155,7 @@ export default function PlanosGlassPage() {
               extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
               extraMessagePrice: parseCurrency(limits.extraMessagePrice),
             },
+            iaLimits: nextIaLimits,
           }),
         });
 
@@ -221,48 +237,48 @@ export default function PlanosGlassPage() {
     async function fetchPlan() {
       try {
         setLoading(true);
+        setErrorMsg('');
         const { data: planData, error: planError } = await supabase
           .from('system_plans')
           .select('*')
-          .ilike('sistema', '791glass')
+          .eq('sistema', planoSistema)
           .maybeSingle();
 
         if (planError) throw planError;
 
-        if (planData) {
-          setSelectedBasicModules(planData.included_modules || []);
-          setBasePrice(formatCurrency(String((planData.base_price || 0) * 100)));
-          
-          const formattedBundles: Record<string, string> = {};
-          Object.entries(planData.bundle_prices || {}).forEach(([k, v]: [string, any]) => {
-            formattedBundles[k] = formatCurrency(String(Number(v || 0) * 100));
+        // Plano ainda não cadastrado (ex.: Mini novo): formulário limpo para criar.
+        setSelectedBasicModules(planData?.included_modules || []);
+        setBasePrice(planData ? formatCurrency(String((planData.base_price || 0) * 100)) : '');
+        const formattedBundles: Record<string, string> = { financeiro: '', producao: '', comunicacao: '', rh: '', fiscal: '' };
+        Object.entries(planData?.bundle_prices || {}).forEach(([k, v]: [string, any]) => {
+          formattedBundles[k] = formatCurrency(String(Number(v || 0) * 100));
+        });
+        setBundlePrices(prev => ({ ...prev, ...formattedBundles }));
+
+        {
+          const sl = planData?.system_limits || {};
+          const usersIncluded = Number(sl.usersIncluded || 0);
+          const wppDevices = Number(sl.wppDevices || 0);
+          const wppMessages = Number(sl.wppMessages || 0);
+
+          setLoadedLimits(planData ? { usersIncluded, wppDevices, wppMessages } : null);
+
+          setLimits({
+            usersIncluded: String(usersIncluded || ''),
+            extraUserPrice: formatCurrency(String(Number(sl.extraUserPrice || 0) * 100)),
+            wppDevices: String(wppDevices || ''),
+            extraDevicePrice: formatCurrency(String(Number(sl.extraDevicePrice || 0) * 100)),
+            wppMessages: String(wppMessages || ''),
+            extraMessagePrice: formatCurrency(String(Number(sl.extraMessagePrice || 0) * 100)),
+            consultflexBasicPrice: formatCurrency(String(Number(sl.consultflexBasicPrice || 0) * 100)),
+            consultflexCompletePrice: formatCurrency(String(Number(sl.consultflexCompletePrice || 0) * 100)),
+            mktMessages: String(Number(sl.mktMessages || 0) || ''), 
+            extraMktMessagePrice: formatCurrency(String(Number(sl.extraMktMessagePrice || 0) * 100)),
+            iaEstoqueUsos: sl.iaEstoqueUsos == null ? '' : String(sl.iaEstoqueUsos),
+            iaEstoquePeriodo: sl.iaEstoquePeriodo || '',
+            iaFinanceiroUsos: sl.iaFinanceiroUsos == null ? '' : String(sl.iaFinanceiroUsos),
+            iaFinanceiroPeriodo: sl.iaFinanceiroPeriodo || ''
           });
-          setBundlePrices(prev => ({ ...prev, ...formattedBundles }));
-          
-          if (planData.system_limits) {
-            const usersIncluded = Number(planData.system_limits.usersIncluded || 0);
-            const wppDevices = Number(planData.system_limits.wppDevices || 0);
-            const wppMessages = Number(planData.system_limits.wppMessages || 0);
-
-            setLoadedLimits({
-              usersIncluded,
-              wppDevices,
-              wppMessages,
-            });
-
-            setLimits({
-              usersIncluded: String(usersIncluded || ''),
-              extraUserPrice: formatCurrency(String(Number(planData.system_limits.extraUserPrice || 0) * 100)),
-              wppDevices: String(wppDevices || ''),
-              extraDevicePrice: formatCurrency(String(Number(planData.system_limits.extraDevicePrice || 0) * 100)),
-              wppMessages: String(wppMessages || ''),
-              extraMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMessagePrice || 0) * 100)),
-              consultflexBasicPrice: formatCurrency(String(Number(planData.system_limits.consultflexBasicPrice || 0) * 100)),
-              consultflexCompletePrice: formatCurrency(String(Number(planData.system_limits.consultflexCompletePrice || 0) * 100)),
-              mktMessages: String(Number(planData.system_limits.mktMessages || 0)), 
-              extraMktMessagePrice: formatCurrency(String(Number(planData.system_limits.extraMktMessagePrice || 0) * 100))
-            });
-          }
         }
 
         // Carregar módulos do Glass para o seletor
@@ -277,7 +293,7 @@ export default function PlanosGlassPage() {
     }
 
     fetchPlan();
-  }, []);
+  }, [planoSistema]);
 
   const renderBundles = () => {
     return (
@@ -325,6 +341,17 @@ export default function PlanosGlassPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-3 h-[40px] shadow-sm">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Plano</label>
+            <select
+              value={planoSistema}
+              onChange={(e) => setPlanoSistema(e.target.value as '791glass' | '791glass-mini')}
+              className="bg-transparent text-[12px] font-semibold text-slate-700 focus:outline-none"
+            >
+              <option value="791glass">Vigente (791glass)</option>
+              <option value="791glass-mini">Mini</option>
+            </select>
+          </div>
           <div className="hidden md:flex items-center gap-2 bg-white border border-slate-200 rounded-md px-3 h-[40px] shadow-sm">
             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Aplicacao</label>
             <select
@@ -496,6 +523,56 @@ export default function PlanosGlassPage() {
                     className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Box 4.2: Cotas de uso das IAs */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Cotas de IA (por vidraçaria)</h2>
+            <p className="text-[11px] text-slate-500 mt-1">Somente execuções concluídas com sucesso consomem a cota. Vazio = sem limite.</p>
+          </div>
+          <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA de Estoque: usos por período</label>
+              <div className="flex gap-2">
+                <input
+                  type="number" min={0} placeholder="Ex: 1"
+                  value={limits.iaEstoqueUsos}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaEstoqueUsos: e.target.value }))}
+                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+                <select
+                  value={limits.iaEstoquePeriodo}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaEstoquePeriodo: e.target.value }))}
+                  className="flex-1 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                >
+                  <option value="">Sem limite</option>
+                  <option value="semana">Por semana (seg-dom)</option>
+                  <option value="mes">Por mês (civil)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA Financeira: usos por período</label>
+              <div className="flex gap-2">
+                <input
+                  type="number" min={0} placeholder="Ex: 1"
+                  value={limits.iaFinanceiroUsos}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaFinanceiroUsos: e.target.value }))}
+                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+                <select
+                  value={limits.iaFinanceiroPeriodo}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaFinanceiroPeriodo: e.target.value }))}
+                  className="flex-1 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                >
+                  <option value="">Sem limite</option>
+                  <option value="semana">Por semana (seg-dom)</option>
+                  <option value="mes">Por mês (civil)</option>
+                </select>
               </div>
             </div>
           </div>

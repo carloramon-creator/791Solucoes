@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { supabaseGlass } from '@/lib/supabase-glass';
 import { 
@@ -87,6 +87,11 @@ interface PlanConfig {
     wppMessages: number;
     extraMessagePrice: number;
     wppMessagesPrice: number;
+    mktMessages?: number;
+    iaEstoqueUsos?: number | null;
+    iaEstoquePeriodo?: string | null;
+    iaFinanceiroUsos?: number | null;
+    iaFinanceiroPeriodo?: string | null;
   };
 }
 
@@ -110,10 +115,42 @@ export default function ConfigureSubscriptionPage() {
   const [extraUsers, setExtraUsers] = useState(0);
   const [extraWppDevices, setExtraWppDevices] = useState(0);
   const [paymentCycle, setPaymentCycle] = useState<'monthly' | 'semiannual' | 'annual'>('monthly');
+  // Plano da assinatura: o vigente vive em sistema='791glass' e o Mini em '791glass-mini'.
+  const [planoCodigo, setPlanoCodigo] = useState<'padrao' | 'mini'>('padrao');
 
   useEffect(() => {
     fetchData();
   }, [vidracariaId]);
+
+  type VidracariaPlano = { modulos_ativos?: string[]; limite_usuarios?: number | null; limite_usuarios_whats?: number | null } | null;
+  async function carregarPlano(codigo: 'padrao' | 'mini', vData: VidracariaPlano) {
+    const sistema = codigo === 'mini' ? '791glass-mini' : '791glass';
+    const { data: pData, error } = await supabase.from('system_plans').select('*').eq('sistema', sistema).maybeSingle();
+    if (error) throw error;
+    if (!pData) {
+      alert(codigo === 'mini' ? 'Plano Mini ainda não cadastrado em Planos > Glass.' : 'Plano vigente não encontrado.');
+      return null;
+    }
+    setPlanConfig(pData);
+    const basicIds = pData.included_modules || [];
+    const optionalsInVidracaria = (vData?.modulos_ativos || []).filter((modRef: string) => {
+      const mod = allModulesRef.current?.find((m) => m.id === modRef || m.slug === modRef);
+      if (!mod) return false;
+      return !basicIds.includes(mod.id) && !basicIds.includes(mod.slug || '');
+    });
+    setSelectedOptionalIds(optionalsInVidracaria);
+
+    const currentUsersLimit = vData?.limite_usuarios || 0;
+    const baseUsers = pData.system_limits?.usersIncluded || 0;
+    setExtraUsers(Math.max(0, currentUsersLimit - baseUsers));
+
+    const currentWppDevices = vData?.limite_usuarios_whats || 0;
+    const baseWpp = pData.system_limits?.wppDevices || 0;
+    setExtraWppDevices(Math.max(0, currentWppDevices - baseWpp));
+    return pData;
+  }
+
+  const allModulesRef = useRef<Module[]>([]);
 
   async function fetchData() {
     try {
@@ -121,41 +158,31 @@ export default function ConfigureSubscriptionPage() {
       
       // 1. Buscamos primeiro os módulos (a "chave")
       const { data: mData } = await supabaseGlass.from('modules').select('*').order('nome');
-      if (mData) setAllModules(mData);
+      if (mData) { setAllModules(mData); allModulesRef.current = mData; }
 
       // 2. Buscamos a vidracaria
       const { data: vData } = await supabaseGlass.from('vidracarias').select('*').eq('id', vidracariaId).single();
+      let codigo: 'padrao' | 'mini' = 'padrao';
       if (vData) {
         setVidracaria(vData);
         setPaymentCycle(vData?.ciclo_pagamento || 'monthly');
+        codigo = vData?.plano_codigo === 'mini' ? 'mini' : 'padrao';
+        setPlanoCodigo(codigo);
       }
 
-      // 3. Buscamos o plano e cruzamos os dados
-      const { data: pData } = await supabase.from('system_plans').select('*').eq('sistema', '791glass').single();
-      if (pData) {
-        setPlanConfig(pData);
-        const basicIds = pData.included_modules || [];
-        
-        const optionalsInVidracaria = (vData?.modulos_ativos || []).filter((modRef: string) => {
-          const mod = mData?.find((m: any) => m.id === modRef || m.slug === modRef);
-          if (!mod) return false;
-          return !basicIds.includes(mod.id) && !basicIds.includes(mod.slug || '');
-        });
-        setSelectedOptionalIds(optionalsInVidracaria);
-        
-        const currentUsersLimit = vData?.limite_usuarios || 0;
-        const baseUsers = pData.system_limits?.usersIncluded || 0;
-        setExtraUsers(Math.max(0, currentUsersLimit - baseUsers));
-
-        const currentWppDevices = vData?.limite_usuarios_whats || 0;
-        const baseWpp = pData.system_limits?.wppDevices || 0;
-        setExtraWppDevices(Math.max(0, currentWppDevices - baseWpp));
-      }
+      // 3. Buscamos o plano da assinatura e cruzamos os dados
+      await carregarPlano(codigo, vData);
     } catch (err) {
       console.error('Erro:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function trocarPlano(codigo: 'padrao' | 'mini') {
+    if (codigo === planoCodigo || !vidracaria) return;
+    const plano = await carregarPlano(codigo, vidracaria).catch(err => { console.error('Erro ao trocar plano:', err); return null; });
+    if (plano) setPlanoCodigo(codigo);
   }
 
   const pricing = useMemo(() => {
@@ -222,15 +249,28 @@ export default function ConfigureSubscriptionPage() {
       
       const finalUsersLimit = baseIncluded + Number(extraUsers);
       const finalWppLimit = wppIncluded + Number(extraWppDevices);
-      
-      const { error } = await supabaseGlass.from('vidracarias').update({
+
+      const payload: Record<string, unknown> = {
         modulos_ativos: finalModules,
         limite_usuarios: finalUsersLimit,
         limite_usuarios_whats: finalWppLimit,
         ciclo_pagamento: paymentCycle,
         status_assinatura: 'ativa',
         ativa: true
-      }).eq('id', vidracariaId);
+      };
+      // Troca de plano: aplica o preset completo (franquias e cotas de IA) do plano escolhido.
+      if (planoCodigo !== ((vidracaria?.plano_codigo === 'mini' ? 'mini' : 'padrao'))) {
+        const sl = planConfig.system_limits || {};
+        payload.plano_codigo = planoCodigo;
+        payload.limite_mensagens_whatsapp = Number(sl.wppMessages ?? 0) || null;
+        payload.limite_mensagens_marketing = Number(sl.mktMessages ?? 0) || null;
+        payload.ia_estoque_limite = sl.iaEstoqueUsos ?? null;
+        payload.ia_estoque_periodo = sl.iaEstoquePeriodo ?? null;
+        payload.ia_financeiro_limite = sl.iaFinanceiroUsos ?? null;
+        payload.ia_financeiro_periodo = sl.iaFinanceiroPeriodo ?? null;
+      }
+
+      const { error } = await supabaseGlass.from('vidracarias').update(payload).eq('id', vidracariaId);
 
       if (error) throw error;
       alert('Assinatura atualizada com sucesso! ✅');
@@ -283,6 +323,33 @@ export default function ConfigureSubscriptionPage() {
         
         <div className="lg:col-span-3 space-y-6">
           
+          <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+             <div className="flex items-center justify-between">
+              <h2 className="text-[10px] font-medium uppercase tracking-widest text-slate-400">📦 Plano da Assinatura</h2>
+              <div className="flex gap-2">
+                {[
+                  { id: 'padrao', label: 'Vigente (791glass)' },
+                  { id: 'mini', label: 'Mini' }
+                ].map((plano) => (
+                  <button
+                    key={plano.id}
+                    onClick={() => { void trocarPlano(plano.id as 'padrao' | 'mini'); }}
+                    className={`px-5 py-2 rounded-xl border flex items-center gap-2 transition-all shadow-sm ${
+                      planoCodigo === plano.id
+                        ? 'border-[#3b597b] bg-[#3b597b] text-white'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-widest">{plano.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {planoCodigo !== ((vidracaria?.plano_codigo === 'mini' ? 'mini' : 'padrao')) && (
+              <p className="mt-3 text-[11px] font-semibold text-amber-600">Ao salvar, as franquias de WhatsApp e as cotas de IA do plano escolhido serão aplicadas a esta vidraçaria.</p>
+            )}
+          </section>
+
           <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
              <div className="flex items-center justify-between">
               <h2 className="text-[10px] font-medium uppercase tracking-widest text-slate-400">📅 Ciclo de Faturamento</h2>

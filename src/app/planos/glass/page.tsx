@@ -71,7 +71,8 @@ export default function PlanosGlassPage() {
     iaFinanceiroUsos: '',
     iaFinanceiroPeriodo: '',
     iaBalanceteUsos: '',
-    iaBalancetePeriodo: ''
+    iaBalancetePeriodo: '',
+    trialDias: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
     usersIncluded: number;
@@ -128,6 +129,7 @@ export default function PlanosGlassPage() {
         consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice),
         mktMessages: Number(limits.mktMessages || 0),  
         extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
+        trialDias: limits.trialDias === '' ? null : Math.min(365, Math.max(1, Math.trunc(Number(limits.trialDias) || 0))) || null,
         ...nextIaLimits,
       },
       included_modules: selectedBasicModules
@@ -287,7 +289,8 @@ export default function PlanosGlassPage() {
             iaFinanceiroUsos: sl.iaFinanceiroUsos == null ? '' : String(sl.iaFinanceiroUsos),
             iaFinanceiroPeriodo: sl.iaFinanceiroPeriodo || '',
             iaBalanceteUsos: sl.iaBalanceteUsos == null ? '' : String(sl.iaBalanceteUsos),
-            iaBalancetePeriodo: sl.iaBalancetePeriodo || ''
+            iaBalancetePeriodo: sl.iaBalancetePeriodo || '',
+            trialDias: sl.trialDias == null ? '' : String(sl.trialDias)
           });
         }
 
@@ -498,6 +501,24 @@ export default function PlanosGlassPage() {
       {/* Limitadores e Extras Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
+          {!isMini && (
+            /* Box 3.5: Período de trial para novos cadastros */
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Período de Trial (novos cadastros)</h2>
+                <p className="text-[11px] text-slate-500 mt-1">Dias de teste grátis com todos os módulos ao cadastrar uma nova vidraçaria. Vazio = padrão de 30 dias. Não altera trials já em andamento.</p>
+              </div>
+              <div className="p-6 flex items-center gap-3">
+                <input
+                  type="number" min={1} max={365} placeholder="30"
+                  value={limits.trialDias}
+                  onChange={(e) => setLimits(prev => ({ ...prev, trialDias: e.target.value }))}
+                  className="w-28 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] text-center focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">dia(s) de teste grátis</span>
+              </div>
+            </div>
+          )}
           {/* Box 4: Limite de Usuários */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
@@ -506,7 +527,7 @@ export default function PlanosGlassPage() {
             <div className="p-6 flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">Limite de usuários (Incluso)</label>
-                <input 
+                <input
                   type="number" 
                   placeholder="Ex: 5"
                   value={limits.usersIncluded}

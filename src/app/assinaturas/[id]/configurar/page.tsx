@@ -119,6 +119,7 @@ export default function ConfigureSubscriptionPage() {
   const [paymentCycle, setPaymentCycle] = useState<'monthly' | 'semiannual' | 'annual'>('monthly');
   // Plano da assinatura: o vigente vive em sistema='791glass' e o Mini em '791glass-mini'.
   const [planoCodigo, setPlanoCodigo] = useState<'padrao' | 'mini'>('padrao');
+  const [trialFim, setTrialFim] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -168,6 +169,7 @@ export default function ConfigureSubscriptionPage() {
       if (vData) {
         setVidracaria(vData);
         setPaymentCycle(vData?.ciclo_pagamento || 'monthly');
+        setTrialFim(String(vData?.vencimento_assinatura || '').slice(0, 10));
         codigo = vData?.plano_codigo === 'mini' ? 'mini' : 'padrao';
         setPlanoCodigo(codigo);
       }
@@ -260,6 +262,10 @@ export default function ConfigureSubscriptionPage() {
         status_assinatura: 'ativa',
         ativa: true
       };
+      // Trial em andamento: permite estender/encurtar o período de teste desta vidraçaria.
+      if (vidracaria?.assinatura_confirmada === false && trialFim && /^\d{4}-\d{2}-\d{2}$/.test(trialFim)) {
+        payload.vencimento_assinatura = trialFim;
+      }
       // Troca de plano: aplica o preset completo (franquias e cotas de IA) do plano escolhido.
       if (planoCodigo !== ((vidracaria?.plano_codigo === 'mini' ? 'mini' : 'padrao'))) {
         const sl = planConfig.system_limits || {};
@@ -385,6 +391,26 @@ export default function ConfigureSubscriptionPage() {
               </div>
             </div>
           </section>
+
+          {vidracaria?.assinatura_confirmada === false && (
+            <section className="bg-white border border-orange-200 rounded-xl p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[10px] font-medium uppercase tracking-widest text-orange-500">🧪 Período de Trial desta vidraçaria</h2>
+                  <p className="text-[11px] text-slate-500 mt-1">Esta unidade está em teste (pagamento ainda não confirmado). Ajuste a data final para estender ou encurtar o trial.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Fim do trial</label>
+                  <input
+                    type="date"
+                    value={trialFim}
+                    onChange={(e) => setTrialFim(e.target.value)}
+                    className="h-[40px] bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 transition-all"
+                  />
+                </div>
+              </div>
+            </section>
+          )}
           
           {/* Módulos Inclusos */}
           <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">

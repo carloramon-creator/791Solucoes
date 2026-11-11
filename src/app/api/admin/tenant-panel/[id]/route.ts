@@ -14,7 +14,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   try {
     const glass = await getGlassClient();
-    const [{ tenant, modules, plan, sponsorName }, blocksResult, canModules, canInvoices] = await Promise.all([
+    const [{ tenant, modules, plan, planoCodigo, sponsorName }, blocksResult, canModules, canInvoices] = await Promise.all([
       loadTenantContext(glass, id),
       glass.from('billing_bloqueios_excedente')
         .select('finance_record_id, ref_month, valor, vencimento, bloqueia_whatsapp, bloqueia_consultflex, whatsapp_bloqueado_em, modulos_removidos')
@@ -33,7 +33,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       console.error('[TENANT PANEL] Permissão de vencimento indisponível.', error);
       warnings.push('Não foi possível verificar a permissão para ajustar vencimentos.');
     }
-    const pricing = computeGlassSubscription({ tenant, plan, modules, sponsored: Boolean(sponsorName) });
+    const ehMini = planoCodigo === 'mini';
+    const pricing = computeGlassSubscription({ tenant, plan, modules, sponsored: Boolean(sponsorName), allInclusive: ehMini });
 
     const active = new Set((tenant.modulos_ativos || []).map((slug) => rootOfSlug(slug, modules)));
     const blockedRoots = new Set((blocksResult.data || [])
@@ -45,7 +46,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const rows = [
       {
         id: 'base',
-        nome: 'Plano base (Standard)',
+        nome: ehMini ? 'Plano Mini (tudo incluso)' : 'Plano base (Standard)',
         price: Number(plan?.base_price || 0),
         sponsored: Boolean(sponsorName),
         active: true,
@@ -56,7 +57,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ...GLASS_COMBOS.map((combo) => ({
         id: combo.id,
         nome: combo.nome,
-        price: comboPrice(plan, combo.id),
+        price: ehMini ? 0 : comboPrice(plan, combo.id),
         active: combo.roots.some((root) => active.has(root)),
         locked: false,
         blockedByOverage: combo.roots.some((root) => blockedRoots.has(root)),

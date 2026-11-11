@@ -63,16 +63,18 @@ export function computeGlassSubscription(params: {
   plan: GlassPlan | null | undefined;
   modules: GlassModule[];
   sponsored?: boolean;
+  allInclusive?: boolean;
 }) {
-  const { tenant, plan, modules, sponsored } = params;
+  const { tenant, plan, modules, sponsored, allInclusive } = params;
   const roots = activeRoots(tenant.modulos_ativos, modules);
   const base = sponsored ? 0 : Number(plan?.base_price || 0);
 
+  // Plano tudo-incluso (Mini): combos fazem parte do preço fixo e não somam.
   const combos = GLASS_COMBOS.map((combo) => ({
     id: combo.id,
     nome: combo.nome,
     active: combo.roots.some((root) => roots.has(root)),
-    price: comboPrice(plan, combo.id),
+    price: allInclusive ? 0 : comboPrice(plan, combo.id),
   }));
   const combosTotal = combos.reduce((sum, combo) => sum + (combo.active ? combo.price : 0), 0);
 

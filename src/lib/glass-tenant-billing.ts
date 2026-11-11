@@ -220,7 +220,7 @@ export async function loadTenantInvoices(tenantId: string, tenant?: { cnpj?: str
 /** Dados do tenant e do plano usados pelo painel e pela troca de módulos. */
 export async function loadTenantContext(glass: AnyClient, tenantId: string) {
   const [tenantResult, modulesResult, planResult, vouchersResult] = await Promise.all([
-    glass.from('vidracarias').select('id, nome, nome_fantasia, slug, email, cnpj, ativa, status_assinatura, vencimento_assinatura, ciclo_pagamento, modulos_ativos, limite_usuarios, limite_usuarios_whats, created_at, updated_at').eq('id', tenantId).maybeSingle(),
+    glass.from('vidracarias').select('id, nome, nome_fantasia, slug, email, cnpj, ativa, status_assinatura, vencimento_assinatura, ciclo_pagamento, modulos_ativos, limite_usuarios, limite_usuarios_whats, plano_codigo, assinatura_confirmada, created_at, updated_at').eq('id', tenantId).maybeSingle(),
     glass.from('modules').select('id, slug, nome, parent_slug, ordem').order('ordem'),
     supabaseServer.from('system_plans').select('*').eq('sistema', '791glass').maybeSingle(),
     supabaseServer.from('vouchers').select('patrocinador_id').eq('usado_por_vidracaria_id', tenantId).limit(1),
@@ -235,10 +235,19 @@ export async function loadTenantContext(glass: AnyClient, tenantId: string) {
     sponsorName = data?.nome || 'Patrocinador';
   }
 
+  // Tenant no plano Mini: o plano efetivo (preço fixo, limites e descontos) vem da linha própria.
+  let plan = (planResult.data || null) as GlassPlan | null;
+  const planoCodigo = String((tenantResult.data as Record<string, unknown> | null)?.plano_codigo || 'padrao');
+  if (planoCodigo === 'mini') {
+    const { data: miniPlan } = await supabaseServer.from('system_plans').select('*').eq('sistema', '791glass-mini').maybeSingle();
+    if (miniPlan) plan = miniPlan as GlassPlan;
+  }
+
   return {
     tenant: tenantResult.data as (Record<string, any> & { id: string; cnpj: string | null; email: string | null; modulos_ativos: string[] | null; updated_at: string | null }) | null,
     modules: (modulesResult.data || []) as GlassModule[],
-    plan: (planResult.data || null) as GlassPlan | null,
+    plan,
+    planoCodigo,
     sponsorName,
   };
 }

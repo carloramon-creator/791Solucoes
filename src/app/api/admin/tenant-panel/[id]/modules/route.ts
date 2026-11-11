@@ -45,7 +45,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!combo) return NextResponse.json({ success: false, error: 'Combo inválido.' }, { status: 400 });
 
   const glass = await getGlassClient();
-  const { tenant, modules, plan, sponsorName } = await loadTenantContext(glass, id);
+  const { tenant, modules, plan, planoCodigo, sponsorName } = await loadTenantContext(glass, id);
   if (!tenant) return NextResponse.json({ success: false, error: 'Vidraçaria não encontrada.' }, { status: 404 });
   const roots = new Set(combo.roots);
   const current = tenant.modulos_ativos || [];
@@ -63,8 +63,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const sponsored = Boolean(sponsorName);
-  const before = computeGlassSubscription({ tenant, plan, modules, sponsored }).total;
-  const after = computeGlassSubscription({ tenant: { ...tenant, modulos_ativos: nextModules }, plan, modules, sponsored }).total;
+  const allInclusive = planoCodigo === 'mini';
+  const before = computeGlassSubscription({ tenant, plan, modules, sponsored, allInclusive }).total;
+  const after = computeGlassSubscription({ tenant: { ...tenant, modulos_ativos: nextModules }, plan, modules, sponsored, allInclusive }).total;
   const warnings: string[] = [];
 
   // Assinatura recorrente (mensal) no Asaas: ajusta o valor antes de mexer no acesso, para poder desfazer.

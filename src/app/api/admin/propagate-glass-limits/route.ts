@@ -25,6 +25,7 @@ type Body = {
     extraMessagePrice?: number;
   };
   iaLimits?: IaLimits | null;
+  trialDias?: number | null;
   loadedLimits?: {
     usersIncluded: number;
     wppDevices: number;
@@ -151,9 +152,38 @@ export async function POST(request: NextRequest) {
       updated += updatedRows?.length || 0;
     }
 
+    // Trials em andamento: no modo "todas", recalcula o fim do teste como cadastro + novos dias.
+    // O trial é único e anterior à escolha de plano, então vale para todos os planos.
+    let trialsAtualizados = 0;
+    const trialDias = Number(body?.trialDias);
+    if (mode === 'all' && Number.isFinite(trialDias) && trialDias >= 1 && trialDias <= 365) {
+      const { data: emTrial, error: trialError } = await glass
+        .from('vidracarias')
+        .select('id, created_at')
+        .eq('assinatura_confirmada', false);
+      if (trialError) {
+        return NextResponse.json({ error: trialError.message }, { status: 500 });
+      }
+      for (const tenant of emTrial || []) {
+        const cadastro = new Date(tenant.created_at);
+        if (Number.isNaN(cadastro.getTime())) continue;
+        const fim = new Date(cadastro.getTime() + Math.trunc(trialDias) * 24 * 60 * 60 * 1000);
+        const { error: trialUpdateError } = await glass
+          .from('vidracarias')
+          .update({ vencimento_assinatura: fim.toISOString().split('T')[0] })
+          .eq('id', tenant.id)
+          .eq('assinatura_confirmada', false);
+        if (trialUpdateError) {
+          return NextResponse.json({ error: trialUpdateError.message }, { status: 500 });
+        }
+        trialsAtualizados++;
+      }
+    }
+
     return NextResponse.json({
       updated,
       scanned: tenants?.length || 0,
+      trialsAtualizados,
     });
   } catch (err: any) {
     return NextResponse.json(

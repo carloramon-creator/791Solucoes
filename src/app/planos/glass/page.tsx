@@ -109,6 +109,9 @@ export default function PlanosGlassPage() {
       iaBalanceteUsos: limits.iaBalanceteUsos === '' ? null : Number(limits.iaBalanceteUsos),
       iaBalancetePeriodo: limits.iaBalancetePeriodo || null,
     };
+    const nextTrialDias = isMini || limits.trialDias === ''
+      ? null
+      : Math.min(365, Math.max(1, Math.trunc(Number(limits.trialDias) || 0))) || null;
     
     const payload = {
       name: planName.trim() || (planoSistema === '791glass-mini' ? 'Mini' : '791glass'), 
@@ -129,7 +132,7 @@ export default function PlanosGlassPage() {
         consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice),
         mktMessages: Number(limits.mktMessages || 0),  
         extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
-        trialDias: limits.trialDias === '' ? null : Math.min(365, Math.max(1, Math.trunc(Number(limits.trialDias) || 0))) || null,
+        trialDias: nextTrialDias,
         ...nextIaLimits,
       },
       included_modules: selectedBasicModules
@@ -165,6 +168,7 @@ export default function PlanosGlassPage() {
               extraMessagePrice: parseCurrency(limits.extraMessagePrice),
             },
             iaLimits: nextIaLimits,
+            trialDias: nextTrialDias,
           }),
         });
 
@@ -506,7 +510,7 @@ export default function PlanosGlassPage() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
                 <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Período de Trial (novos cadastros)</h2>
-                <p className="text-[11px] text-slate-500 mt-1">Dias de teste grátis com todos os módulos ao cadastrar uma nova vidraçaria. Vazio = padrão de 30 dias. Não altera trials já em andamento.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Dias de teste grátis com todos os módulos ao cadastrar uma nova vidraçaria. Vazio = padrão de 30 dias. Com aplicação &quot;Atualizar todas as vidraçarias&quot;, os trials em andamento são recalculados (cadastro + novos dias).</p>
               </div>
               <div className="p-6 flex items-center gap-3">
                 <input

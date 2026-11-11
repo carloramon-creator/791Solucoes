@@ -91,6 +91,8 @@ interface PlanConfig {
     iaEstoqueUsos?: number | null;
     iaEstoquePeriodo?: string | null;
     iaFinanceiroUsos?: number | null;
+    iaBalanceteUsos?: number | null;
+    iaBalancetePeriodo?: string | null;
     iaFinanceiroPeriodo?: string | null;
   };
 }
@@ -268,6 +270,8 @@ export default function ConfigureSubscriptionPage() {
         payload.ia_estoque_periodo = sl.iaEstoquePeriodo ?? null;
         payload.ia_financeiro_limite = sl.iaFinanceiroUsos ?? null;
         payload.ia_financeiro_periodo = sl.iaFinanceiroPeriodo ?? null;
+        payload.ia_balancete_limite = sl.iaBalanceteUsos ?? null;
+        payload.ia_balancete_periodo = sl.iaBalancetePeriodo ?? null;
       }
 
       const { error } = await supabaseGlass.from('vidracarias').update(payload).eq('id', vidracariaId);

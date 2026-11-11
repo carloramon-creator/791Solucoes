@@ -9,6 +9,8 @@ type IaLimits = {
   iaEstoquePeriodo: string | null;
   iaFinanceiroUsos: number | null;
   iaFinanceiroPeriodo: string | null;
+  iaBalanceteUsos?: number | null;
+  iaBalancetePeriodo?: string | null;
 };
 
 type Body = {
@@ -73,10 +75,11 @@ export async function POST(request: NextRequest) {
     const planoAlvo = body?.plano === 'mini' ? 'mini' : 'padrao';
     const cotaEstoque = normalizarCotaIa(body?.iaLimits?.iaEstoqueUsos, body?.iaLimits?.iaEstoquePeriodo);
     const cotaFinanceiro = normalizarCotaIa(body?.iaLimits?.iaFinanceiroUsos, body?.iaLimits?.iaFinanceiroPeriodo);
+    const cotaBalancete = normalizarCotaIa(body?.iaLimits?.iaBalanceteUsos, body?.iaLimits?.iaBalancetePeriodo);
 
     const { data: tenants, error: tenantsError } = await glass
       .from('vidracarias')
-      .select('id, plano_codigo, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_marketing_excedente, ia_estoque_limite, ia_estoque_periodo, ia_financeiro_limite, ia_financeiro_periodo');
+      .select('id, plano_codigo, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_marketing_excedente, ia_estoque_limite, ia_estoque_periodo, ia_financeiro_limite, ia_financeiro_periodo, ia_balancete_limite, ia_balancete_periodo');
     if (tenantsError) {
       return NextResponse.json({ error: tenantsError.message }, { status: 500 });
     }
@@ -126,6 +129,10 @@ export async function POST(request: NextRequest) {
         if (mode === 'all' || tenant.ia_financeiro_limite == null) {
           updatePayload.ia_financeiro_limite = cotaFinanceiro.limite;
           updatePayload.ia_financeiro_periodo = cotaFinanceiro.periodo;
+        }
+        if (mode === 'all' || tenant.ia_balancete_limite == null) {
+          updatePayload.ia_balancete_limite = cotaBalancete.limite;
+          updatePayload.ia_balancete_periodo = cotaBalancete.periodo;
         }
       }
       

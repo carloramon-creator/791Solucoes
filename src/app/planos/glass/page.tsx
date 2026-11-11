@@ -69,7 +69,9 @@ export default function PlanosGlassPage() {
     iaEstoqueUsos: '',
     iaEstoquePeriodo: '',
     iaFinanceiroUsos: '',
-    iaFinanceiroPeriodo: ''
+    iaFinanceiroPeriodo: '',
+    iaBalanceteUsos: '',
+    iaBalancetePeriodo: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
     usersIncluded: number;
@@ -103,6 +105,8 @@ export default function PlanosGlassPage() {
       iaEstoquePeriodo: limits.iaEstoquePeriodo || null,
       iaFinanceiroUsos: limits.iaFinanceiroUsos === '' ? null : Number(limits.iaFinanceiroUsos),
       iaFinanceiroPeriodo: limits.iaFinanceiroPeriodo || null,
+      iaBalanceteUsos: limits.iaBalanceteUsos === '' ? null : Number(limits.iaBalanceteUsos),
+      iaBalancetePeriodo: limits.iaBalancetePeriodo || null,
     };
     
     const payload = {
@@ -281,7 +285,9 @@ export default function PlanosGlassPage() {
             iaEstoqueUsos: sl.iaEstoqueUsos == null ? '' : String(sl.iaEstoqueUsos),
             iaEstoquePeriodo: sl.iaEstoquePeriodo || '',
             iaFinanceiroUsos: sl.iaFinanceiroUsos == null ? '' : String(sl.iaFinanceiroUsos),
-            iaFinanceiroPeriodo: sl.iaFinanceiroPeriodo || ''
+            iaFinanceiroPeriodo: sl.iaFinanceiroPeriodo || '',
+            iaBalanceteUsos: sl.iaBalanceteUsos == null ? '' : String(sl.iaBalanceteUsos),
+            iaBalancetePeriodo: sl.iaBalancetePeriodo || ''
           });
         }
 
@@ -601,6 +607,27 @@ export default function PlanosGlassPage() {
                 <select
                   value={limits.iaFinanceiroPeriodo}
                   onChange={(e) => setLimits(prev => ({ ...prev, iaFinanceiroPeriodo: e.target.value }))}
+                  className="flex-1 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                >
+                  <option value="">Sem limite</option>
+                  <option value="semana">Por semana (seg-dom)</option>
+                  <option value="mes">Por mês (civil)</option>
+                </select>
+              </div>
+            </div>
+            <div className="pt-5 border-t border-slate-100">
+              <label className="block text-[12px] font-semibold text-slate-700 mb-1.5 uppercase tracking-tight">IA de Balancete (análise profunda)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min={0} placeholder="Ex: 1"
+                  value={limits.iaBalanceteUsos}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaBalanceteUsos: e.target.value }))}
+                  className="w-24 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] text-center focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
+                />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400 shrink-0">uso(s)</span>
+                <select
+                  value={limits.iaBalancetePeriodo}
+                  onChange={(e) => setLimits(prev => ({ ...prev, iaBalancetePeriodo: e.target.value }))}
                   className="flex-1 bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md px-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                 >
                   <option value="">Sem limite</option>

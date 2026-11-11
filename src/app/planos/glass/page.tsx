@@ -252,10 +252,10 @@ export default function PlanosGlassPage() {
         // Plano ainda não cadastrado (ex.: Mini novo): formulário limpo para criar.
         setSelectedBasicModules(planData?.included_modules || []);
         setPlanName(planData?.name || '');
-        setBasePrice(planData ? formatCurrency(String((planData.base_price || 0) * 100)) : '');
+        setBasePrice(planData ? formatCurrency(String(Math.round((planData.base_price || 0) * 100))) : '');
         const formattedBundles: Record<string, string> = { financeiro: '', producao: '', comunicacao: '', rh: '', fiscal: '' };
         Object.entries(planData?.bundle_prices || {}).forEach(([k, v]: [string, any]) => {
-          formattedBundles[k] = formatCurrency(String(Number(v || 0) * 100));
+          formattedBundles[k] = formatCurrency(String(Math.round(Number(v || 0) * 100)));
         });
         setBundlePrices(prev => ({ ...prev, ...formattedBundles }));
 
@@ -269,15 +269,15 @@ export default function PlanosGlassPage() {
 
           setLimits({
             usersIncluded: String(usersIncluded || ''),
-            extraUserPrice: formatCurrency(String(Number(sl.extraUserPrice || 0) * 100)),
+            extraUserPrice: formatCurrency(String(Math.round(Number(sl.extraUserPrice || 0) * 100))),
             wppDevices: String(wppDevices || ''),
-            extraDevicePrice: formatCurrency(String(Number(sl.extraDevicePrice || 0) * 100)),
+            extraDevicePrice: formatCurrency(String(Math.round(Number(sl.extraDevicePrice || 0) * 100))),
             wppMessages: String(wppMessages || ''),
-            extraMessagePrice: formatCurrency(String(Number(sl.extraMessagePrice || 0) * 100)),
-            consultflexBasicPrice: formatCurrency(String(Number(sl.consultflexBasicPrice || 0) * 100)),
-            consultflexCompletePrice: formatCurrency(String(Number(sl.consultflexCompletePrice || 0) * 100)),
+            extraMessagePrice: formatCurrency(String(Math.round(Number(sl.extraMessagePrice || 0) * 100))),
+            consultflexBasicPrice: formatCurrency(String(Math.round(Number(sl.consultflexBasicPrice || 0) * 100))),
+            consultflexCompletePrice: formatCurrency(String(Math.round(Number(sl.consultflexCompletePrice || 0) * 100))),
             mktMessages: String(Number(sl.mktMessages || 0) || ''), 
-            extraMktMessagePrice: formatCurrency(String(Number(sl.extraMktMessagePrice || 0) * 100)),
+            extraMktMessagePrice: formatCurrency(String(Math.round(Number(sl.extraMktMessagePrice || 0) * 100))),
             iaEstoqueUsos: sl.iaEstoqueUsos == null ? '' : String(sl.iaEstoqueUsos),
             iaEstoquePeriodo: sl.iaEstoquePeriodo || '',
             iaFinanceiroUsos: sl.iaFinanceiroUsos == null ? '' : String(sl.iaFinanceiroUsos),

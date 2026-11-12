@@ -45,7 +45,8 @@ export async function POST(req: NextRequest) {
           value: payment.value,
           paymentMethod: payment.billingType,
           bankId: payment.id,
-          metadata: { provider: 'asaas', event }
+          // Inclui o pagamento completo para a deduplicação por asaas_payment_id funcionar.
+          metadata: { ...payment, provider: 'asaas', event }
         });
       }
       

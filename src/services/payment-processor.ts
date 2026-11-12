@@ -64,8 +64,28 @@ export class PaymentProcessor {
     
     console.log(`[PAYMENT PROCESSOR] Pagamento confirmado para ${saasType}: ${tenantId}${couponId ? ` (cupom: ${couponId})` : ''}`);
 
-    // 1. Registrar na Holding (system_finance_records)
     const holdingSupabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Idempotência: o Asaas reenvia o mesmo pagamento (PAYMENT_CONFIRMED + PAYMENT_RECEIVED + retries).
+    // Se já existe lançamento para este pagamento, não registra de novo nem reavança o vencimento do tenant.
+    if (asaasPaymentId) {
+      const { data: alreadyProcessed, error: dedupeError } = await holdingSupabase
+        .from('system_finance_records')
+        .select('id')
+        .filter('metadata->>source', 'eq', 'asaas_webhook')
+        .filter('metadata->>id', 'eq', asaasPaymentId)
+        .limit(1)
+        .maybeSingle();
+
+      if (dedupeError) {
+        console.error('[PAYMENT PROCESSOR] Falha ao verificar duplicidade do pagamento:', dedupeError.message);
+      } else if (alreadyProcessed?.id) {
+        console.log(`[PAYMENT PROCESSOR] Pagamento ${asaasPaymentId} já processado (registro ${alreadyProcessed.id}); evento duplicado ignorado.`);
+        return;
+      }
+    }
+
+    // 1. Registrar na Holding (system_finance_records)
     try {
       let tenantName = tenantId;
       if (saasType === 'glass' && glassServiceKey) {
@@ -120,7 +140,7 @@ export class PaymentProcessor {
         external_reference: payload.externalReference,
       };
 
-      await holdingSupabase.from('system_finance_records').insert({
+      const { error: insertError } = await holdingSupabase.from('system_finance_records').insert({
         business_unit: saasType,
         type: 'revenue',
         value: payload.value,
@@ -131,6 +151,16 @@ export class PaymentProcessor {
         category: categoryLabel,
         metadata,
       });
+
+      if (insertError) {
+        // 23505 = unique_violation (índice único de pagamentos do webhook): outro evento
+        // simultâneo já registrou este pagamento; abortar para não duplicar o processamento.
+        if (insertError.code === '23505') {
+          console.log(`[PAYMENT PROCESSOR] Pagamento ${asaasPaymentId || payload.externalReference} já registrado por evento concorrente; ignorado.`);
+          return;
+        }
+        throw insertError;
+      }
     } catch (financeErr: any) {
       // Não deve impedir a ativação da assinatura por causa de falha no registro financeiro
       console.error('[PAYMENT PROCESSOR] Erro ao registrar system_finance_records:', financeErr.message);

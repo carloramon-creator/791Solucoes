@@ -108,6 +108,9 @@ const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", c
 const dateBr = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "--");
 const dateTimeBr = (v?: string | null) => (v ? new Date(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "nunca");
 
+// Janela mínima entre sincronizações automáticas ao entrar no financeiro.
+const AUTO_SYNC_TTL_MS = 5 * 60 * 1000;
+
 export default function BankImportPanel({
   categories,
   systemBalances,
@@ -181,9 +184,9 @@ export default function BankImportPanel({
 
   const accountName = (id?: string | null) => accounts.find((a) => a.id === id)?.name || "--";
 
-  const syncNow = async () => {
+  const syncNow = useCallback(async (auto = false) => {
     setSyncing(true);
-    setMessage(null);
+    if (!auto) setMessage(null);
     try {
       const res = await holdingAuthFetch("/api/system/bank-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const json = await res.json();
@@ -199,7 +202,22 @@ export default function BankImportPanel({
     } finally {
       setSyncing(false);
     }
-  };
+  }, [refresh, onChanged]);
+
+  // Sincroniza automaticamente ao entrar no financeiro (após a primeira carga das contas),
+  // pulando quando todas as contas habilitadas já sincronizaram nos últimos minutos.
+  const autoSyncTriggered = useRef(false);
+  useEffect(() => {
+    if (autoSyncTriggered.current || loading) return;
+    autoSyncTriggered.current = true;
+    const syncable = accounts.filter((acc) => acc.sync_enabled && !(String(acc.provider || "") === "inter" && interImportEnabled !== true));
+    if (!syncable.length) return;
+    const recentEnough = syncable.every((acc) => acc.last_sync_at && Date.now() - new Date(acc.last_sync_at).getTime() < AUTO_SYNC_TTL_MS);
+    if (recentEnough) return;
+    // Agendado fora do corpo do effect para não disparar setState síncrono (react-hooks/set-state-in-effect).
+    // Sem cleanup: o disparo é único (guardado pelo ref) e não deve ser cancelado por re-renders.
+    setTimeout(() => void syncNow(true), 0);
+  }, [loading, accounts, interImportEnabled, syncNow]);
 
   const transferCategoryFor = (type: FinanceType) =>
     categories.find((category) => category.type === type && isTransferCategoryName(category.name));
@@ -360,6 +378,7 @@ export default function BankImportPanel({
         className="relative bg-white text-[#3b597b] border border-[#3b597b]/20 px-5 py-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 hover:bg-[#f3f7fb] transition-all uppercase tracking-widest"
       >
         <Landmark size={14} /> Extrato bancário
+        {syncing && <Loader2 size={12} className="animate-spin text-[#3b597b]/70" aria-label="Sincronizando extrato" />}
         {count > 0 && (
           <span className="ml-1 bg-amber-400 text-amber-950 rounded-full px-2 py-0.5 text-[10px] font-black">{count}</span>
         )}
@@ -374,7 +393,7 @@ export default function BankImportPanel({
                 <p className="text-[calc(0.75rem+2pt)] text-slate-500">Lançamentos novos são pagos e aguardam classificação. Possíveis duplicados do Inter aguardam sua decisão, sem afetar o saldo.</p>
               </div>
               <div className="flex items-center justify-between gap-2 shrink-0">
-                <button onClick={syncNow} disabled={syncing} className="bg-[#3b597b] text-white px-4 py-2 rounded-xl text-[calc(10px+2pt)] font-bold flex items-center gap-2 uppercase tracking-widest whitespace-nowrap disabled:opacity-60">
+                <button onClick={() => void syncNow()} disabled={syncing} className="bg-[#3b597b] text-white px-4 py-2 rounded-xl text-[calc(10px+2pt)] font-bold flex items-center gap-2 uppercase tracking-widest whitespace-nowrap disabled:opacity-60">
                   {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sincronizar agora
                 </button>
                 <button onClick={() => setOpen(false)} aria-label="Fechar extrato" className="p-2 text-slate-400 hover:text-slate-700"><X size={18} /></button>

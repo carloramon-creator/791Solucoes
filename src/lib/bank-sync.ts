@@ -359,6 +359,73 @@ async function settleForecast(
   return true;
 }
 
+/**
+ * Previsões no fluxo do Inter: a importação manda movimentações com valor coincidente para a fila
+ * de revisão. Quando há UMA previsão pendente com mesmo valor e mesmo nome, vincula e dá baixa
+ * usando as funções do banco (que mantêm travas, triggers e trilha de auditoria).
+ */
+export async function autoSettleInterForecasts(
+  account: { id: string },
+  result: Pick<AccountSyncResult, 'reconciled' | 'pendingSettlement' | 'pendingReview'>,
+) {
+  const { data: reviews, error } = await supabaseServer
+    .from('system_bank_transactions')
+    .select('id, tx_date, amount, tx_type, description, counterparty, reference_id')
+    .eq('bank_account_id', account.id)
+    .eq('provider', 'inter')
+    .eq('status', 'revisao_duplicidade')
+    .limit(200);
+  if (error || !reviews?.length) return;
+
+  for (const row of reviews) {
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+    const tx: NormalizedTx = {
+      externalId: '',
+      date: String(row.tx_date || ''),
+      amount,
+      type: String(row.tx_type || ''),
+      description: String(row.description || ''),
+      counterparty: row.counterparty ? String(row.counterparty) : null,
+      referenceId: row.reference_id ? String(row.reference_id) : null,
+      balanceAfter: null,
+      raw: null,
+    };
+    const forecast = await findPendingForecast(tx, account.id);
+    if (!forecast) continue;
+
+    try {
+      await resolveInterReview({
+        transactionId: String(row.id),
+        action: 'link',
+        recordId: String(forecast.id),
+        allowPaid: false,
+        actorId: 'bank_sync_auto',
+      });
+    } catch (reviewErr) {
+      // Conflito ou corrida: a movimentação permanece na revisão manual.
+      console.warn('[BANK SYNC] Previsão não baixada automaticamente (Inter):', reviewErr instanceof Error ? reviewErr.message : reviewErr);
+      continue;
+    }
+
+    const { error: settleError } = await supabaseServer.rpc('bank_inter_settle_record', {
+      p_record_id: forecast.id,
+      p_paid_amount: Math.round(Math.abs(amount) * 100) / 100,
+      p_bank_account_id: account.id,
+      p_payment_method: null,
+      p_handling: 'adjust',
+    });
+    if (settleError) {
+      // Ficou vinculada e pendente: aparece na fila "No banco, mas pendente no sistema".
+      console.error('[BANK SYNC] Falha ao baixar previsão vinculada ao Inter:', settleError.message);
+      result.pendingSettlement++;
+    } else {
+      result.reconciled++;
+    }
+    result.pendingReview = Math.max(0, result.pendingReview - 1);
+  }
+}
+
 async function syncAccount(account: BankAccountRow, rules: Rule[], categories: CategoryRow[]): Promise<AccountSyncResult> {
   const provider = String(account.provider || '');
   const result: AccountSyncResult = {
@@ -413,6 +480,7 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
 
     if (provider === 'inter') {
       await importInterTransactions(account, transactions, rules, result);
+      await autoSettleInterForecasts(account, result);
     } else {
       const { data: existing } = await supabaseServer
         .from('system_bank_transactions')

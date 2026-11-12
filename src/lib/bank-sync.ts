@@ -276,6 +276,89 @@ async function findReconcilableRecord(tx: NormalizedTx, provider: string) {
   return data?.[0] || null;
 }
 
+/**
+ * Mesmo favorecido/nome: a descrição da previsão aparece no texto da movimentação (ou vice-versa),
+ * ou todas as palavras relevantes da previsão aparecem na movimentação.
+ */
+export function matchesForecastName(recordDescription: string, tx: { description: string; counterparty?: string | null }) {
+  const recordName = normalizeText(recordDescription);
+  if (recordName.length < 3) return false;
+  const texts = [tx.counterparty || '', tx.description, `${tx.description} ${tx.counterparty || ''}`];
+  for (const text of texts) {
+    const txName = normalizeText(text);
+    if (txName.length < 3) continue;
+    if (txName.includes(recordName) || recordName.includes(txName)) return true;
+    const recordTokens = recordName.split(' ').filter((token) => token.length >= 3);
+    const txTokens = new Set(txName.split(' ').filter((token) => token.length >= 3));
+    if (recordTokens.length && recordTokens.every((token) => txTokens.has(token))) return true;
+  }
+  return false;
+}
+
+/**
+ * Previsão orçamentária: lançamento pendente com mesmo valor e mesmo favorecido/nome
+ * (independente da data). Só retorna quando a correspondência é única; ambíguos seguem o fluxo normal.
+ */
+export async function findPendingForecast(tx: NormalizedTx, accountId: string) {
+  const recordType: 'revenue' | 'expense' = tx.amount > 0 ? 'revenue' : 'expense';
+  const value = Math.round(Math.abs(tx.amount) * 100) / 100;
+  const { data, error } = await supabaseServer
+    .from('system_finance_records')
+    .select('id, value, description, status, bank_account_id, metadata')
+    .eq('type', recordType)
+    .eq('status', 'pending')
+    .eq('value', value)
+    .or(`bank_account_id.eq.${accountId},bank_account_id.is.null`)
+    .limit(100);
+  if (error) throw new Error(error.message);
+  const candidates = (data || []).filter((record) => {
+    const metadata = isObject(record.metadata) ? record.metadata : {};
+    // Lançamentos de cartão ou já vinculados a outra movimentação nunca recebem baixa automática.
+    if (String(metadata.card_id || '') || String(metadata.bank_tx_id || '')) return false;
+    return matchesForecastName(String(record.description || ''), tx);
+  });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/** Dá baixa na previsão e concilia a movimentação. Retorna false se a previsão mudou nesse meio-tempo. */
+async function settleForecast(
+  forecast: { id: string; value: unknown; bank_account_id: string | null; metadata: unknown },
+  tx: NormalizedTx,
+  txId: string,
+  accountId: string,
+) {
+  const metadata = isObject(forecast.metadata) ? forecast.metadata : {};
+  const settledAt = new Date().toISOString();
+  const { data: settled, error } = await supabaseServer
+    .from('system_finance_records')
+    .update({
+      status: 'paid',
+      bank_account_id: forecast.bank_account_id || accountId,
+      metadata: {
+        ...metadata,
+        bank_tx_id: txId,
+        bank_confirmed_at: tx.date,
+        settlement: {
+          settled_at: settledAt,
+          original_value: Number(forecast.value) || Math.abs(tx.amount),
+          paid_value: Math.abs(tx.amount),
+          difference: 0,
+          handling: 'adjust',
+          adjustment_kind: 'sem_diferenca',
+          source: 'bank_sync_auto',
+        },
+      },
+    })
+    .eq('id', forecast.id)
+    .eq('status', 'pending')
+    .select('id');
+  if (error || !settled?.length) return false;
+  await supabaseServer.from('system_bank_transactions')
+    .update({ finance_record_id: forecast.id, status: 'conciliado', updated_at: new Date().toISOString() })
+    .eq('id', txId);
+  return true;
+}
+
 async function syncAccount(account: BankAccountRow, rules: Rule[], categories: CategoryRow[]): Promise<AccountSyncResult> {
   const provider = String(account.provider || '');
   const result: AccountSyncResult = {
@@ -377,6 +460,13 @@ async function syncAccount(account: BankAccountRow, rules: Rule[], categories: C
             .update({ finance_record_id: match.id, status, updated_at: new Date().toISOString() })
             .eq('id', txId);
           if (status === 'conciliado') result.reconciled++; else result.pendingSettlement++;
+          continue;
+        }
+
+        // Previsão orçamentária: baixa automática quando há UMA conta pendente com mesmo valor e mesmo nome.
+        const forecast = await findPendingForecast(tx, account.id);
+        if (forecast && await settleForecast(forecast, tx, txId, account.id)) {
+          result.reconciled++;
           continue;
         }
 

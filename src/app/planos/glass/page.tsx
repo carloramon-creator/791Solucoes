@@ -72,6 +72,8 @@ export default function PlanosGlassPage() {
     iaFinanceiroPeriodo: '',
     iaBalanceteUsos: '',
     iaBalancetePeriodo: '',
+    autentiqueDocsIncluded: '',
+    autentiqueExtraDocPrice: '',
     trialDias: ''
   });
   const [loadedLimits, setLoadedLimits] = useState<{
@@ -98,6 +100,20 @@ export default function PlanosGlassPage() {
 
   const handleSave = async () => {
     setSaving(true);
+    const rawAutentiqueQuota = limits.autentiqueDocsIncluded.trim();
+    const rawAutentiquePrice = limits.autentiqueExtraDocPrice.trim();
+    const autentiqueQuota = rawAutentiqueQuota === '' ? null : Number(rawAutentiqueQuota);
+    const autentiquePrice = rawAutentiquePrice === '' ? null : parseCurrency(rawAutentiquePrice);
+    if (autentiqueQuota !== null && (!Number.isSafeInteger(autentiqueQuota) || autentiqueQuota < 0)) {
+      setSaving(false);
+      alert('A franquia Autentique deve ser um número inteiro igual ou maior que zero.');
+      return;
+    }
+    if (autentiquePrice !== null && (!Number.isFinite(autentiquePrice) || autentiquePrice < 0)) {
+      setSaving(false);
+      alert('O valor por documento excedente deve ser igual ou maior que zero.');
+      return;
+    }
     const nextUsersIncluded = Number(limits.usersIncluded || 0);
     const nextWppDevices = Number(limits.wppDevices || 0);
     const nextWppMessages = Number(limits.wppMessages || 0);
@@ -132,6 +148,8 @@ export default function PlanosGlassPage() {
         consultflexCompletePrice: parseCurrency(limits.consultflexCompletePrice),
         mktMessages: Number(limits.mktMessages || 0),  
         extraMktMessagePrice: parseCurrency(limits.extraMktMessagePrice),
+        autentiqueDocsIncluded: autentiqueQuota,
+        autentiqueExtraDocPrice: autentiquePrice,
         trialDias: nextTrialDias,
         ...nextIaLimits,
       },
@@ -294,6 +312,10 @@ export default function PlanosGlassPage() {
             iaFinanceiroPeriodo: sl.iaFinanceiroPeriodo || '',
             iaBalanceteUsos: sl.iaBalanceteUsos == null ? '' : String(sl.iaBalanceteUsos),
             iaBalancetePeriodo: sl.iaBalancetePeriodo || '',
+            autentiqueDocsIncluded: sl.autentiqueDocsIncluded == null ? '' : String(sl.autentiqueDocsIncluded),
+            autentiqueExtraDocPrice: sl.autentiqueExtraDocPrice == null
+              ? ''
+              : formatCurrency(String(Math.round(Number(sl.autentiqueExtraDocPrice) * 100))),
             trialDias: sl.trialDias == null ? '' : String(sl.trialDias)
           });
         }
@@ -692,6 +714,45 @@ export default function PlanosGlassPage() {
                     onChange={(e) => setLimits(prev => ({ ...prev, extraDevicePrice: formatCurrency(e.target.value) }))}
                     className="w-full bg-white border border-slate-300 text-slate-900 text-sm font-bold rounded-md pl-9 pr-3 h-[44px] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20 focus:border-[#3b597b] transition-all"
                   />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+                  <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Assinaturas digitais (Autentique)</h2>
+                  <p className="mt-1 text-[11px] font-medium text-slate-500">
+                    Franquia mensal e excedente por documento efetivamente criado na conta Autentique central.
+                  </p>
+                </div>
+                <div className="grid gap-4 p-6 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Documentos incluídos por mês</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Ex.: 10"
+                      value={limits.autentiqueDocsIncluded}
+                      onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueDocsIncluded: event.target.value }))}
+                      className="h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Valor por documento excedente (R$)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-3 text-xs font-bold text-slate-400">R$</span>
+                      <input
+                        type="text"
+                        placeholder="0,00"
+                        value={limits.autentiqueExtraDocPrice}
+                        onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueExtraDocPrice: formatCurrency(event.target.value) }))}
+                        className="h-[44px] w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] font-medium text-slate-500 sm:col-span-2">
+                    A configuração é aplicada automaticamente aos tenants vinculados a este plano. Deixe os campos vazios para indicar que a franquia ainda não foi configurada.
+                  </p>
                 </div>
               </div>
             </div>

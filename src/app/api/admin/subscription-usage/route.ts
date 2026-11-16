@@ -10,6 +10,18 @@ export const revalidate = 0;
 type StatusTone = 'ok' | 'warning' | 'exceeded';
 
 type ConsultflexExecutionStatus = 'success' | 'failed' | 'unknown';
+type AutentiqueSignatureUsageRow = {
+  id: string;
+  vidracaria_id: string;
+  status: string;
+  created_at: string;
+};
+type AutentiqueSignatureEventRow = {
+  assinatura_id: string;
+  tipo: string;
+  signatario: string | null;
+  detalhes: unknown;
+};
 
 function getStatusTone(current: number, limit: number): StatusTone {
   if (!limit || limit <= 0) return 'ok';
@@ -44,6 +56,20 @@ function normalizeText(value: unknown) {
 function toFiniteNumber(value: unknown) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function toOptionalNonNegative(value: unknown, integer = false) {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0 || (integer && !Number.isSafeInteger(num))) return null;
+  return num;
+}
+
+function getBrtMonthKey(value: unknown) {
+  const timestamp = value ? new Date(String(value)).getTime() : Number.NaN;
+  if (!Number.isFinite(timestamp)) return '';
+  const brt = new Date(timestamp - 3 * 60 * 60 * 1000);
+  return `${brt.getUTCFullYear()}-${String(brt.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 function splitInChunks<T>(arr: T[], size: number): T[][] {
@@ -183,6 +209,7 @@ export async function GET(req: Request) {
       { data: workOrders, error: workOrdersError },
       { data: auditedDeletes, error: auditedDeletesError },
       { data: planConfig, error: planConfigError },
+      { data: miniPlanConfig, error: miniPlanConfigError },
       { data: invoices, error: invoicesError },
       { data: whatsappUso, error: whatsappUsoError },
       { data: accessOrders, error: accessOrdersError },
@@ -244,6 +271,11 @@ export async function GET(req: Request) {
         .eq('sistema', '791glass')
         .single(),
       supabaseServer
+        .from('system_plans')
+        .select('system_limits')
+        .eq('sistema', '791glass-mini')
+        .maybeSingle(),
+      supabaseServer
         .from('system_invoices')
         .select('value, status, created_at, metadata')
         .gte('created_at', messagesPeriodStart)
@@ -273,12 +305,50 @@ export async function GET(req: Request) {
       workOrdersError ||
       auditedDeletesError ||
       planConfigError ||
+      miniPlanConfigError ||
       invoicesError ||
       whatsappUsoError ||
       accessOrdersError;
 
     if (firstError) {
       return NextResponse.json({ error: firstError.message }, { status: 500 });
+    }
+
+    const autentiqueDocuments: AutentiqueSignatureUsageRow[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data: signaturePage, error: signaturePageError } = await glass
+        .from('orcamento_assinaturas_autentique')
+        .select('id,vidracaria_id,status,created_at')
+        .not('autentique_document_id', 'is', null)
+        .gte('created_at', messagesPeriodStart)
+        .lte('created_at', rangeEnd.toISOString())
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + 999);
+      if (signaturePageError) return NextResponse.json({ error: signaturePageError.message }, { status: 500 });
+      autentiqueDocuments.push(...(signaturePage || []));
+      if ((signaturePage || []).length < 1000) break;
+    }
+
+    const signatureTenantById = new Map<string, string>();
+    autentiqueDocuments.forEach((row) => {
+      if (row?.id && row?.vidracaria_id) signatureTenantById.set(String(row.id), String(row.vidracaria_id));
+    });
+    const assinaturaIds = Array.from(signatureTenantById.keys());
+    const signatureEvents: AutentiqueSignatureEventRow[] = [];
+    for (const ids of splitInChunks(assinaturaIds, 500)) {
+      for (let offset = 0; ids.length > 0; offset += 1000) {
+        const { data: events, error: eventsError } = await glass
+          .from('orcamento_assinaturas_autentique_eventos')
+          .select('assinatura_id,tipo,signatario,detalhes')
+          .in('assinatura_id', ids)
+          .order('recebido_em', { ascending: true })
+          .order('id', { ascending: true })
+          .range(offset, offset + 999);
+        if (eventsError) return NextResponse.json({ error: eventsError.message }, { status: 500 });
+        signatureEvents.push(...((events || []) as AutentiqueSignatureEventRow[]));
+        if ((events || []).length < 1000) break;
+      }
     }
 
     const rangeStartTime = rangeStart.getTime();
@@ -378,6 +448,60 @@ export async function GET(req: Request) {
       const tenantId = String(msg?.vidracaria_id || '');
       if (!tenantId) return;
       whatsappReceivedByTenant.set(tenantId, (whatsappReceivedByTenant.get(tenantId) || 0) + 1);
+    });
+
+    const autentiqueByTenant = new Map<string, {
+      documents: number;
+      pending: number;
+      signed: number;
+      rejected: number;
+      byMonth: Map<string, number>;
+      delivered: Set<string>;
+      viewed: Set<string>;
+      accepted: Set<string>;
+      deliveryFailed: Set<string>;
+    }>();
+    (autentiqueDocuments || []).forEach((row: any) => {
+      const tenantId = String(row?.vidracaria_id || '');
+      const month = getBrtMonthKey(row?.created_at);
+      if (!tenantId || !month) return;
+      if (!autentiqueByTenant.has(tenantId)) {
+        autentiqueByTenant.set(tenantId, {
+          documents: 0,
+          pending: 0,
+          signed: 0,
+          rejected: 0,
+          byMonth: new Map(),
+          delivered: new Set(),
+          viewed: new Set(),
+          accepted: new Set(),
+          deliveryFailed: new Set(),
+        });
+      }
+      const usage = autentiqueByTenant.get(tenantId)!;
+      usage.documents += 1;
+      usage.byMonth.set(month, (usage.byMonth.get(month) || 0) + 1);
+      if (['criando', 'aguardando_assinaturas'].includes(String(row?.status || ''))) usage.pending += 1;
+      if (row?.status === 'assinado') usage.signed += 1;
+      if (row?.status === 'recusado') usage.rejected += 1;
+    });
+    signatureEvents.forEach((event) => {
+      const signatureId = String(event?.assinatura_id || '');
+      const tenantId = signatureTenantById.get(signatureId);
+      const role = event?.signatario;
+      if (!tenantId || (role !== 'cliente' && role !== 'vendedor')) return;
+      const usage = autentiqueByTenant.get(tenantId);
+      if (!usage) return;
+      const signerKey = `${signatureId}:${role}`;
+      const details = event.detalhes && typeof event.detalhes === 'object'
+        ? event.detalhes as Record<string, unknown>
+        : {};
+      const viewed = event.tipo === 'signature.viewed' || event.tipo === 'signature.accepted';
+      const accepted = event.tipo === 'signature.accepted';
+      if (typeof details.emailEntregueEm === 'string' || viewed || accepted) usage.delivered.add(signerKey);
+      if (viewed) usage.viewed.add(signerKey);
+      if (accepted) usage.accepted.add(signerKey);
+      if (event.tipo === 'signature.delivery_failed') usage.deliveryFailed.add(signerKey);
     });
 
     const activityByTenant = new Map<string, {
@@ -552,6 +676,7 @@ export async function GET(req: Request) {
     });
 
     const systemLimits = (planConfig as any)?.system_limits || {};
+    const miniSystemLimits = (miniPlanConfig as any)?.system_limits || {};
     const defaultUsersLimit = toNumber(systemLimits.usersIncluded, 10);
     const defaultWhatsappUsersLimit = toNumber(systemLimits.wppDevices, 1);
     const defaultMessagesLimit = toNumber(systemLimits.wppMessages, 1000);
@@ -589,6 +714,29 @@ export async function GET(req: Request) {
         failed: 0,
         unknown: 0,
       };
+      const autentiqueUsage = autentiqueByTenant.get(tenantId) || {
+        documents: 0,
+        pending: 0,
+        signed: 0,
+        rejected: 0,
+        byMonth: new Map<string, number>(),
+        delivered: new Set<string>(),
+        viewed: new Set<string>(),
+        accepted: new Set<string>(),
+        deliveryFailed: new Set<string>(),
+      };
+      const tenantPlanLimits = tenant.plano_codigo === 'mini' ? miniSystemLimits : systemLimits;
+      const autentiqueFranquia = toOptionalNonNegative(tenantPlanLimits.autentiqueDocsIncluded, true);
+      const autentiquePreco = toOptionalNonNegative(tenantPlanLimits.autentiqueExtraDocPrice);
+      const extraAutentiqueDocuments = autentiqueFranquia === null
+        ? null
+        : Array.from(autentiqueUsage.byMonth.values()).reduce(
+          (sum, count) => sum + Math.max(0, count - autentiqueFranquia),
+          0,
+        );
+      const autentiqueOverage = extraAutentiqueDocuments === null || autentiquePreco === null
+        ? null
+        : Math.round(extraAutentiqueDocuments * autentiquePreco * 100) / 100;
 
       const usersLimit = tenant.limite_usuarios == null
         ? defaultUsersLimit
@@ -623,7 +771,7 @@ export async function GET(req: Request) {
       const consultflexCompleteOverage = consultflexUsage.completeSuccess * consultflexCompletePrice;
       const consultflexOverage = consultflexBasicOverage + consultflexCompleteOverage;
       const accessCharges = glassAccessChargesForMonth((accessOrders || []).filter((order) => order.vidracaria_id === tenantId), rangeEnd.toISOString().slice(0, 7));
-      const overageTotal = messagesOverage + marketingMessagesOverage + consultflexOverage + accessCharges.total;
+      const overageTotal = messagesOverage + marketingMessagesOverage + consultflexOverage + accessCharges.total + (autentiqueOverage || 0);
 
       return {
         ...tenant,
@@ -641,6 +789,14 @@ export async function GET(req: Request) {
           consultflexSuccessTotal: consultflexUsage.basicSuccess + consultflexUsage.completeSuccess,
           consultflexFailed: consultflexUsage.failed,
           consultflexUnknown: consultflexUsage.unknown,
+          autentiqueDocuments: autentiqueUsage.documents,
+          autentiquePending: autentiqueUsage.pending,
+          autentiqueSigned: autentiqueUsage.signed,
+          autentiqueRejected: autentiqueUsage.rejected,
+          autentiqueDelivered: autentiqueUsage.delivered.size,
+          autentiqueViewed: autentiqueUsage.viewed.size,
+          autentiqueAccepted: autentiqueUsage.accepted.size,
+          autentiqueDeliveryFailed: autentiqueUsage.deliveryFailed.size,
           consultflexCountedRows:
             consultflexUsage.basicSuccess
             + consultflexUsage.completeSuccess
@@ -653,18 +809,21 @@ export async function GET(req: Request) {
           whatsappUsers: whatsappUsersLimit,
           messages: messagesLimit,
           marketingMessages: marketingMessagesLimit,
+          autentiqueDocuments: autentiqueFranquia,
         },
         status: {
           users: 'ok' as StatusTone,
           whatsappUsers: getStatusTone(whatsappUsers, whatsappUsersLimit),
           messages: getStatusTone(messagesSent, messagesLimit),
           marketingMessages: getStatusTone(marketingMessagesSent, marketingMessagesLimit),
+          autentiqueDocuments: autentiqueFranquia === null ? 'ok' as StatusTone : getStatusTone(autentiqueUsage.documents, autentiqueFranquia),
         },
         overage: {
           extraUsers,
           extraWhatsappUsers,
           extraMessages,
           extraMarketingMessages,
+          extraAutentiqueDocuments,
           consultflexBasicSuccess: consultflexUsage.basicSuccess,
           consultflexCompleteSuccess: consultflexUsage.completeSuccess,
           prices: {
@@ -684,6 +843,7 @@ export async function GET(req: Request) {
             consultflexComplete: consultflexCompleteOverage,
             consultflexTotal: consultflexOverage,
             accessAddons: accessCharges.total,
+            autentique: autentiqueOverage,
             total: overageTotal,
           },
         },
@@ -700,6 +860,14 @@ export async function GET(req: Request) {
         acc.messagesSent += tenant.usage.messagesSent;
         acc.marketingMessagesSent += tenant.usage.marketingMessagesSent;
         acc.whatsappReceived += tenant.usage.whatsappReceived;
+        acc.autentiqueDocuments += tenant.usage.autentiqueDocuments;
+        acc.autentiquePending += tenant.usage.autentiquePending;
+        acc.autentiqueSigned += tenant.usage.autentiqueSigned;
+        acc.autentiqueRejected += tenant.usage.autentiqueRejected;
+        acc.autentiqueDelivered += tenant.usage.autentiqueDelivered;
+        acc.autentiqueViewed += tenant.usage.autentiqueViewed;
+        acc.autentiqueAccepted += tenant.usage.autentiqueAccepted;
+        acc.autentiqueDeliveryFailed += tenant.usage.autentiqueDeliveryFailed;
         acc.consultflexBasicSuccess += tenant.usage.consultflexBasicSuccess;
         acc.consultflexCompleteSuccess += tenant.usage.consultflexCompleteSuccess;
         acc.consultflexSuccess += tenant.usage.consultflexSuccessTotal;
@@ -736,6 +904,14 @@ export async function GET(req: Request) {
         sacadasCreated: 0,
         workOrdersCreated: 0,
         auditedDeletes: 0,
+        autentiqueDocuments: 0,
+        autentiquePending: 0,
+        autentiqueSigned: 0,
+        autentiqueRejected: 0,
+        autentiqueDelivered: 0,
+        autentiqueViewed: 0,
+        autentiqueAccepted: 0,
+        autentiqueDeliveryFailed: 0,
         consultflexBasicSuccess: 0,
         consultflexCompleteSuccess: 0,
         consultflexSuccess: 0,

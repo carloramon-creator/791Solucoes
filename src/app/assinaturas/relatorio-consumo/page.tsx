@@ -23,6 +23,14 @@ type TenantUsage = {
     consultflexSuccessTotal: number;
     consultflexFailed: number;
     consultflexUnknown: number;
+    autentiqueDocuments: number;
+    autentiquePending: number;
+    autentiqueSigned: number;
+    autentiqueRejected: number;
+    autentiqueDelivered: number;
+    autentiqueViewed: number;
+    autentiqueAccepted: number;
+    autentiqueDeliveryFailed: number;
   };
   activity: {
     budgetsCreated: number;
@@ -34,12 +42,13 @@ type TenantUsage = {
     workOrdersCreated: number;
     auditedDeletes: number;
   };
-  limits: { users: number; whatsappUsers: number; messages: number };
+  limits: { users: number; whatsappUsers: number; messages: number; autentiqueDocuments: number | null };
   overage: {
     extraUsers: number;
     extraWhatsappUsers: number;
     extraMessages: number;
-    values: { total: number; consultflexTotal: number };
+    extraAutentiqueDocuments: number | null;
+    values: { total: number; consultflexTotal: number; autentique: number | null };
   };
 };
 
@@ -66,11 +75,19 @@ type ReportPayload = {
     sacadasCreated: number;
     workOrdersCreated: number;
     auditedDeletes: number;
+    autentiqueDocuments: number;
+    autentiquePending: number;
+    autentiqueSigned: number;
+    autentiqueRejected: number;
+    autentiqueDelivered: number;
+    autentiqueViewed: number;
+    autentiqueAccepted: number;
+    autentiqueDeliveryFailed: number;
   };
   tenants: TenantUsage[];
 };
 
-type SortKey = 'nome' | 'budgetsCreated' | 'budgetsApproved' | 'budgetsApprovedValue' | 'clientsCreated' | 'projectsCreated' | 'sacadasCreated' | 'workOrdersCreated' | 'auditedDeletes' | 'whatsappReceived' | 'whatsappSent' | 'registeredUsers' | 'activeUsers' | 'whatsappUsers' | 'messagesSent' | 'consultflexBasicSuccess' | 'consultflexCompleteSuccess' | 'extraUsers' | 'extraWhatsappUsers' | 'extraMessages' | 'overageTotal';
+type SortKey = 'nome' | 'budgetsCreated' | 'budgetsApproved' | 'budgetsApprovedValue' | 'clientsCreated' | 'projectsCreated' | 'sacadasCreated' | 'workOrdersCreated' | 'auditedDeletes' | 'whatsappReceived' | 'whatsappSent' | 'registeredUsers' | 'activeUsers' | 'whatsappUsers' | 'messagesSent' | 'consultflexBasicSuccess' | 'consultflexCompleteSuccess' | 'autentiqueDocuments' | 'extraAutentiqueDocuments' | 'autentiqueOverage' | 'extraUsers' | 'extraWhatsappUsers' | 'extraMessages' | 'overageTotal';
 type SortDirection = 'asc' | 'desc';
 
 const numberFormat = new Intl.NumberFormat('pt-BR');
@@ -152,6 +169,9 @@ export default function TenantConsumptionReportPage() {
       case 'messagesSent': return tenant.usage.messagesSent;
       case 'consultflexBasicSuccess': return tenant.usage.consultflexBasicSuccess;
       case 'consultflexCompleteSuccess': return tenant.usage.consultflexCompleteSuccess;
+      case 'autentiqueDocuments': return tenant.usage.autentiqueDocuments;
+      case 'extraAutentiqueDocuments': return tenant.overage.extraAutentiqueDocuments ?? 0;
+      case 'autentiqueOverage': return tenant.overage.values.autentique ?? 0;
       case 'extraUsers': return tenant.overage.extraUsers;
       case 'extraWhatsappUsers': return tenant.overage.extraWhatsappUsers;
       case 'extraMessages': return tenant.overage.extraMessages;
@@ -189,9 +209,19 @@ export default function TenantConsumptionReportPage() {
       messagesSent: sum.messagesSent + tenant.usage.messagesSent,
       consultflexBasicSuccess: sum.consultflexBasicSuccess + tenant.usage.consultflexBasicSuccess,
       consultflexCompleteSuccess: sum.consultflexCompleteSuccess + tenant.usage.consultflexCompleteSuccess,
+      autentiqueDocuments: sum.autentiqueDocuments + tenant.usage.autentiqueDocuments,
+      autentiquePending: sum.autentiquePending + tenant.usage.autentiquePending,
+      autentiqueSigned: sum.autentiqueSigned + tenant.usage.autentiqueSigned,
+      autentiqueRejected: sum.autentiqueRejected + tenant.usage.autentiqueRejected,
+      autentiqueDelivered: sum.autentiqueDelivered + tenant.usage.autentiqueDelivered,
+      autentiqueViewed: sum.autentiqueViewed + tenant.usage.autentiqueViewed,
+      autentiqueAccepted: sum.autentiqueAccepted + tenant.usage.autentiqueAccepted,
+      autentiqueDeliveryFailed: sum.autentiqueDeliveryFailed + tenant.usage.autentiqueDeliveryFailed,
       extraUsers: sum.extraUsers + tenant.overage.extraUsers,
       extraWhatsappUsers: sum.extraWhatsappUsers + tenant.overage.extraWhatsappUsers,
       extraMessages: sum.extraMessages + tenant.overage.extraMessages,
+      extraAutentiqueDocuments: sum.extraAutentiqueDocuments + (tenant.overage.extraAutentiqueDocuments ?? 0),
+      autentiqueOverage: sum.autentiqueOverage + (tenant.overage.values.autentique ?? 0),
       overageTotal: sum.overageTotal + tenant.overage.values.total,
     }), {
       budgetsCreated: 0, budgetsApproved: 0, budgetsApprovedValue: 0,
@@ -199,9 +229,15 @@ export default function TenantConsumptionReportPage() {
       workOrdersCreated: 0, auditedDeletes: 0, whatsappReceived: 0,
       registeredUsers: 0, activeUsers: 0, whatsappUsers: 0, messagesSent: 0,
       consultflexBasicSuccess: 0, consultflexCompleteSuccess: 0,
-      extraUsers: 0, extraWhatsappUsers: 0, extraMessages: 0, overageTotal: 0,
+      autentiqueDocuments: 0, autentiquePending: 0, autentiqueSigned: 0, autentiqueRejected: 0,
+      autentiqueDelivered: 0, autentiqueViewed: 0, autentiqueAccepted: 0, autentiqueDeliveryFailed: 0,
+      extraUsers: 0, extraWhatsappUsers: 0, extraMessages: 0,
+      extraAutentiqueDocuments: 0, autentiqueOverage: 0, overageTotal: 0,
     });
   }, [report]);
+  const autentiqueConfigMissing = (report?.tenants || []).filter(
+    (tenant) => tenant.limits.autentiqueDocuments === null || tenant.overage.values.autentique === null,
+  ).length;
 
   const sortBy = (key: SortKey) => {
     if (sortKey === key) setSortDirection((direction) => direction === 'asc' ? 'desc' : 'asc');
@@ -213,7 +249,7 @@ export default function TenantConsumptionReportPage() {
 
   const exportCsv = () => {
     if (!report) return;
-    const headings = ['Cliente', 'Slug', 'Situação', 'Orçamentos criados', 'Orçamentos aprovados', 'Valor orçamentos aprovados', 'Clientes criados', 'Projetos criados', 'Sacadas criadas', 'OS criadas', 'Exclusões auditadas', 'WhatsApp recebidas', 'WhatsApp enviadas', 'Usuários cadastrados', 'Usuários ativos', 'Limite usuários', 'Usuários WhatsApp', 'Limite WhatsApp', 'Mensagens enviadas', 'Limite mensagens', 'ConsultFlex básica', 'ConsultFlex completa', 'Excedente usuários', 'Excedente WhatsApp', 'Excedente mensagens', 'Excedente estimado'];
+    const headings = ['Cliente', 'Slug', 'Situação', 'Orçamentos criados', 'Orçamentos aprovados', 'Valor orçamentos aprovados', 'Clientes criados', 'Projetos criados', 'Sacadas criadas', 'OS criadas', 'Exclusões auditadas', 'WhatsApp recebidas', 'WhatsApp enviadas', 'Usuários cadastrados', 'Usuários ativos', 'Limite usuários', 'Usuários WhatsApp', 'Limite WhatsApp', 'Mensagens enviadas', 'Limite mensagens', 'ConsultFlex básica', 'ConsultFlex completa', 'Documentos Autentique', 'Franquia Autentique', 'E-mails entregues', 'Signatários que acessaram', 'Signatários que aceitaram', 'Falhas de entrega', 'Assinaturas pendentes', 'Assinaturas concluídas', 'Assinaturas recusadas', 'Excedente Autentique', 'Valor excedente Autentique', 'Excedente usuários', 'Excedente WhatsApp', 'Excedente mensagens', 'Excedente estimado'];
     const rows = sortedTenants.map((tenant) => [
       tenant.nome, tenant.slug, tenant.ativa ? 'Ativo' : 'Inativo',
       tenant.activity.budgetsCreated, tenant.activity.budgetsApproved,
@@ -226,6 +262,12 @@ export default function TenantConsumptionReportPage() {
       tenant.usage.whatsappUsers, tenant.limits.whatsappUsers,
       tenant.usage.messagesSent, tenant.limits.messages,
       tenant.usage.consultflexBasicSuccess, tenant.usage.consultflexCompleteSuccess,
+      tenant.usage.autentiqueDocuments, tenant.limits.autentiqueDocuments ?? '',
+      tenant.usage.autentiqueDelivered, tenant.usage.autentiqueViewed, tenant.usage.autentiqueAccepted,
+      tenant.usage.autentiqueDeliveryFailed, tenant.usage.autentiquePending, tenant.usage.autentiqueSigned,
+      tenant.usage.autentiqueRejected,
+      tenant.overage.extraAutentiqueDocuments ?? '',
+      tenant.overage.values.autentique?.toFixed(2).replace('.', ',') ?? '',
       tenant.overage.extraUsers, tenant.overage.extraWhatsappUsers, tenant.overage.extraMessages,
       tenant.overage.values.total.toFixed(2).replace('.', ','),
     ]);
@@ -236,6 +278,10 @@ export default function TenantConsumptionReportPage() {
       totals.auditedDeletes, totals.whatsappReceived, totals.messagesSent,
       totals.registeredUsers, totals.activeUsers, '', totals.whatsappUsers, '',
       totals.messagesSent, '', totals.consultflexBasicSuccess, totals.consultflexCompleteSuccess,
+      totals.autentiqueDocuments, '', totals.autentiqueDelivered, totals.autentiqueViewed,
+      totals.autentiqueAccepted, totals.autentiqueDeliveryFailed, totals.autentiquePending,
+      totals.autentiqueSigned, totals.autentiqueRejected, totals.extraAutentiqueDocuments,
+      totals.autentiqueOverage.toFixed(2).replace('.', ','),
       totals.extraUsers, totals.extraWhatsappUsers, totals.extraMessages, totals.overageTotal.toFixed(2).replace('.', ','),
     ]);
     const csv = `\uFEFF${[headings, ...rows].map((row) => row.map(csvCell).join(';')).join('\r\n')}`;
@@ -257,7 +303,7 @@ export default function TenantConsumptionReportPage() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-3">
         <Link href="/assinaturas" aria-label="Voltar às assinaturas" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"><ArrowLeft size={17} /></Link>
-        <div><h1 className="text-xl font-black uppercase text-slate-800">Relatório de Consumo</h1><p className="text-xs text-slate-500">Consolidado de todos os clientes do 791Glass</p></div>
+        <div><h1 className="text-xl font-black uppercase text-slate-800">Relatório de Consumo</h1><p className="text-xs text-slate-500">Consumo e status por cliente, sem acesso aos PDFs ou e-mails dos signatários</p></div>
       </div>
       <div className="flex gap-2">
         <Link href="/assinaturas/consumo-ia" className="inline-flex h-10 items-center rounded-lg border border-blue-200 bg-white px-4 text-xs font-black uppercase text-blue-700">Consumo de IA</Link>
@@ -270,13 +316,17 @@ export default function TenantConsumptionReportPage() {
       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Data final<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-1 block h-10 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700" /></label>
       <button type="button" onClick={() => void generateReport()} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-black uppercase text-white hover:bg-emerald-700 disabled:opacity-50">{loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Gerar relatório</button>
       {report && <span className="text-xs text-slate-500">{report.tenants.length} clientes · Atualizado {new Date(report.generatedAt).toLocaleString('pt-BR')}</span>}
+      <p className="w-full text-[11px] font-medium text-slate-400">
+        A franquia Autentique é mensal (horário de Brasília); em períodos parciais, a estimativa considera apenas os documentos dentro do intervalo selecionado.
+        {autentiqueConfigMissing > 0 && ` ${autentiqueConfigMissing} cliente(s) sem franquia e/ou preço configurado ficam fora da soma do excedente estimado.`}
+      </p>
     </section>
 
     {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[2200px] border-collapse text-sm">
+        <table className="w-full min-w-[2500px] border-collapse text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3 text-left"><SortButton label="Cliente" field="nome" /></th>
@@ -296,6 +346,9 @@ export default function TenantConsumptionReportPage() {
               <th className="px-3 py-3 text-right"><SortButton label="Mensagens" field="messagesSent" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="CF básica" field="consultflexBasicSuccess" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="CF completa" field="consultflexCompleteSuccess" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Autentique (uso/franquia)" field="autentiqueDocuments" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Excesso Autentique" field="extraAutentiqueDocuments" align="right" /></th>
+              <th className="px-3 py-3 text-right"><SortButton label="Valor Autentique" field="autentiqueOverage" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="Excesso SIS" field="extraUsers" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="Excesso WPP" field="extraWhatsappUsers" align="right" /></th>
               <th className="px-3 py-3 text-right"><SortButton label="Excesso MSG" field="extraMessages" align="right" /></th>
@@ -321,6 +374,13 @@ export default function TenantConsumptionReportPage() {
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.messagesSent)} <span className="text-slate-400">/ {numberFormat.format(tenant.limits.messages)}</span></td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.consultflexBasicSuccess)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.usage.consultflexCompleteSuccess)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">
+                <div>{numberFormat.format(tenant.usage.autentiqueDocuments)} <span className="text-slate-400">/ {tenant.limits.autentiqueDocuments === null ? '—' : numberFormat.format(tenant.limits.autentiqueDocuments)}</span></div>
+                <div className="text-[10px] text-slate-400">e-mail {tenant.usage.autentiqueDelivered} · acesso {tenant.usage.autentiqueViewed} · aceite {tenant.usage.autentiqueAccepted}</div>
+                <div className="text-[10px] text-slate-400">pend. {tenant.usage.autentiquePending} · ass. {tenant.usage.autentiqueSigned} · rec. {tenant.usage.autentiqueRejected} · falha e-mail {tenant.usage.autentiqueDeliveryFailed}</div>
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums">{tenant.overage.extraAutentiqueDocuments === null ? '—' : numberFormat.format(tenant.overage.extraAutentiqueDocuments)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{tenant.overage.values.autentique === null ? '—' : currencyFormat.format(tenant.overage.values.autentique)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.overage.extraUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.overage.extraWhatsappUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(tenant.overage.extraMessages)}</td>
@@ -344,12 +404,19 @@ export default function TenantConsumptionReportPage() {
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.messagesSent)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.consultflexBasicSuccess)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.consultflexCompleteSuccess)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">
+                <div>{numberFormat.format(totals.autentiqueDocuments)}</div>
+                <div className="text-[10px] text-slate-500">e-mail {totals.autentiqueDelivered} · acesso {totals.autentiqueViewed} · aceite {totals.autentiqueAccepted}</div>
+                <div className="text-[10px] text-slate-500">pend. {totals.autentiquePending} · ass. {totals.autentiqueSigned} · rec. {totals.autentiqueRejected} · falha e-mail {totals.autentiqueDeliveryFailed}</div>
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.extraAutentiqueDocuments)}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{currencyFormat.format(totals.autentiqueOverage)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.extraUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.extraWhatsappUsers)}</td>
               <td className="px-3 py-3 text-right tabular-nums">{numberFormat.format(totals.extraMessages)}</td>
               <td className="px-4 py-3 text-right tabular-nums">{currencyFormat.format(totals.overageTotal)}</td>
             </tr>}
-            {!loading && report?.tenants.length === 0 && <tr><td colSpan={21} className="px-4 py-12 text-center text-sm text-slate-400">Nenhum cliente encontrado no período.</td></tr>}
+            {!loading && report?.tenants.length === 0 && <tr><td colSpan={24} className="px-4 py-12 text-center text-sm text-slate-400">Nenhum cliente encontrado no período.</td></tr>}
           </tbody>
         </table>
       </div>

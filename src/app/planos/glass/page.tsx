@@ -717,44 +717,6 @@ export default function PlanosGlassPage() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
-                  <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Assinaturas digitais (Autentique)</h2>
-                  <p className="mt-1 text-[11px] font-medium text-slate-500">
-                    Franquia mensal e excedente por documento efetivamente criado na conta Autentique central.
-                  </p>
-                </div>
-                <div className="grid gap-4 p-6 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Documentos incluídos por mês</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      placeholder="Ex.: 10"
-                      value={limits.autentiqueDocsIncluded}
-                      onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueDocsIncluded: event.target.value }))}
-                      className="h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Valor por documento excedente (R$)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-3 text-xs font-bold text-slate-400">R$</span>
-                      <input
-                        type="text"
-                        placeholder="0,00"
-                        value={limits.autentiqueExtraDocPrice}
-                        onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueExtraDocPrice: formatCurrency(event.target.value) }))}
-                        className="h-[44px] w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-500 sm:col-span-2">
-                    A configuração é aplicada automaticamente aos tenants vinculados a este plano. Deixe os campos vazios para indicar que a franquia ainda não foi configurada.
-                  </p>
-                </div>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
@@ -810,6 +772,45 @@ export default function PlanosGlassPage() {
               </div>
             </div>
 
+          </div>
+        </div>
+        {/* Box 5.1: Assinaturas digitais */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Assinaturas digitais (Autentique)</h2>
+            <p className="mt-1 text-[11px] font-medium text-slate-500">
+              Franquia mensal e excedente por documento efetivamente criado na conta Autentique central.
+            </p>
+          </div>
+          <div className="grid gap-4 p-6 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Documentos incluídos por mês</label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                placeholder="Ex.: 10"
+                value={limits.autentiqueDocsIncluded}
+                onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueDocsIncluded: event.target.value }))}
+                className="h-[44px] w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-tight text-slate-700">Valor por documento excedente (R$)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3 text-xs font-bold text-slate-400">R$</span>
+                <input
+                  type="text"
+                  placeholder="0,00"
+                  value={limits.autentiqueExtraDocPrice}
+                  onChange={(event) => setLimits((prev) => ({ ...prev, autentiqueExtraDocPrice: formatCurrency(event.target.value) }))}
+                  className="h-[44px] w-full rounded-md border border-slate-300 bg-white pl-9 pr-3 text-sm font-bold text-slate-900 focus:border-[#3b597b] focus:outline-none focus:ring-2 focus:ring-[#3b597b]/20"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] font-medium text-slate-500 sm:col-span-2">
+              A configuração é aplicada automaticamente aos tenants vinculados a este plano. Deixe os campos vazios para indicar que a franquia ainda não foi configurada.
+            </p>
           </div>
         </div>
       </div>

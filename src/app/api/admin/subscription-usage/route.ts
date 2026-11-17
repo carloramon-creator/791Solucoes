@@ -343,7 +343,7 @@ export async function GET(req: Request) {
           .select('assinatura_id,tipo,signatario,detalhes')
           .in('assinatura_id', ids)
           .order('recebido_em', { ascending: true })
-          .order('id', { ascending: true })
+          .order('autentique_event_id', { ascending: true })
           .range(offset, offset + 999);
         if (eventsError) return NextResponse.json({ error: eventsError.message }, { status: 500 });
         signatureEvents.push(...((events || []) as AutentiqueSignatureEventRow[]));

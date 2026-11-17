@@ -70,6 +70,7 @@ const TENANT_TABLES_PURGE_ORDER = [
   'producao_configuracoes',
   'materiais_fornecedores',
   'materiais',
+  'estoque_locais',
   'valores_atributo_material',
   'atributos_classe_material',
   'servicos_tratamento',

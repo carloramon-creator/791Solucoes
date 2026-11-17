@@ -10,6 +10,7 @@ import { notoSansBase64 } from '@/services/nfse/noto-sans-base64';
 
 const text = (value: unknown, fallback = '-') => String(value || '').trim() || fallback;
 const money = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+const unitPrice = (value: number) => `R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value || 0)}`;
 const formatReference = (value: unknown) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})$/);
   return match ? `${match[2]}/${match[1]}` : text(value);
@@ -46,31 +47,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'A fatura não possui vidraçaria ou período de excedente.' }, { status: 422 });
   }
 
-  let rows: any[] = [];
+  const rows: any[] = [];
   let glass: Awaited<ReturnType<typeof getGlassClient>>;
   try {
     glass = await getGlassClient();
-    const orcamentosResult = await glass
-      .from('orcamentos')
-      .select('id, vendedor_id')
-      .eq('vidracaria_id', metadata.tenant_id);
-    if (orcamentosResult.error) return NextResponse.json({ error: `Falha ao consultar orçamentos no Glass: ${orcamentosResult.error.message}` }, { status: 502 });
+    if (metadata.autentique == null) {
+      const orcamentosResult = await glass
+        .from('orcamentos')
+        .select('id, vendedor_id')
+        .eq('vidracaria_id', metadata.tenant_id);
+      if (orcamentosResult.error) return NextResponse.json({ error: `Falha ao consultar orçamentos no Glass: ${orcamentosResult.error.message}` }, { status: 502 });
 
-    const orcamentos = orcamentosResult.data || [];
-    const orcamentoIds = orcamentos.map((row: any) => String(row.id)).filter(Boolean);
-    const sellerByBudget = Object.fromEntries(orcamentos.map((row: any) => [String(row.id), row.vendedor_id]));
+      const orcamentos = orcamentosResult.data || [];
+      const orcamentoIds = orcamentos.map((row: any) => String(row.id)).filter(Boolean);
+      const sellerByBudget = Object.fromEntries(orcamentos.map((row: any) => [String(row.id), row.vendedor_id]));
 
-    for (let index = 0; index < orcamentoIds.length; index += 500) {
-      const result = await glass
-        .from('orcamento_credito_consultas')
-        .select('*, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(*)')
-        .in('orcamento_id', orcamentoIds.slice(index, index + 500))
-        .in('tipo_consulta', ['basico', 'completo'])
-        .gte('created_at', metadata.period_start)
-        .lt('created_at', metadata.period_end)
-        .order('created_at');
-      if (result.error) return NextResponse.json({ error: `Falha ao consultar consumos excedentes no Glass: ${result.error.message}` }, { status: 502 });
-      rows.push(...(result.data || []).map((row: any) => ({ ...row, _seller_id: sellerByBudget[String(row.orcamento_id)] || null })));
+      for (let index = 0; index < orcamentoIds.length; index += 500) {
+        const result = await glass
+          .from('orcamento_credito_consultas')
+          .select('*, pessoa:pessoas(nome, documento, responsavel_comercial), orcamento:orcamentos(*)')
+          .in('orcamento_id', orcamentoIds.slice(index, index + 500))
+          .in('tipo_consulta', ['basico', 'completo'])
+          .gte('created_at', metadata.period_start)
+          .lt('created_at', metadata.period_end)
+          .order('created_at');
+        if (result.error) return NextResponse.json({ error: `Falha ao consultar consumos excedentes no Glass: ${result.error.message}` }, { status: 502 });
+        rows.push(...(result.data || []).map((row: any) => ({ ...row, _seller_id: sellerByBudget[String(row.orcamento_id)] || null })));
+      }
     }
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Falha ao conectar ao Glass para gerar o demonstrativo.' }, { status: 502 });
@@ -110,14 +113,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       type: row.tipo_consulta === 'completo' ? 'ConsultFlex Completa' : 'ConsultFlex Básica',
     };
   });
+  const extras = metadata.extras || {};
+  const values = metadata.values || {};
+  const autentique = metadata.autentique || {};
+  const extraItems = [
+    ...(metadata.autentique != null ? [
+      { id: 'consultflex-basic', name: `${Number(metadata.consultflex?.basic || 0)} consultas básicas`, source: 'Consultflex', type: `Unitário ${unitPrice(Number(prices.consultflexBasicPrice || 0))}`, value: Number(values.consultflexBasic || 0) },
+      { id: 'consultflex-complete', name: `${Number(metadata.consultflex?.complete || 0)} consultas completas`, source: 'Consultflex', type: `Unitário ${unitPrice(Number(prices.consultflexCompletePrice || 0))}`, value: Number(values.consultflexComplete || 0) },
+    ] : []),
+    { id: 'sac', name: `${Number(extras.messages || 0)} mensagens excedentes`, source: 'META', type: 'WhatsApp SAC', value: Number(values.messages || 0) },
+    { id: 'marketing', name: `${Number(extras.marketingMessages || 0)} mensagens excedentes`, source: 'META', type: 'WhatsApp Marketing', value: Number(values.marketingMessages || 0) },
+    { id: 'autentique', name: `${Number(autentique.uso || 0)} docs / ${Number(autentique.franquia || 0)} inclusos`, source: 'Autentique', type: `${Number(autentique.excedentes || 0)} excedentes x ${unitPrice(Number(autentique.preco || 0))}`, value: Number(values.autentique || 0) },
+    { id: 'access', name: 'Acessos adicionais', source: '791 GLASS', type: 'Acessos contratados', value: Number(values.accessAddons || 0) },
+  ].filter((item) => item.value > 0);
 
   if (new URL(req.url).searchParams.get('format') === 'json') {
     return NextResponse.json({
       invoiceId: record.id,
       reference: metadata.ref_month,
-      items: detailItems,
-      extras: metadata.extras || {},
-      values: metadata.values || {},
+      items: [...detailItems, ...extraItems.map((item) => ({ ...item, document: '-', user: '-', seller: '-', orderNumber: '-' }))],
+      extras,
+      values,
     });
   }
 
@@ -160,19 +176,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     doc.fillColor('#334155').fontSize(8); values.forEach((value, index) => doc.text(value, columns[index], y, { width: columnWidths[index], ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }
-  const extras = metadata.extras || {}; const values = metadata.values || {};
-  const extraItems = [
+  const pdfExtraItems = [
+    ...(metadata.autentique != null ? [
+      ['Consultflex', `${Number(metadata.consultflex?.basic || 0)} consultas básicas`, `Unitário ${unitPrice(Number(prices.consultflexBasicPrice || 0))}`, Number(values.consultflexBasic || 0)],
+      ['Consultflex', `${Number(metadata.consultflex?.complete || 0)} consultas completas`, `Unitário ${unitPrice(Number(prices.consultflexCompletePrice || 0))}`, Number(values.consultflexComplete || 0)],
+    ] : []),
     ['791 GLASS', `${Number(extras.users || 0)} usuários excedentes`, 'Usuários do sistema acima do limite contratado', Number(values.users || 0)],
     ['META', `${Number(extras.whatsappUsers || 0)} usuários excedentes`, 'Usuários vinculados ao WhatsApp acima do limite contratado', Number(values.whatsappUsers || 0)],
     ['META', `${Number(extras.messages || 0)} mensagens excedentes`, 'Mensagens WhatsApp acima do limite contratado', Number(values.messages || 0)],
+    ['META', `${Number(extras.marketingMessages || 0)} mensagens marketing`, 'Marketing acima da franquia', Number(values.marketingMessages || 0)],
+    ['Autentique', `${Number(autentique.uso || 0)} docs / ${Number(autentique.franquia || 0)} inclusos`, `${Number(autentique.excedentes || 0)} excedentes x ${unitPrice(Number(autentique.preco || 0))}`, Number(values.autentique || 0)],
+    ['791 GLASS', 'Acessos adicionais', 'Acessos contratados', Number(values.accessAddons || 0)],
   ].filter((item) => Number(item[3]) > 0);
-  for (const [type, name, reason, value] of extraItems) {
+  for (const [type, name, reason, value] of pdfExtraItems) {
     if (y > 520) { doc.addPage(); y = 42; labels.forEach((label, index) => doc.text(label, columns[index], y)); y += 18; }
     const rowValues = [name, '-', '-', '-', '-', type, reason, money(Number(value))];
     doc.fillColor('#334155').fontSize(8); rowValues.forEach((item, index) => doc.text(String(item), columns[index], y, { width: columnWidths[index], ellipsis: true, lineBreak: false }));
     doc.moveTo(32, y + 13).lineTo(805, y + 13).strokeColor('#E2E8F0').stroke(); y += 20;
   }
-  doc.fillColor('#0F172A').fontSize(11).text(`Itens faturados: ${(rows || []).length + extraItems.length}`, 32, y + 15);
+  doc.fillColor('#0F172A').fontSize(11).text(`Itens faturados: ${(rows || []).length + pdfExtraItems.length}`, 32, y + 15);
   doc.text(`Total cobrado: ${money(Number(record.value || 0))}`, 650, y + 15, { width: 155, align: 'right' });
   doc.end();
   const buffer = await new Promise<Buffer>((resolve, reject) => {

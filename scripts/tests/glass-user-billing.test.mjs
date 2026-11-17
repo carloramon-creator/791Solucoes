@@ -29,23 +29,36 @@ function database(tables, { forbidProfiles = false, failTable } = {}) {
     constructor(table) {
       if (forbidProfiles) assert.notEqual(table, 'user_profiles', 'Closing must not bill registered users');
       this.table = table;
+      this.filters = [];
     }
-    select() { return this; }
-    eq() { return this; }
+    select(_columns, options) { this.count = options?.count === 'exact'; return this; }
+    eq(column, value) {
+      if (column === 'sistema') this.system = value;
+      if (this.table === 'orcamento_assinaturas_autentique') this.filters.push((row) => row[column] === value);
+      return this;
+    }
+    not(column, op, value) {
+      if (this.table === 'orcamento_assinaturas_autentique' && op === 'is' && value === null) this.filters.push((row) => row[column] != null);
+      return this;
+    }
     in() { return this; }
-    gte() { return this; }
+    gte(column, value) { if (this.table === 'orcamento_assinaturas_autentique') this.filters.push((row) => new Date(row[column]) >= new Date(value)); return this; }
     lte() { return this; }
-    lt() { return this; }
+    lt(column, value) { if (this.table === 'orcamento_assinaturas_autentique') this.filters.push((row) => new Date(row[column]) < new Date(value)); return this; }
     order() { return this; }
+    range() { return this; }
     single() { this.one = true; return this; }
     maybeSingle() { this.one = true; return this; }
     insert(value) { this.write = value; return this; }
     update(value) { this.write = value; return this; }
     then(resolve, reject) {
       if (this.write) writes.push({ table: this.table, value: this.write });
-      const rows = tables[this.table] || [];
+      let rows = tables[this.table] || [];
+      if (this.system) rows = rows.filter((row) => row.sistema === this.system);
+      if (this.table === 'orcamento_assinaturas_autentique') rows = rows.filter((row) => this.filters.every((filter) => filter(row)));
       return Promise.resolve({
         data: this.write ? { id: 'test-record' } : this.one ? rows[0] || null : rows,
+        count: this.count ? rows.length : null,
         error: this.table === failTable ? { message: 'Test database error' } : null,
       }).then(resolve, reject);
     }
@@ -60,15 +73,17 @@ function database(tables, { forbidProfiles = false, failTable } = {}) {
   };
 }
 
-function harness({ users = 14, messages = 0, marketing = 0, credit = false, existing, failTable, orders = [], whatsappUsers = 0 } = {}) {
+function harness({ users = 14, messages = 0, marketing = 0, credit = false, existing, failTable, orders = [], whatsappUsers = 0, documents = 0, signatureRows, mini = false, enableCharge = false, signatureLimits = { autentiqueDocsIncluded: 10, autentiqueExtraDocPrice: 1 } } = {}) {
+  const payments = [];
   const tables = {
     vidracarias: [{
-      id: tenantId, nome: 'Test', limite_usuarios: 10, limite_usuarios_whats: 10,
+      id: tenantId, nome: 'Test', cnpj: enableCharge ? '12345678000199' : null, email: 'tenant@example.test', plano_codigo: mini ? 'mini' : 'padrao', limite_usuarios: 10, limite_usuarios_whats: 10,
       limite_mensagens_whatsapp: 1000, limite_mensagens_marketing: 200,
     }],
     user_profiles: Array.from({ length: users }, (_, i) => ({ user_id: `u${i}`, vidracaria_id: tenantId, ativo: true })),
     glass_whatsapp_access_users: Array.from({ length: whatsappUsers }, (_, i) => ({ user_id: `u${i}`, vidracaria_id: tenantId })),
     glass_access_orders: orders,
+    orcamento_assinaturas_autentique: signatureRows || Array.from({ length: documents }, (_, i) => ({ id: `doc-${i}`, vidracaria_id: tenantId, autentique_document_id: `remote-${i}`, status: 'aguardando_assinaturas', enviado_em: '2026-10-15T12:00:00Z' })),
     whatsapp_usage: [{ vidracaria_id: tenantId, sac: messages, marketing }],
     orcamentos: credit ? [{ id: 'budget', vidracaria_id: tenantId }] : [],
     orcamento_credito_consultas: credit ? [{
@@ -77,8 +92,11 @@ function harness({ users = 14, messages = 0, marketing = 0, credit = false, exis
     }] : [],
   };
   const holding = database({
-    system_plans: [{ system_limits: limits }],
-    system_settings: [{ value: {} }],
+    system_plans: [
+      { sistema: '791glass', system_limits: { ...limits, ...(mini ? {} : signatureLimits) } },
+      { sistema: '791glass-mini', system_limits: signatureLimits },
+    ],
+    system_settings: [{ value: enableCharge ? { asaasApiKey: 'test-key' } : {} }],
     system_finance_records: existing ? [existing] : [],
   });
   const glass = database(tables, { failTable });
@@ -91,14 +109,18 @@ function harness({ users = 14, messages = 0, marketing = 0, credit = false, exis
     '@/lib/glass-access-charges': accessCharges,
   });
   const payment = load('src/services/payment-processor.ts', {
-    './asaas-service': { AsaasClient: class { constructor() { assert.fail('No real charges in tests'); } } },
-    '@/lib/overage-block': {}, './inter-service': {}, '@supabase/supabase-js': {},
+    './asaas-service': { AsaasClient: class {
+      async getCustomerByEmail() { return { id: 'test-customer' }; }
+      async createPayment(payment) { payments.push(payment); return { id: 'test-payment', invoiceUrl: 'https://test.example/invoice' }; }
+    } },
+    '@/lib/overage-block': { registerOverageBlockRule: async () => {} }, './inter-service': {}, '@supabase/supabase-js': {},
     '@/lib/nfse/providers/ipm': {}, '@/services/nfse/danfse-snapshot': {},
     '@/services/nfse/emissao-nacional': {},
     '@/lib/glass-access-charges': accessCharges,
   });
   return {
     holding,
+    payments,
     usage: () => api.GET(new Request('https://holding.test/api/admin/subscription-usage')),
     close: (options = {}) => payment.scheduleMonthlyOverageChargeForTenant({
       holdingSupabase: holding, glassSupabase: closingGlass, tenantId,
@@ -199,4 +221,55 @@ test('only explicit confirmed nonmonthly access orders enter monthly closing', a
   assert.equal(accessCharges.glassAccessChargesForMonth([order], '2026-12').total, 100);
   assert.equal(accessCharges.glassAccessChargesForMonth([order], '2027-01').total, 0);
   assert.throws(() => accessCharges.glassAccessChargesForMonth([order], '2026-13'));
+});
+
+test('sent documents over the plan allowance join the single monthly invoice', async () => {
+  const h = harness({ documents: 12, messages: 1010, marketing: 202, credit: true });
+  const preview = await h.close({ previewOnly: true });
+  assert.deepEqual(preview.details.autentique, { uso: 12, franquia: 10, preco: 1, excedentes: 2, valor: 2 });
+  assert.equal(preview.details.values.total, 9);
+  const closed = await h.close();
+  assert.equal(closed.created, true);
+  const record = h.holding.writes[0].value;
+  assert.equal(record.value, 9);
+  assert.equal(record.metadata.values.autentique, 2);
+  assert.deepEqual(record.metadata.autentique, preview.details.autentique);
+  assert.match(record.description, /Autentique.*12 documentos.*10 inclusos.*2 excedentes/);
+});
+
+test('plan allowance, mini pricing and unconfigured plans are respected', async () => {
+  const included = harness({ documents: 10 });
+  assert.equal((await included.close()).reason, 'no_overage');
+  const mini = harness({ documents: 12, mini: true, signatureLimits: { autentiqueDocsIncluded: 5, autentiqueExtraDocPrice: 2 } });
+  assert.equal((await mini.close({ previewOnly: true })).details.values.autentique, 14);
+  const unconfigured = harness({ documents: 11, signatureLimits: {} });
+  await assert.rejects(unconfigured.close(), /Franquia ou preço Autentique não configurado/);
+});
+
+test('only successfully sent documents for this tenant and Brasília month are counted', async () => {
+  const base = { vidracaria_id: tenantId, autentique_document_id: 'sent', status: 'aguardando_assinaturas' };
+  const h = harness({
+    signatureLimits: { autentiqueDocsIncluded: 0, autentiqueExtraDocPrice: 1 },
+    signatureRows: [
+      { ...base, enviado_em: '2026-10-01T02:59:59Z' },
+      { ...base, enviado_em: '2026-10-01T03:00:00Z' },
+      { ...base, enviado_em: '2026-11-01T02:59:59Z' },
+      { ...base, enviado_em: '2026-11-01T03:00:00Z' },
+      { ...base, autentique_document_id: null, enviado_em: '2026-10-15T12:00:00Z' },
+      { ...base, vidracaria_id: 'other', enviado_em: '2026-10-15T12:00:00Z' },
+    ],
+  });
+  assert.equal((await h.close({ previewOnly: true })).details.autentique.uso, 2);
+  const failed = harness({ failTable: 'orcamento_assinaturas_autentique' });
+  await assert.rejects(failed.close(), /Test database error/);
+});
+
+test('one Asaas charge includes the detailed signature excess and other consumption', async () => {
+  const h = harness({ documents: 12, messages: 1010, marketing: 202, credit: true, enableCharge: true });
+  const closed = await h.close();
+  assert.equal(closed.created, true);
+  assert.equal(h.payments.length, 1);
+  assert.equal(h.payments[0].value, 9);
+  assert.equal(h.payments[0].dueDate, '2026-11-10');
+  assert.match(h.payments[0].description, /WhatsApp SAC.*WhatsApp Marketing.*ConsultFlex Básica.*Autentique.*2 excedentes/);
 });

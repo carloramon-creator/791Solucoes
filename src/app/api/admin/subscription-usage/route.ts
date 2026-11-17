@@ -14,7 +14,7 @@ type AutentiqueSignatureUsageRow = {
   id: string;
   vidracaria_id: string;
   status: string;
-  created_at: string;
+  enviado_em: string;
 };
 type AutentiqueSignatureEventRow = {
   assinatura_id: string;
@@ -318,11 +318,11 @@ export async function GET(req: Request) {
     for (let offset = 0; ; offset += 1000) {
       const { data: signaturePage, error: signaturePageError } = await glass
         .from('orcamento_assinaturas_autentique')
-        .select('id,vidracaria_id,status,created_at')
+        .select('id,vidracaria_id,status,enviado_em')
         .not('autentique_document_id', 'is', null)
-        .gte('created_at', messagesPeriodStart)
-        .lte('created_at', rangeEnd.toISOString())
-        .order('created_at', { ascending: true })
+        .gte('enviado_em', messagesPeriodStart)
+        .lte('enviado_em', rangeEnd.toISOString())
+        .order('enviado_em', { ascending: true })
         .order('id', { ascending: true })
         .range(offset, offset + 999);
       if (signaturePageError) return NextResponse.json({ error: signaturePageError.message }, { status: 500 });
@@ -463,7 +463,7 @@ export async function GET(req: Request) {
     }>();
     (autentiqueDocuments || []).forEach((row: any) => {
       const tenantId = String(row?.vidracaria_id || '');
-      const month = getBrtMonthKey(row?.created_at);
+      const month = getBrtMonthKey(row?.enviado_em);
       if (!tenantId || !month) return;
       if (!autentiqueByTenant.has(tenantId)) {
         autentiqueByTenant.set(tenantId, {

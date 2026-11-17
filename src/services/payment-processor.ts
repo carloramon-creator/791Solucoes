@@ -670,13 +670,15 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const { refMonth, startIso, endIso } = getPreviousMonthWindow(now);
   const dueDate = getOverageDueDateFromRefMonth(refMonth);
 
-  const { data: existingOverage } = await holdingSupabase
+  const { data: existingOverage, error: existingOverageError } = await holdingSupabase
     .from('system_finance_records')
     .select('id, value, metadata')
     .eq('metadata->>tenant_id', tenantId)
     .eq('metadata->>kind', 'overage')
     .eq('metadata->>ref_month', refMonth)
     .maybeSingle();
+
+  if (existingOverageError) throw new Error(existingOverageError.message);
 
   if (existingOverage?.id && !previewOnly) {
     return { created: false, reason: 'already_exists' as const };
@@ -686,6 +688,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
     const existingMeta = (existingOverage as any)?.metadata || {};
     const existingValues = existingMeta?.values || {};
     const existingConsultflex = existingMeta?.consultflex || {};
+    const existingAutentique = existingMeta?.autentique || {};
     const existingExtras = existingMeta?.extras || {};
 
     return {
@@ -705,6 +708,13 @@ export async function scheduleMonthlyOverageChargeForTenant({
           amountApi: existingConsultflex?.amount_api == null ? null : Number(existingConsultflex?.amount_api || 0),
           amountFinal: Number(existingValues?.consultflexTotal || existingValues?.consultflex_total || 0),
         },
+        autentique: {
+          uso: Number(existingAutentique?.uso || 0),
+          franquia: Number(existingAutentique?.franquia || 0),
+          excedentes: Number(existingAutentique?.excedentes || 0),
+          preco: Number(existingAutentique?.preco || 0),
+          valor: Number(existingAutentique?.valor || 0),
+        },
         extras: {
           users: Number(existingExtras?.users || 0),
           whatsappUsers: Number(existingExtras?.whatsappUsers || existingExtras?.whatsapp_users || 0),
@@ -717,6 +727,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
           accessAddons: Number(existingValues?.accessAddons || 0),
           messages: Number(existingValues?.messages || 0),
           marketingMessages: Number(existingValues?.marketingMessages || 0),
+          autentique: Number(existingValues?.autentique || 0),
           consultflexBasic: Number(existingValues?.consultflexBasic || existingValues?.consultflex_basic || 0),
           consultflexComplete: Number(existingValues?.consultflexComplete || existingValues?.consultflex_complete || 0),
           consultflexTotal: Number(existingValues?.consultflexTotal || existingValues?.consultflex_total || 0),
@@ -732,10 +743,11 @@ export async function scheduleMonthlyOverageChargeForTenant({
     { data: planConfig, error: planErr },
     { data: accessOrders, error: accessOrdersErr },
     { data: whatsappUsoRows, error: messagesErr },
+    { count: autentiqueCount, error: autentiqueErr },
   ] = await Promise.all([
     glassSupabase
       .from('vidracarias')
-      .select('id, nome, email, cnpj, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_whatsapp_excedente, valor_msg_marketing_excedente')
+      .select('id, nome, email, cnpj, plano_codigo, limite_usuarios, limite_usuarios_whats, limite_mensagens_whatsapp, limite_mensagens_marketing, valor_msg_whatsapp_excedente, valor_msg_marketing_excedente')
       .eq('id', tenantId)
       .single(),
     holdingSupabase
@@ -758,14 +770,55 @@ export async function scheduleMonthlyOverageChargeForTenant({
         p_fim: janela.fim,
       });
     })(),
+    (() => {
+      const janela = getBrtWindowFromRefMonth(refMonth);
+      return glassSupabase
+        .from('orcamento_assinaturas_autentique')
+        .select('id', { count: 'exact', head: true })
+        .eq('vidracaria_id', tenantId)
+        .not('autentique_document_id', 'is', null)
+        .gte('enviado_em', janela.inicio)
+        .lt('enviado_em', janela.fim);
+    })(),
   ]);
 
-  const firstError = tenantErr || planErr || accessOrdersErr || messagesErr;
+  const firstError = tenantErr || planErr || accessOrdersErr || messagesErr || autentiqueErr;
   if (firstError) {
     throw new Error(firstError.message);
   }
 
   const planLimits = ((planConfig as any)?.system_limits || {}) as Record<string, unknown>;
+  let autentiqueLimits = planLimits;
+  if (tenant?.plano_codigo === 'mini' && Number(autentiqueCount || 0) > 0) {
+    const { data: miniPlan, error: miniPlanError } = await holdingSupabase
+      .from('system_plans')
+      .select('system_limits')
+      .eq('sistema', '791glass-mini')
+      .single();
+    if (miniPlanError) throw new Error(miniPlanError.message);
+    autentiqueLimits = (miniPlan?.system_limits || {}) as Record<string, unknown>;
+  }
+  if (!Number.isSafeInteger(autentiqueCount) || Number(autentiqueCount) < 0) {
+    throw new Error('Não foi possível apurar o consumo Autentique da vidraçaria.');
+  }
+  const autentiqueUso = Number(autentiqueCount);
+  const rawFranquia = autentiqueLimits.autentiqueDocsIncluded;
+  const rawPreco = autentiqueLimits.autentiqueExtraDocPrice;
+  const franquia = rawFranquia === null || rawFranquia === undefined || rawFranquia === '' ? null : Number(rawFranquia);
+  const preco = rawPreco === null || rawPreco === undefined || rawPreco === '' ? null : Number(rawPreco);
+  const autentiqueConfigurado = franquia !== null && Number.isSafeInteger(franquia) && franquia >= 0
+    && preco !== null && Number.isFinite(preco) && preco >= 0;
+  if (autentiqueUso > 0 && !autentiqueConfigurado) {
+    throw new Error('Franquia ou preço Autentique não configurado para o plano da vidraçaria.');
+  }
+  const autentique = {
+    uso: autentiqueUso,
+    franquia: autentiqueConfigurado ? franquia : null,
+    preco: autentiqueConfigurado ? preco : null,
+    excedentes: autentiqueConfigurado ? Math.max(0, autentiqueUso - franquia) : 0,
+    valor: 0,
+  };
+  autentique.valor = roundMoney(autentique.excedentes * (preco ?? 0));
   const firstNumber = (...values: unknown[]) => {
     for (const value of values) {
       if (value === null || value === undefined || value === '') continue;
@@ -841,7 +894,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
   const consultflexCalculatedTotal = values.consultflexBasic + values.consultflexComplete;
   const consultflexTotal = consultflexCalculatedTotal;
   const accessCharges = glassAccessChargesForMonth(accessOrders || [], refMonth);
-  const totalOverage = roundMoney(values.messages + values.marketingMessages + consultflexTotal + accessCharges.total);
+  const totalOverage = roundMoney(values.messages + values.marketingMessages + consultflexTotal + accessCharges.total + autentique.valor);
 
   const closingDetails = {
     refMonth,
@@ -857,6 +910,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
       amountApi: null,
       amountFinal: consultflexTotal,
     },
+    autentique,
     extras: {
       users: extras.users,
       whatsappUsers: extras.whatsappUsers,
@@ -868,6 +922,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
       whatsappUsers: values.whatsappUsers,
       messages: values.messages,
       marketingMessages: values.marketingMessages,
+      autentique: autentique.valor,
       consultflexBasic: values.consultflexBasic,
       consultflexComplete: values.consultflexComplete,
       consultflexTotal,
@@ -892,13 +947,28 @@ export async function scheduleMonthlyOverageChargeForTenant({
   }
 
   const itemLabels: string[] = [];
-  if (accessCharges.total > 0) itemLabels.push('Acessos adicionais contratados');
-  if (extras.messages > 0) itemLabels.push(`Mensagens SAC extras (${extras.messages})`);
-  if (extras.marketingMessages > 0) itemLabels.push(`Mensagens Marketing extras (${extras.marketingMessages})`);
-  if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica (${consultflexUsage.basic})`);
-  if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa (${consultflexUsage.complete})`);
+  const amount = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+  const unitPrice = (value: number) => `R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)}`;
+  if (accessCharges.total > 0) itemLabels.push(`Acessos adicionais: ${amount(accessCharges.total)}`);
+  if (extras.messages > 0) itemLabels.push(`WhatsApp SAC: ${extras.messages} x ${unitPrice(prices.extraMessagePrice)} = ${amount(values.messages)}`);
+  if (extras.marketingMessages > 0) itemLabels.push(`WhatsApp Marketing: ${extras.marketingMessages} x ${unitPrice(prices.extraMktMessagePrice)} = ${amount(values.marketingMessages)}`);
+  if (consultflexUsage.basic > 0) itemLabels.push(`ConsultFlex Básica: ${consultflexUsage.basic} x ${unitPrice(prices.consultflexBasicPrice)} = ${amount(values.consultflexBasic)}`);
+  if (consultflexUsage.complete > 0) itemLabels.push(`ConsultFlex Completa: ${consultflexUsage.complete} x ${unitPrice(prices.consultflexCompletePrice)} = ${amount(values.consultflexComplete)}`);
+  if (autentique.excedentes > 0) itemLabels.push(`Autentique: ${autentique.uso} documentos, ${autentique.franquia} inclusos, ${autentique.excedentes} excedentes x ${unitPrice(autentique.preco ?? 0)} = ${amount(autentique.valor)}`);
 
-  const description = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
+  const detailedDescription = `Excedente 791glass ${refMonth} - ${itemLabels.join(' + ')}`;
+  const compactLabels = [
+    accessCharges.total > 0 ? `Acessos ${amount(accessCharges.total)}` : '',
+    extras.messages > 0 ? `SAC ${extras.messages}: ${amount(values.messages)}` : '',
+    extras.marketingMessages > 0 ? `Marketing ${extras.marketingMessages}: ${amount(values.marketingMessages)}` : '',
+    consultflexUsage.basic > 0 ? `CF básica ${consultflexUsage.basic}: ${amount(values.consultflexBasic)}` : '',
+    consultflexUsage.complete > 0 ? `CF completa ${consultflexUsage.complete}: ${amount(values.consultflexComplete)}` : '',
+    autentique.excedentes > 0 ? `Autentique ${autentique.excedentes}: ${amount(autentique.valor)}` : '',
+  ].filter(Boolean);
+  const description = detailedDescription.length <= 500
+    ? detailedDescription
+    : `Excedente 791glass ${refMonth} - ${compactLabels.join(' + ')}`;
+  if (description.length > 500) throw new Error('Detalhamento da cobrança excede o limite do Asaas.');
 
   const baseMetadata = {
     tenant_id: tenantId,
@@ -908,6 +978,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
     period_end: endIso,
     limits,
     extras,
+    autentique,
     consultflex: {
       source: consultflexUsage.source,
       basic: consultflexUsage.basic,
@@ -923,6 +994,7 @@ export async function scheduleMonthlyOverageChargeForTenant({
     access_orders: accessCharges.items,
     values: {
       ...values,
+      autentique: autentique.valor,
       consultflexTotal,
       accessAddons: accessCharges.total,
       total: totalOverage,

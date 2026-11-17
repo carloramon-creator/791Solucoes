@@ -147,6 +147,7 @@ interface ClosingPreviewTenant {
     unknown?: number;
     amountFinal?: number;
   };
+  autentique?: { uso: number; franquia: number | null; excedentes: number; valor: number };
   extras?: {
     users?: number;
     whatsappUsers?: number;
@@ -157,6 +158,7 @@ interface ClosingPreviewTenant {
     whatsappUsers?: number;
     messages?: number;
     marketingMessages?: number;
+    autentique?: number;
     consultflexTotal?: number;
     total?: number;
   };
@@ -1686,7 +1688,7 @@ export default function AssinaturasPage() {
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600">Detalhamento do excedente</p>
                 <h3 className="mt-1 text-xl font-black text-slate-800">{invoiceHistoryTenant?.nome} · {overageDetailsInvoice.reference.replace(/^EXC[-\s]*/, 'EXC - ')}</h3>
-                <p className="mt-1 text-xs text-slate-500">Cada linha representa uma utilização incluída nesta cobrança.</p>
+                <p className="mt-1 text-xs text-slate-500">Consumos e excedentes incluídos nesta cobrança.</p>
               </div>
               <button onClick={() => setOverageDetailsInvoice(null)} className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar"><X size={18} /></button>
             </div>
@@ -1785,6 +1787,7 @@ export default function AssinaturasPage() {
                         <th className="px-3 py-2 text-right">CFX Comp</th>
                         <th className="px-3 py-2 text-right">CFX Erro</th>
                         <th className="px-3 py-2 text-right">Extras</th>
+                        <th className="px-3 py-2 text-right">Autentique</th>
                         <th className="px-3 py-2 text-right">ConsultFlex</th>
                         <th className="px-3 py-2 text-right">Total</th>
                       </tr>
@@ -1809,6 +1812,9 @@ export default function AssinaturasPage() {
                             <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.complete || 0)}</td>
                             <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.failed || 0)}</td>
                             <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(extrasTotal)}</td>
+                            <td className="px-3 py-2 text-right text-[12px] font-semibold" title={`${item.autentique?.uso ?? 0} enviados, ${item.autentique?.franquia ?? '—'} inclusos, ${item.autentique?.excedentes ?? 0} excedentes`}>
+                              {formatCurrency(Number(item.values?.autentique || 0))}
+                            </td>
                             <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(Number(item.values?.consultflexTotal || 0))}</td>
                             <td className="px-3 py-2 text-right text-[12px] font-black text-[#2f4a66]">{formatCurrency(Number(item.values?.total || 0))}</td>
                           </tr>

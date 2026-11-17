@@ -15,11 +15,13 @@ interface ClosingPreviewTenant {
     failed?: number;
     unknown?: number;
   };
+  autentique?: { uso: number; franquia: number | null; excedentes: number; valor: number };
   values?: {
     users?: number;
     whatsappUsers?: number;
     messages?: number;
     marketingMessages?: number;
+    autentique?: number;
     consultflexTotal?: number;
     total?: number;
   };
@@ -161,6 +163,7 @@ export default function PreviaFechamentoPage() {
                 <th className="px-3 py-2 text-right">CFX Comp</th>
                 <th className="px-3 py-2 text-right">CFX Erro</th>
                 <th className="px-3 py-2 text-right">Extras</th>
+                <th className="px-3 py-2 text-right">Autentique</th>
                 <th className="px-3 py-2 text-right">ConsultFlex</th>
                 <th className="px-3 py-2 text-right">Total</th>
               </tr>
@@ -186,6 +189,9 @@ export default function PreviaFechamentoPage() {
                     <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.complete || 0)}</td>
                     <td className="px-3 py-2 text-right text-[12px] font-semibold">{Number(item.consultflex?.failed || 0)}</td>
                     <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(extrasTotal)}</td>
+                    <td className="px-3 py-2 text-right text-[12px] font-semibold" title={`${item.autentique?.uso ?? 0} enviados, ${item.autentique?.franquia ?? '—'} inclusos, ${item.autentique?.excedentes ?? 0} excedentes`}>
+                      {formatCurrency(Number(item.values?.autentique || 0))}
+                    </td>
                     <td className="px-3 py-2 text-right text-[12px] font-semibold">{formatCurrency(Number(item.values?.consultflexTotal || 0))}</td>
                     <td className="px-3 py-2 text-right text-[12px] font-black text-[#2f4a66]">{formatCurrency(Number(item.values?.total || 0))}</td>
                   </tr>
@@ -194,7 +200,7 @@ export default function PreviaFechamentoPage() {
 
               {!loading && (!report?.tenantBreakdown || report.tenantBreakdown.length === 0) && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
                     Nenhum tenant encontrado para a simulacao.
                   </td>
                 </tr>

@@ -49,6 +49,7 @@ export async function GET(req: Request) {
           unknown?: number;
           amountFinal?: number;
         };
+        autentique?: { uso: number; franquia: number | null; excedentes: number; preco: number | null; valor: number };
         extras?: {
           users?: number;
           whatsappUsers?: number;
@@ -60,6 +61,7 @@ export async function GET(req: Request) {
           whatsappUsers?: number;
           messages?: number;
           marketingMessages?: number;
+          autentique?: number;
           consultflexTotal?: number;
           total?: number;
         };
@@ -107,6 +109,7 @@ export async function GET(req: Request) {
               unknown: Number(details?.consultflex?.unknown || 0),
               amountFinal: Number(details?.consultflex?.amountFinal || 0),
             },
+            autentique: details?.autentique,
             extras: {
               users: Number(details?.extras?.users || 0),
               whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
@@ -118,6 +121,7 @@ export async function GET(req: Request) {
               whatsappUsers: Number(details?.values?.whatsappUsers || 0),
               messages: Number(details?.values?.messages || 0),
               marketingMessages: Number(details?.values?.marketingMessages || 0),
+              autentique: Number(details?.values?.autentique || 0),
               consultflexTotal: Number(details?.values?.consultflexTotal || 0),
               total,
             },
@@ -137,6 +141,7 @@ export async function GET(req: Request) {
               unknown: Number(details?.consultflex?.unknown || 0),
               amountFinal: Number(details?.consultflex?.amountFinal || 0),
             },
+            autentique: details?.autentique,
             extras: {
               users: Number(details?.extras?.users || 0),
               whatsappUsers: Number(details?.extras?.whatsappUsers || 0),
@@ -148,6 +153,7 @@ export async function GET(req: Request) {
               whatsappUsers: Number(details?.values?.whatsappUsers || 0),
               messages: Number(details?.values?.messages || 0),
               marketingMessages: Number(details?.values?.marketingMessages || 0),
+              autentique: Number(details?.values?.autentique || 0),
               consultflexTotal: Number(details?.values?.consultflexTotal || 0),
               total,
             },

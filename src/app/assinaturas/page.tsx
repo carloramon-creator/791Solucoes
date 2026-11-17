@@ -759,18 +759,7 @@ export default function AssinaturasPage() {
         throw new Error(payload?.error || 'Falha ao excluir definitivamente a vidracaria.');
       }
 
-      const falhasAuthCount = Array.isArray(payload?.falhasAuth) ? payload.falhasAuth.length : 0;
-      const detalhesFalhas = falhasAuthCount > 0
-        ? payload.falhasAuth
-            .slice(0, 3)
-            .map((f: { userId?: string; reason?: string }, idx: number) => `${idx + 1}. ${f.userId || 'sem-user-id'}: ${f.reason || 'erro desconhecido'}`)
-            .join('\n')
-        : '';
-      const resumoFalhas = falhasAuthCount > 0
-        ? `\n\nAtencao: ${falhasAuthCount} usuario(s) nao foram removidos do Auth.\n${detalhesFalhas}`
-        : '';
-
-      alert(`Vidracaria excluida definitivamente com sucesso.${resumoFalhas}`);
+      alert('Vidracaria excluida definitivamente com sucesso. As contas de autenticação foram preservadas por segurança.');
       setTenantToDelete(null);
       setDeleteConfirmInput('');
       setDeleteTenantConfirmInput('');
@@ -1872,7 +1861,7 @@ export default function AssinaturasPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Acao Irreversivel</p>
               <h3 className="text-lg font-black text-slate-900 mt-1">Excluir vidracaria definitivamente</h3>
               <p className="text-[12px] text-slate-600 mt-1">
-                Remove os dados do tenant, incluindo pedidos aprovados e anexos. Usuários Auth compartilhados serão preservados.
+                Remove dados do tenant, incluindo pedidos aprovados e anexos. Contas Auth são preservadas para evitar afetar usuários de outros tenants.
               </p>
             </div>
 

@@ -48,12 +48,6 @@ const CANCELED_PAYMENT_STATUSES = new Set(['cancelled', 'canceled', 'cancelada',
 const json = (body: object, status = 200) =>
   NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 
-function isIgnorableAuthDeleteError(error: unknown): boolean {
-  const candidate = error as { message?: string; status?: number };
-  const message = String(candidate?.message || '').toLowerCase();
-  return candidate?.status === 404 || message.includes('not found') || message.includes('user not found');
-}
-
 async function authenticatePurgeAdmin(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
   if (!auth.ok) return auth;
@@ -377,36 +371,6 @@ export async function DELETE(req: Request) {
       'x-791-test-tenant-purge': vidracariaId,
     });
 
-    const [profilesResult, peopleResult] = await Promise.all([
-      glass.from('user_profiles').select('user_id').eq('vidracaria_id', vidracariaId),
-      glass.from('pessoas').select('user_id').eq('vidracaria_id', vidracariaId).not('user_id', 'is', null),
-    ]);
-    if (profilesResult.error || peopleResult.error) {
-      throw new Error(profilesResult.error?.message || peopleResult.error?.message || 'Falha ao localizar usuários do tenant.');
-    }
-
-    const candidateUserIds = Array.from(new Set([
-      ...(profilesResult.data || []).map((row) => String(row.user_id || '').trim()).filter(Boolean),
-      ...(peopleResult.data || []).map((row) => String(row.user_id || '').trim()).filter(Boolean),
-    ]));
-
-    let usersToDelete = candidateUserIds;
-    if (candidateUserIds.length > 0) {
-      const [otherProfiles, otherPeople] = await Promise.all([
-        glass.from('user_profiles').select('user_id').in('user_id', candidateUserIds).neq('vidracaria_id', vidracariaId),
-        glass.from('pessoas').select('user_id').in('user_id', candidateUserIds).neq('vidracaria_id', vidracariaId),
-      ]);
-      if (otherProfiles.error || otherPeople.error) {
-        throw new Error(otherProfiles.error?.message || otherPeople.error?.message || 'Falha ao verificar usuários compartilhados.');
-      }
-
-      const sharedUserIds = new Set([
-        ...(otherProfiles.data || []).map((row) => String(row.user_id || '').trim()),
-        ...(otherPeople.data || []).map((row) => String(row.user_id || '').trim()),
-      ]);
-      usersToDelete = candidateUserIds.filter((userId) => !sharedUserIds.has(userId));
-    }
-
     try {
       await safeDeleteStoragePrefix(glass, 'orcamento-anexos', vidracariaId);
       await safeDeleteStoragePrefix(glass, 'vidracarias', vidracariaId);
@@ -447,18 +411,6 @@ export async function DELETE(req: Request) {
       throw new Error('O banco 791glass não confirmou o resultado da limpeza. Verifique o tenant antes de tentar novamente.');
     }
 
-    let usuariosRemovidosAuth = 0;
-    const falhasAuth: Array<{ userId: string; reason: string }> = [];
-    for (const userId of usersToDelete) {
-      const { error } = await glass.auth.admin.deleteUser(userId);
-      if (!error) {
-        usuariosRemovidosAuth += 1;
-        continue;
-      }
-      if (isIgnorableAuthDeleteError(error)) continue;
-      falhasAuth.push({ userId, reason: error.message || 'erro ao excluir usuário no Auth' });
-    }
-
     return json({
       ok: true,
       excluidaDefinitivamente: true,
@@ -466,9 +418,7 @@ export async function DELETE(req: Request) {
       nome: evaluation.tenant.nome,
       slug: evaluation.tenant.slug,
       registrosRemovidos: purgeResult.registrosRemovidos,
-      usuariosRemovidosAuth,
-      usuariosAuthPreservadosPorUsoCompartilhado: candidateUserIds.length - usersToDelete.length,
-      falhasAuth,
+      contasAuthPreservadasPorSeguranca: true,
       executadoPor: auth.user.email,
     });
   } catch (error: unknown) {

@@ -8,6 +8,7 @@ import {
 
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
 const migration = await readFile('supabase/migrations/20261030140000_inter_reconciliation.sql', 'utf8');
+const transferMirrorMigration = await readFile('supabase/migrations/20261117100000_bank_inter_cora_transfer_mirror.sql', 'utf8');
 
 async function setup(t) {
   const db = new PGlite();
@@ -16,9 +17,10 @@ async function setup(t) {
   await db.exec(migration);
   await db.query(
     `insert into public.system_bank_accounts (id, provider, sync_enabled)
-     values ($1, 'inter', true), ($2, 'asaas', true)`,
-    [account, otherAccount],
+     values ($1, 'inter', true), ($2, 'asaas', true), ($3, 'cora', false)`,
+    [account, otherAccount, '00000000-0000-4000-8000-000000000003'],
   );
+  await db.exec(transferMirrorMigration);
   return db;
 }
 
@@ -79,6 +81,96 @@ test('imports credits and debits atomically and replays IDs without duplication'
     /alterou a data ou o valor/,
   );
   assert.equal(await transaction(db, 'new-before-error'), undefined);
+});
+
+test('mirrors recognized internal Inter transfers to Cora and remains idempotent', async (t) => {
+  const db = await setup(t);
+  const transfer = tx('cora-transfer', -1700, {
+    description: 'Pix enviado - 791 Soluções Empresariais Ltda',
+    counterparty: '791 Soluções Empresariais Ltda',
+  });
+
+  assert.deepEqual(await importBatch(db, [transfer]), {
+    imported: 1, pending_review: 0, auto_classified: 0, existing: 0, rule_counts: {},
+  });
+
+  const bankTx = await transaction(db, 'cora-transfer');
+  const records = (await db.query(
+    `select r.id, r.type, r.value, r.category, r.status, r.bank_account_id, r.metadata
+       from public.system_finance_records r
+      order by r.created_at, r.id`,
+  )).rows;
+  assert.equal(records.length, 2);
+  const source = records.find((record) => record.id === bankTx.finance_record_id);
+  assert.ok(source);
+  const mirror = records.find((record) => record.metadata.transfer_mirror_of === source.id);
+  assert.ok(mirror);
+  assert.equal(source.type, 'expense');
+  assert.equal(Number(source.value), 1700);
+  assert.equal(source.category, 'Transferência entre contas');
+  assert.equal(source.metadata.needs_classification, false);
+  assert.equal(source.metadata.internal_transfer, true);
+  assert.equal(source.metadata.transfer_mirror_id, mirror.id);
+  assert.equal(bankTx.status, 'classificado');
+  assert.equal(mirror.type, 'revenue');
+  assert.equal(Number(mirror.value), 1700);
+  assert.equal(mirror.category, 'Transferência entre contas');
+  assert.equal(mirror.status, 'paid');
+  assert.equal(mirror.bank_account_id, '00000000-0000-4000-8000-000000000003');
+  assert.equal(mirror.metadata.provider, 'cora');
+  assert.equal(mirror.metadata.internal_transfer, true);
+  assert.equal(mirror.metadata.transfer_source_bank_tx_id, bankTx.id);
+
+  assert.deepEqual(await importBatch(db, [transfer]), {
+    imported: 0, pending_review: 0, auto_classified: 0, existing: 1, rule_counts: {},
+  });
+  assert.equal(Number((await db.query('select count(*) as count from public.system_finance_records')).rows[0].count), 2);
+});
+
+test('backfills an already imported internal transfer when the mirror rule is deployed', async (t) => {
+  const db = await setup(t);
+  await db.exec('drop trigger bank_inter_mirror_cora_transfer on public.system_bank_transactions');
+  await importBatch(db, [tx('preexisting-cora-transfer', -1700, {
+    description: 'Pix enviado - 791 Soluções Empresariais Ltda',
+    counterparty: '791 Soluções Empresariais Ltda',
+  })]);
+  assert.equal(Number((await db.query('select count(*) as count from public.system_finance_records')).rows[0].count), 1);
+
+  await db.exec(transferMirrorMigration);
+  const bankTx = await transaction(db, 'preexisting-cora-transfer');
+  const mirror = (await db.query(
+    `select * from public.system_finance_records
+      where metadata->>'source' = 'bank_transfer_mirror'`,
+  )).rows[0];
+  const source = (await db.query(
+    'select metadata from public.system_finance_records where id = $1',
+    [bankTx.finance_record_id],
+  )).rows[0];
+  assert.ok(mirror);
+  assert.ok(source);
+  assert.equal(mirror.type, 'revenue');
+  assert.equal(Number(mirror.value), 1700);
+  assert.equal(mirror.bank_account_id, '00000000-0000-4000-8000-000000000003');
+  assert.equal(mirror.metadata.transfer_mirror_of, bankTx.finance_record_id);
+  assert.equal(source.metadata.transfer_mirror_account_id, '00000000-0000-4000-8000-000000000003');
+  assert.equal(Number((await db.query('select count(*) as count from public.system_finance_records')).rows[0].count), 2);
+});
+
+test('rejects internal transfers when the Cora destination is ambiguous', async (t) => {
+  const db = await setup(t);
+  await db.query(
+    "insert into public.system_bank_accounts (id, provider) values ($1, 'cora')",
+    ['00000000-0000-4000-8000-000000000004'],
+  );
+  await assert.rejects(
+    importBatch(db, [tx('ambiguous-cora-transfer', -1700, {
+      description: 'Pix enviado - 791 Soluções Empresariais Ltda',
+      counterparty: '791 Soluções Empresariais Ltda',
+    })]),
+    /exatamente uma conta Cora configurada/,
+  );
+  assert.equal(await transaction(db, 'ambiguous-cora-transfer'), undefined);
+  assert.equal(Number((await db.query('select count(*) as count from public.system_finance_records')).rows[0].count), 0);
 });
 
 test('holds all matching paid, pending, card and unassigned records without changing the balance', async (t) => {

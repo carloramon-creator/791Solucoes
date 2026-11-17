@@ -83,6 +83,7 @@ const TENANT_TABLES_PURGE_ORDER = [
   'classes_projetos',
   'tabelas_comissao_produtividade',
   'tabelas_comissao',
+  'rh_cargos',
   'pessoa_telefones',
   'pessoas',
   'user_profiles',

@@ -5,7 +5,10 @@ import { supabaseServer } from './supabase-server';
  * Cria um cliente dinâmico para o projeto 791glass 
  * baseado nas configurações salvas na Holding.
  */
-export async function getGlassClient(authorization?: string) {
+export async function getGlassClient(
+  authorization?: string,
+  requestHeaders: Record<string, string> = {}
+) {
   if (authorization !== undefined && !/^Bearer [^\s]+$/.test(authorization)) {
     throw new Error('Autorização Glass inválida.');
   }
@@ -22,7 +25,12 @@ export async function getGlassClient(authorization?: string) {
   const { glassUrl, glassServiceKey } = data.value;
 
   return createClient(glassUrl, glassServiceKey, {
-    ...(authorization ? { global: { headers: { Authorization: authorization } } } : {}),
+    global: {
+      headers: {
+        ...(authorization ? { Authorization: authorization } : {}),
+        ...requestHeaders,
+      },
+    },
     auth: {
       autoRefreshToken: false,
       persistSession: false

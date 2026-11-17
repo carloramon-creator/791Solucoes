@@ -1,164 +1,312 @@
 import { NextResponse } from 'next/server';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import {
+  findTenantAsaasCustomers,
+  getAsaasClient,
+  listTenantAsaasSubscriptions,
+  loadTenantInvoices,
+} from '@/lib/glass-tenant-billing';
 import { getGlassClient } from '@/lib/glass-client';
+import { getUserProfileIds, userCanAccessResource } from '@/lib/holding-permissions';
+import { isUuid } from '@/lib/holding-customers';
+import { supabaseServer } from '@/lib/supabase-server';
 
 type DeletePayload = {
   confirmacao?: string;
+  confirmacaoTenant?: string;
+  confirmacaoRegistros?: number;
   vidracariaId?: string;
 };
 
-type AuthSuccess = {
-  ok: true;
-  user: {
-    id: string;
-    email: string | null;
-  };
+type PurgePreview = {
+  registrosIdentificados: number;
+  tabelas: Record<string, number>;
 };
 
-type AuthFailure = {
-  ok: false;
-  status: number;
-  error: string;
+type TenantRow = {
+  id: string;
+  nome: string | null;
+  slug: string | null;
+  email: string | null;
+  cnpj: string | null;
+  assinatura_confirmada: boolean | null;
 };
 
-type AuthResult = AuthSuccess | AuthFailure;
+type PurgeEvaluation = {
+  eligible: boolean;
+  reason: string | null;
+  tenant: TenantRow | null;
+  glass: Awaited<ReturnType<typeof getGlassClient>> | null;
+  canceledFinanceRecordIds: string[];
+  purgePreview?: PurgePreview;
+};
 
 const REQUIRED_CONFIRMATION = 'EXCLUIR VIDRACARIA DEFINITIVAMENTE';
+const PURGE_PERMISSION = 'action.assinaturas.purge_test_tenant';
+const CANCELED_PAYMENT_STATUSES = new Set(['cancelled', 'canceled', 'cancelada', 'cancelado', 'deleted']);
 
-const TENANT_TABLES_PURGE_ORDER = [
-  'orcamento_anexos',
-  'orcamento_historico',
-  'orcamento_credito_consultas',
-  'orcamentos',
-  'ordem_servico_etapa_eventos',
-  'ordens_servico_etapas',
-  'ordens_servico_ambientes',
-  'ordens_servico_eventos',
-  'ordens_servico_etapas_erro_config',
-  'ordens_servico_pesquisa_satisfacao_config',
-  'ordens_servico',
-  'projetos',
-  'projects',
-  'sacadas',
-  'documentos',
-  'whatsapp_messages',
-  'whatsapp_conversation_tags',
-  'whatsapp_pending_orcamentos',
-  'whatsapp_conversations',
-  'whatsapp_contacts',
-  'whatsapp_sector_users',
-  'whatsapp_sectors',
-  'whatsapp_tags',
-  'whatsapp_quick_replies',
-  'whatsapp_automation_rules',
-  'whatsapp_configs',
-  'crm_stages',
-  'fin_lancamentos',
-  'fin_comissoes_apuradas',
-  'fin_contas_correntes',
-  'fin_formas_pagamento_config',
-  'fin_subsubclasses_financeiras',
-  'fin_subclasses_financeiras',
-  'fin_classes_financeiras',
-  'config_faixas_nota_fiscal',
-  'config_grupos_faixa_nota_fiscal',
-  'configuracoes_gerais',
-  'contadores',
-  'filiais',
-  'etapas_producao_config_classes',
-  'etapas_producao_config',
-  'producao_configuracoes',
-  'materiais_fornecedores',
-  'materiais',
-  'estoque_locais',
-  'valores_atributo_material',
-  'atributos_classe_material',
-  'servicos_tratamento',
-  'subclasses_materiais',
-  'classes_materiais',
-  'cor_ferragem_correspondente',
-  'cores',
-  'projeto_templates',
-  'subclasses_projetos',
-  'classes_projetos',
-  'tabelas_comissao_produtividade',
-  'tabelas_comissao',
-  'rh_cargos',
-  'pessoa_telefones',
-  'pessoas',
-  'user_profiles',
-] as const;
-
-function isMissingSchemaObjectError(error: unknown): boolean {
-  const candidate = error as { message?: string; details?: string };
-  const msg = String(candidate?.message || candidate?.details || '').toLowerCase();
-  return (
-    msg.includes('does not exist')
-    || msg.includes('could not find the table')
-    || msg.includes('schema cache')
-    || msg.includes('could not find the')
-  );
-}
+const json = (body: object, status = 200) =>
+  NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
 
 function isIgnorableAuthDeleteError(error: unknown): boolean {
   const candidate = error as { message?: string; status?: number };
-  const msg = String(candidate?.message || '').toLowerCase();
-  // Supabase may return not-found style errors when the auth user was already removed.
-  return candidate?.status === 404 || msg.includes('not found') || msg.includes('user not found');
+  const message = String(candidate?.message || '').toLowerCase();
+  return candidate?.status === 404 || message.includes('not found') || message.includes('user not found');
 }
 
-async function safeDeleteByTenant(admin: SupabaseClient, table: string, vidracariaId: string) {
-  const { error } = await admin
-    .from(table)
-    .delete()
-    .eq('vidracaria_id', vidracariaId);
+async function authenticatePurgeAdmin(req: Request) {
+  const auth = await authenticateHoldingAdmin(req);
+  if (!auth.ok) return auth;
+  if (!auth.user.email) {
+    return { ok: false as const, status: 403, error: 'Usuário sem e-mail não pode excluir tenants.' };
+  }
 
-  if (!error) return;
-  if (isMissingSchemaObjectError(error)) return;
-  throw new Error(`[${table}] ${error.message || 'erro ao excluir por vidracaria_id'}`);
+  const profiles = await getUserProfileIds(auth.user.email);
+  if (profiles.length === 0) {
+    return { ok: false as const, status: 403, error: 'É necessário um perfil administrativo explícito para excluir tenants.' };
+  }
+
+  try {
+    const [canOpenSubscriptions, canPurge] = await Promise.all([
+      userCanAccessResource(auth.user.email, 'menu.assinaturas'),
+      userCanAccessResource(auth.user.email, PURGE_PERMISSION),
+    ]);
+    if (!canOpenSubscriptions || !canPurge) {
+      return { ok: false as const, status: 403, error: 'Sem permissão específica para excluir tenants de teste.' };
+    }
+  } catch {
+    return { ok: false as const, status: 503, error: 'Não foi possível confirmar a permissão de exclusão.' };
+  }
+
+  return auth;
 }
 
-async function safeDeleteByIds(admin: SupabaseClient, table: string, column: string, ids: string[]) {
-  if (!ids.length) return;
+async function evaluatePurgeEligibility(vidracariaId: string): Promise<PurgeEvaluation> {
+  const glass = await getGlassClient();
+  const { data: tenantData, error: tenantError } = await glass
+    .from('vidracarias')
+    .select('id, nome, slug, email, cnpj, assinatura_confirmada')
+    .eq('id', vidracariaId)
+    .maybeSingle();
 
-  const { error } = await admin
-    .from(table)
-    .delete()
-    .in(column, ids);
+  if (tenantError) throw new Error(`Falha ao validar vidraçaria: ${tenantError.message}`);
+  if (!tenantData?.id) {
+    return {
+      eligible: false,
+      reason: 'Vidraçaria não encontrada.',
+      tenant: null,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
 
-  if (!error) return;
-  if (isMissingSchemaObjectError(error)) return;
-  throw new Error(`[${table}] ${error.message || `erro ao excluir por ${column}`}`);
+  const tenant = tenantData as TenantRow;
+  if (tenant.assinatura_confirmada !== false) {
+    return {
+      eligible: false,
+      reason: 'Somente tenants identificados como trial sem confirmação de assinatura podem ser excluídos.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  if (!tenant.email && !tenant.cnpj) {
+    return {
+      eligible: false,
+      reason: 'Não foi possível conferir pagamentos no Asaas: o tenant não possui e-mail nem CNPJ.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const asaas = await getAsaasClient();
+  if (!asaas) {
+    return {
+      eligible: false,
+      reason: 'Não foi possível verificar assinaturas e pagamentos no Asaas. A exclusão foi bloqueada.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const customers = await findTenantAsaasCustomers(asaas, tenant);
+  const subscriptions = await listTenantAsaasSubscriptions(asaas, customers, vidracariaId);
+  if (subscriptions.length > 0) {
+    return {
+      eligible: false,
+      reason: 'Este tenant possui uma assinatura ativa no Asaas.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const { invoices, warnings } = await loadTenantInvoices(vidracariaId, tenant);
+  if (warnings.length > 0) {
+    return {
+      eligible: false,
+      reason: `Não foi possível confirmar a ausência de cobranças: ${warnings.join(' ')}`,
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  if (invoices.some((invoice) => invoice.source === 'invoice')) {
+    return {
+      eligible: false,
+      reason: 'Há registro fiscal associado ao tenant. Preserve-o e revise-o antes de excluir.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const unsettledInvoices = invoices.filter((invoice) => (
+    !CANCELED_PAYMENT_STATUSES.has(String(invoice.status || '').toLowerCase())
+  ));
+  if (unsettledInvoices.length > 0) {
+    return {
+      eligible: false,
+      reason: 'Há pagamento ou cobrança não cancelada associada ao tenant.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const paymentLedgers = await glass
+    .from('fin_lancamentos_baixas')
+    .select('id')
+    .eq('vidracaria_id', vidracariaId)
+    .limit(1);
+  if (paymentLedgers.error) throw new Error(`Falha ao conferir baixas financeiras: ${paymentLedgers.error.message}`);
+  if (paymentLedgers.data?.length) {
+    return {
+      eligible: false,
+      reason: 'Há baixa financeira registrada no 791glass.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const settledEntries = await glass
+    .from('fin_lancamentos')
+    .select('id')
+    .eq('vidracaria_id', vidracariaId)
+    .gt('valor_realizado', 0)
+    .limit(1);
+  if (settledEntries.error) throw new Error(`Falha ao conferir lançamentos financeiros: ${settledEntries.error.message}`);
+  if (settledEntries.data?.length) {
+    return {
+      eligible: false,
+      reason: 'Há lançamento financeiro realizado no 791glass.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const accessOrders = await glass
+    .from('glass_access_orders')
+    .select('id')
+    .eq('vidracaria_id', vidracariaId)
+    .eq('status', 'confirmed')
+    .limit(1);
+  if (accessOrders.error) throw new Error(`Falha ao conferir compras de acesso: ${accessOrders.error.message}`);
+  if (accessOrders.data?.length) {
+    return {
+      eligible: false,
+      reason: 'Há uma compra de acesso confirmada para este tenant.',
+      tenant,
+      glass,
+      canceledFinanceRecordIds: [],
+    };
+  }
+
+  const canceledFinanceRecordIds = invoices
+    .filter((invoice) => invoice.source === 'record')
+    .map((invoice) => String(invoice.id).replace(/^finance-/, ''))
+    .filter(Boolean);
+  const purgeGlass = await getGlassClient(undefined, {
+    'x-791-test-tenant-purge': vidracariaId,
+  });
+  const { data: previewData, error: previewError } = await purgeGlass.rpc('holding_purge_test_tenant', {
+    p_vidracaria_id: vidracariaId,
+    p_dry_run: true,
+    p_expected_records: null,
+  });
+  if (previewError) {
+    throw new Error(`Não foi possível gerar a prévia completa dos dados do tenant: ${previewError.message}`);
+  }
+  if (
+    !previewData
+    || previewData.vidracariaId !== vidracariaId
+    || previewData.dryRun !== true
+    || typeof previewData.registrosIdentificados !== 'number'
+    || !Number.isSafeInteger(previewData.registrosIdentificados)
+    || !previewData.tabelas
+    || typeof previewData.tabelas !== 'object'
+    || Array.isArray(previewData.tabelas)
+  ) {
+    throw new Error('O banco 791glass não retornou uma prévia válida dos dados do tenant.');
+  }
+
+  return {
+    eligible: true,
+    reason: null,
+    tenant,
+    glass,
+    canceledFinanceRecordIds,
+    purgePreview: {
+      registrosIdentificados: previewData.registrosIdentificados,
+      tabelas: previewData.tabelas as Record<string, number>,
+    },
+  };
 }
 
-async function safeDeleteStoragePrefix(admin: SupabaseClient, bucket: string, prefix: string) {
+async function safeDeleteStoragePrefix(glass: Awaited<ReturnType<typeof getGlassClient>>, bucket: string, prefix: string) {
   const queue = [prefix];
+  const filesToRemove: string[] = [];
 
   while (queue.length > 0) {
     const currentPrefix = queue.shift() as string;
-    const { data, error } = await admin.storage.from(bucket).list(currentPrefix, {
-      limit: 1000,
-      offset: 0,
-    });
+    let offset = 0;
+    while (true) {
+      const { data, error } = await glass.storage.from(bucket).list(currentPrefix, {
+        limit: 1000,
+        offset,
+      });
 
-    if (error) {
-      const msg = String(error.message || '').toLowerCase();
-      if (msg.includes('bucket not found') || msg.includes('not found')) return;
-      throw new Error(`[storage:${bucket}] ${error.message || 'erro ao listar arquivos'}`);
-    }
-
-    const files: string[] = [];
-    for (const item of data || []) {
-      if (!item?.name) continue;
-      if (item.id === null) {
-        queue.push(`${currentPrefix}/${item.name}`.replace(/^\/+/, ''));
-      } else {
-        files.push(`${currentPrefix}/${item.name}`.replace(/^\/+/, ''));
+      if (error) {
+        const message = String(error.message || '').toLowerCase();
+        if (message.includes('bucket not found')) return;
+        throw new Error(`[storage:${bucket}] ${error.message || 'erro ao listar arquivos'}`);
       }
-    }
 
+      const items = data || [];
+      for (const item of items) {
+        if (!item?.name) continue;
+        if (item.id === null) {
+          queue.push(`${currentPrefix}/${item.name}`.replace(/^\/+/, ''));
+        } else {
+          filesToRemove.push(`${currentPrefix}/${item.name}`.replace(/^\/+/, ''));
+        }
+      }
+
+      if (items.length < 1000) break;
+      offset += items.length;
+    }
+  }
+
+  for (let index = 0; index < filesToRemove.length; index += 1000) {
+    const files = filesToRemove.slice(index, index + 1000);
     if (files.length > 0) {
-      const { error: removeError } = await admin.storage.from(bucket).remove(files);
+      const { error: removeError } = await glass.storage.from(bucket).remove(files);
       if (removeError) {
         throw new Error(`[storage:${bucket}] ${removeError.message || 'erro ao remover arquivos'}`);
       }
@@ -166,238 +314,168 @@ async function safeDeleteStoragePrefix(admin: SupabaseClient, bucket: string, pr
   }
 }
 
-async function releaseAuthUserReferences(admin: SupabaseClient, userId: string) {
-  const normalizedUserId = String(userId || '').trim();
-  if (!normalizedUserId) return;
+export async function GET(req: Request) {
+  const auth = await authenticatePurgeAdmin(req);
+  if (!auth.ok) return json({ error: auth.error }, auth.status);
 
-  const tablesToNullify = [
-    { table: 'pessoas', column: 'user_id' },
-    { table: 'whatsapp_conversations', column: 'responsible_user_id' },
-    { table: 'whatsapp_conversations', column: 'transferred_from_id' },
-  ] as const;
+  const vidracariaId = new URL(req.url).searchParams.get('vidracariaId')?.trim() || '';
+  if (!isUuid(vidracariaId)) return json({ error: 'Informe um vidracariaId válido.' }, 400);
 
-  for (const target of tablesToNullify) {
-    const { error } = await admin
-      .from(target.table)
-      .update({ [target.column]: null })
-      .eq(target.column, normalizedUserId);
-
-    if (!error) continue;
-    if (isMissingSchemaObjectError(error)) continue;
-    throw new Error(`[${target.table}.${target.column}] ${error.message || 'erro ao liberar referencia do usuario'}`);
+  try {
+    const evaluation = await evaluatePurgeEligibility(vidracariaId);
+    if (!evaluation.tenant) return json({ eligible: false, reason: evaluation.reason }, 404);
+    return json({
+      eligible: evaluation.eligible,
+      reason: evaluation.reason,
+      tenant: {
+        id: evaluation.tenant.id,
+        nome: evaluation.tenant.nome,
+        slug: evaluation.tenant.slug,
+      },
+      ...(evaluation.purgePreview || {}),
+    });
+  } catch (error: unknown) {
+    const candidate = error as { message?: string };
+    return json({ error: candidate?.message || 'Não foi possível verificar a elegibilidade do tenant.' }, 503);
   }
-}
-
-async function authenticateHoldingAdmin(req: Request): Promise<AuthResult> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !anonKey) {
-    return { ok: false, status: 500, error: 'Configuracao do Supabase da Holding ausente.' };
-  }
-
-  const authHeader = req.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (!token) {
-    return { ok: false, status: 401, error: 'Token ausente.' };
-  }
-
-  const requester = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data: userData, error: userErr } = await requester.auth.getUser(token);
-  if (userErr || !userData.user) {
-    return { ok: false, status: 401, error: 'Sessao invalida.' };
-  }
-
-  const userEmail = userData.user.email || null;
-  if (userEmail) {
-    const { data: sponsor } = await requester
-      .from('patrocinadores')
-      .select('id')
-      .eq('email', userEmail)
-      .maybeSingle();
-
-    if (sponsor?.id) {
-      return { ok: false, status: 403, error: 'Patrocinadores nao podem executar exclusao definitiva.' };
-    }
-  }
-
-  return {
-    ok: true,
-    user: {
-      id: userData.user.id,
-      email: userEmail,
-    },
-  };
 }
 
 export async function DELETE(req: Request) {
-  const auth = await authenticateHoldingAdmin(req);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status });
-  }
+  const auth = await authenticatePurgeAdmin(req);
+  if (!auth.ok) return json({ error: auth.error }, auth.status);
 
-  let body: DeletePayload = {};
+  let body: DeletePayload;
   try {
     body = await req.json();
   } catch {
-    body = {};
+    return json({ error: 'Envie JSON válido para confirmar a exclusão.' }, 400);
   }
 
   const confirmacao = String(body.confirmacao || '').trim().toUpperCase();
   if (confirmacao !== REQUIRED_CONFIRMATION) {
-    return NextResponse.json({ error: `Confirmacao invalida. Digite exatamente: ${REQUIRED_CONFIRMATION}` }, { status: 400 });
+    return json({ error: `Confirmação inválida. Digite exatamente: ${REQUIRED_CONFIRMATION}` }, 400);
   }
 
   const vidracariaId = String(body.vidracariaId || '').trim();
-  if (!vidracariaId) {
-    return NextResponse.json({ error: 'Informe o vidracariaId para exclusao definitiva.' }, { status: 400 });
+  if (!isUuid(vidracariaId)) return json({ error: 'Informe um vidracariaId válido.' }, 400);
+  if (String(body.confirmacaoTenant || '').trim().toLowerCase() !== vidracariaId.toLowerCase()) {
+    return json({ error: 'Digite o ID exato do tenant para confirmar a exclusão.' }, 400);
+  }
+  if (!Number.isSafeInteger(body.confirmacaoRegistros) || (body.confirmacaoRegistros as number) < 0) {
+    return json({ error: 'A quantidade de registros da prévia é inválida. Gere uma nova prévia.' }, 400);
   }
 
   try {
-    const glass = await getGlassClient();
-
-    const { data: tenantExists, error: tenantCheckErr } = await glass
-      .from('vidracarias')
-      .select('id, nome, slug')
-      .eq('id', vidracariaId)
-      .maybeSingle();
-
-    if (tenantCheckErr) {
-      return NextResponse.json({ error: tenantCheckErr.message || 'Falha ao validar vidracaria.' }, { status: 500 });
+    const evaluation = await evaluatePurgeEligibility(vidracariaId);
+    if (!evaluation.tenant) return json({ error: evaluation.reason || 'Vidraçaria não encontrada.' }, 404);
+    if (!evaluation.eligible) return json({ error: evaluation.reason || 'Tenant não elegível para exclusão.' }, 409);
+    if (evaluation.purgePreview?.registrosIdentificados !== body.confirmacaoRegistros) {
+      return json({ error: 'Os dados mudaram desde a prévia. Feche e abra novamente a confirmação antes de excluir.' }, 409);
     }
 
-    if (!tenantExists?.id) {
-      return NextResponse.json({ error: 'Vidracaria nao encontrada para exclusao.' }, { status: 404 });
+    const glass = await getGlassClient(undefined, {
+      'x-791-test-tenant-purge': vidracariaId,
+    });
+
+    const [profilesResult, peopleResult] = await Promise.all([
+      glass.from('user_profiles').select('user_id').eq('vidracaria_id', vidracariaId),
+      glass.from('pessoas').select('user_id').eq('vidracaria_id', vidracariaId).not('user_id', 'is', null),
+    ]);
+    if (profilesResult.error || peopleResult.error) {
+      throw new Error(profilesResult.error?.message || peopleResult.error?.message || 'Falha ao localizar usuários do tenant.');
     }
 
-    const { data: userProfiles } = await glass
-      .from('user_profiles')
-      .select('user_id')
-      .eq('vidracaria_id', vidracariaId);
-
-    const { data: pessoasComUsuario } = await glass
-      .from('pessoas')
-      .select('user_id')
-      .eq('vidracaria_id', vidracariaId)
-      .not('user_id', 'is', null);
-
-    const userIdsToDelete = Array.from(new Set([
-      ...(userProfiles || []).map((row) => String((row as { user_id?: string }).user_id || '').trim()).filter(Boolean),
-      ...(pessoasComUsuario || []).map((row) => String((row as { user_id?: string }).user_id || '').trim()).filter(Boolean),
+    const candidateUserIds = Array.from(new Set([
+      ...(profilesResult.data || []).map((row) => String(row.user_id || '').trim()).filter(Boolean),
+      ...(peopleResult.data || []).map((row) => String(row.user_id || '').trim()).filter(Boolean),
     ]));
 
-    const { data: orcamentosIdsRows } = await glass
-      .from('orcamentos')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const orcamentoIds = (orcamentosIdsRows || []).map((r) => String((r as { id: string }).id));
+    let usersToDelete = candidateUserIds;
+    if (candidateUserIds.length > 0) {
+      const [otherProfiles, otherPeople] = await Promise.all([
+        glass.from('user_profiles').select('user_id').in('user_id', candidateUserIds).neq('vidracaria_id', vidracariaId),
+        glass.from('pessoas').select('user_id').in('user_id', candidateUserIds).neq('vidracaria_id', vidracariaId),
+      ]);
+      if (otherProfiles.error || otherPeople.error) {
+        throw new Error(otherProfiles.error?.message || otherPeople.error?.message || 'Falha ao verificar usuários compartilhados.');
+      }
 
-    const { data: ordensIdsRows } = await glass
-      .from('ordens_servico')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const ordemServicoIds = (ordensIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: etapasIdsRows } = await glass
-      .from('ordens_servico_etapas')
-      .select('id')
-      .in('ordem_servico_id', ordemServicoIds.length ? ordemServicoIds : ['00000000-0000-0000-0000-000000000000']);
-    const ordemServicoEtapaIds = (etapasIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: materialIdsRows } = await glass
-      .from('materiais')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const materialIds = (materialIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: classeIdsRows } = await glass
-      .from('classes_materiais')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const classeIds = (classeIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: atributoIdsRows } = await glass
-      .from('atributos_classe_material')
-      .select('id')
-      .in('classe_id', classeIds.length ? classeIds : ['00000000-0000-0000-0000-000000000000']);
-    const atributoIds = (atributoIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: conversaIdsRows } = await glass
-      .from('whatsapp_conversations')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const conversaIds = (conversaIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    const { data: pessoaIdsRows } = await glass
-      .from('pessoas')
-      .select('id')
-      .eq('vidracaria_id', vidracariaId);
-    const pessoaIds = (pessoaIdsRows || []).map((r) => String((r as { id: string }).id));
-
-    await safeDeleteByIds(glass, 'orcamento_itens', 'orcamento_id', orcamentoIds);
-    await safeDeleteByIds(glass, 'orcamento_historico', 'orcamento_id', orcamentoIds);
-    await safeDeleteByIds(glass, 'orcamento_anexos', 'orcamento_id', orcamentoIds);
-    await safeDeleteByIds(glass, 'orcamento_credito_consultas', 'orcamento_id', orcamentoIds);
-
-    await safeDeleteByIds(glass, 'ordem_servico_etapa_eventos', 'ordem_servico_etapa_id', ordemServicoEtapaIds);
-    await safeDeleteByIds(glass, 'ordens_servico_etapas', 'ordem_servico_id', ordemServicoIds);
-    await safeDeleteByIds(glass, 'ordens_servico_ambientes', 'ordem_servico_id', ordemServicoIds);
-    await safeDeleteByIds(glass, 'ordens_servico_eventos', 'ordem_servico_id', ordemServicoIds);
-
-    await safeDeleteByIds(glass, 'materiais_fornecedores', 'material_id', materialIds);
-    await safeDeleteByIds(glass, 'valores_atributo_material', 'atributo_id', atributoIds);
-    await safeDeleteByIds(glass, 'pessoa_telefones', 'pessoa_id', pessoaIds);
-
-    await safeDeleteByIds(glass, 'whatsapp_messages', 'conversation_id', conversaIds);
-    await safeDeleteByIds(glass, 'whatsapp_conversation_tags', 'conversation_id', conversaIds);
-
-    for (const table of TENANT_TABLES_PURGE_ORDER) {
-      await safeDeleteByTenant(glass, table, vidracariaId);
+      const sharedUserIds = new Set([
+        ...(otherProfiles.data || []).map((row) => String(row.user_id || '').trim()),
+        ...(otherPeople.data || []).map((row) => String(row.user_id || '').trim()),
+      ]);
+      usersToDelete = candidateUserIds.filter((userId) => !sharedUserIds.has(userId));
     }
 
-    await safeDeleteStoragePrefix(glass, 'orcamento-anexos', vidracariaId);
-    await safeDeleteStoragePrefix(glass, 'vidracarias', vidracariaId);
-
-    const { error: deleteTenantErr } = await glass
-      .from('vidracarias')
-      .delete()
-      .eq('id', vidracariaId);
-
-    if (deleteTenantErr) {
-      throw new Error(deleteTenantErr.message || 'Falha ao remover registro da vidracaria.');
+    try {
+      await safeDeleteStoragePrefix(glass, 'orcamento-anexos', vidracariaId);
+      await safeDeleteStoragePrefix(glass, 'vidracarias', vidracariaId);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'erro desconhecido ao remover arquivos';
+      throw new Error(`A limpeza do banco ainda não foi executada; o tenant continua no 791glass, mas arquivos podem ter sido removidos parcialmente. ${message}`);
     }
 
-    const authDeleteFailures: Array<{ userId: string; reason: string }> = [];
-    for (const userId of userIdsToDelete) {
-      await releaseAuthUserReferences(glass, userId);
-      const { error } = await glass.auth.admin.deleteUser(userId);
+    if (evaluation.canceledFinanceRecordIds.length > 0) {
+      const { error } = await supabaseServer
+        .from('system_finance_records')
+        .delete()
+        .in('id', evaluation.canceledFinanceRecordIds);
       if (error) {
-        if (isIgnorableAuthDeleteError(error)) {
-          continue;
-        }
-        authDeleteFailures.push({ userId, reason: error.message || 'erro ao excluir usuario no Auth' });
+        throw new Error(`A limpeza do banco ainda não foi executada; o tenant continua no 791glass e arquivos podem já ter sido removidos. Falha ao remover cobranças canceladas: ${error.message}`);
       }
     }
 
-    return NextResponse.json({
+    const { data: purgeResult, error: purgeError } = await glass.rpc('holding_purge_test_tenant', {
+      p_vidracaria_id: vidracariaId,
+      p_dry_run: false,
+      p_expected_records: body.confirmacaoRegistros,
+    });
+    if (purgeError) {
+      const countChanged = purgeError.message.includes('A quantidade de dados mudou desde a prévia');
+      return json({
+        error: countChanged
+          ? 'Os dados mudaram durante a confirmação. O banco 791glass não foi alterado; arquivos ou cobranças canceladas podem já ter sido removidos. Gere uma nova prévia antes de tentar novamente.'
+          : `A limpeza no banco 791glass falhou; os registros do tenant foram preservados para nova tentativa. Arquivos ou cobranças canceladas podem já ter sido removidos. ${purgeError.message}`,
+      }, countChanged ? 409 : 500);
+    }
+    if (
+      !purgeResult
+      || purgeResult.vidracariaId !== vidracariaId
+      || typeof purgeResult.registrosRemovidos !== 'number'
+      || !Number.isSafeInteger(purgeResult.registrosRemovidos)
+    ) {
+      throw new Error('O banco 791glass não confirmou o resultado da limpeza. Verifique o tenant antes de tentar novamente.');
+    }
+
+    let usuariosRemovidosAuth = 0;
+    const falhasAuth: Array<{ userId: string; reason: string }> = [];
+    for (const userId of usersToDelete) {
+      const { error } = await glass.auth.admin.deleteUser(userId);
+      if (!error) {
+        usuariosRemovidosAuth += 1;
+        continue;
+      }
+      if (isIgnorableAuthDeleteError(error)) continue;
+      falhasAuth.push({ userId, reason: error.message || 'erro ao excluir usuário no Auth' });
+    }
+
+    return json({
       ok: true,
       excluidaDefinitivamente: true,
       vidracariaId,
-      nome: tenantExists.nome || null,
-      slug: tenantExists.slug || null,
-      usuariosRemovidosAuth: userIdsToDelete.length - authDeleteFailures.length,
-      falhasAuth: authDeleteFailures,
+      nome: evaluation.tenant.nome,
+      slug: evaluation.tenant.slug,
+      registrosRemovidos: purgeResult.registrosRemovidos,
+      usuariosRemovidosAuth,
+      usuariosAuthPreservadosPorUsoCompartilhado: candidateUserIds.length - usersToDelete.length,
+      falhasAuth,
       executadoPor: auth.user.email,
     });
   } catch (error: unknown) {
     const candidate = error as { message?: string };
-    return NextResponse.json(
-      { error: candidate?.message || 'Falha ao excluir definitivamente a vidracaria.' },
-      { status: 500 }
+    return json(
+      { error: candidate?.message || 'Falha ao excluir definitivamente a vidraçaria.' },
+      500
     );
   }
 }

@@ -57,6 +57,13 @@ interface Vidracaria {
   ciclo_pagamento?: 'monthly' | 'semiannual' | 'annual';
 }
 
+interface TenantPurgePreview {
+  eligible: boolean;
+  reason: string | null;
+  registrosIdentificados?: number;
+  tabelas?: Record<string, number>;
+}
+
 interface Module {
   id: string;
   nome: string;
@@ -274,6 +281,10 @@ export default function AssinaturasPage() {
   const [selectedUsageTenant, setSelectedUsageTenant] = useState<Vidracaria | null>(null);
   const [tenantToDelete, setTenantToDelete] = useState<Vidracaria | null>(null);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [deleteTenantConfirmInput, setDeleteTenantConfirmInput] = useState('');
+  const [deletePreview, setDeletePreview] = useState<TenantPurgePreview | null>(null);
+  const [deletePreviewError, setDeletePreviewError] = useState('');
+  const [isLoadingDeletePreview, setIsLoadingDeletePreview] = useState(false);
   const [isDeletingTenant, setIsDeletingTenant] = useState(false);
   const [showAuthCleanupModal, setShowAuthCleanupModal] = useState(false);
   const [orphanAuthUserId, setOrphanAuthUserId] = useState('');
@@ -599,6 +610,32 @@ export default function AssinaturasPage() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (!tenantToDelete) return;
+
+    let cancelled = false;
+    const loadPreview = async () => {
+      try {
+        const query = new URLSearchParams({ vidracariaId: tenantToDelete.id });
+        const response = await holdingAuthFetch(`/api/admin/vidracarias/purge?${query.toString()}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error || payload?.reason || 'Falha ao verificar a elegibilidade do tenant.');
+        if (!cancelled) setDeletePreview(payload as TenantPurgePreview);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          setDeletePreviewError(error instanceof Error ? error.message : 'Falha ao verificar a elegibilidade do tenant.');
+        }
+      } finally {
+        if (!cancelled) setIsLoadingDeletePreview(false);
+      }
+    };
+
+    void loadPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantToDelete]);
+
   const getStatusBadge = (tenant: Vidracaria) => {
     const label = glassSubscriptionLabel(tenant);
     if (label === 'BLOQUEADA') {
@@ -693,36 +730,27 @@ export default function AssinaturasPage() {
   const REQUIRED_DELETE_CONFIRMATION = 'EXCLUIR VIDRACARIA DEFINITIVAMENTE';
 
   const handleDeleteTenant = async () => {
-    if (!tenantToDelete || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION) {
-      alert(`Digite exatamente: ${REQUIRED_DELETE_CONFIRMATION}`);
+    if (
+      !tenantToDelete
+      || !deletePreview?.eligible
+      || !Number.isSafeInteger(deletePreview.registrosIdentificados)
+      || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION
+      || deleteTenantConfirmInput.trim().toLowerCase() !== tenantToDelete.id.toLowerCase()
+    ) {
+      alert('Confirme a frase e o ID exato do tenant após conferir a prévia.');
       return;
     }
 
     setIsDeletingTenant(true);
     try {
-      let accessToken = '';
-
-      const { data: sessionData } = await authClient.auth.getSession();
-      accessToken = sessionData.session?.access_token || '';
-
-      if (!accessToken) {
-        const { data: refreshed } = await authClient.auth.refreshSession();
-        accessToken = refreshed.session?.access_token || '';
-      }
-
-      if (!accessToken) {
-        throw new Error('Sessao nao encontrada. Faca login novamente.');
-      }
-
-      const response = await fetch('/api/admin/vidracarias/purge', {
+      const response = await holdingAuthFetch('/api/admin/vidracarias/purge', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vidracariaId: tenantToDelete.id,
           confirmacao: deleteConfirmInput.trim(),
+          confirmacaoTenant: deleteTenantConfirmInput.trim(),
+          confirmacaoRegistros: deletePreview.registrosIdentificados,
         }),
       });
 
@@ -745,6 +773,10 @@ export default function AssinaturasPage() {
       alert(`Vidracaria excluida definitivamente com sucesso.${resumoFalhas}`);
       setTenantToDelete(null);
       setDeleteConfirmInput('');
+      setDeleteTenantConfirmInput('');
+      setDeletePreview(null);
+      setDeletePreviewError('');
+      setIsLoadingDeletePreview(false);
       await fetchData();
     } catch (err: any) {
       alert(err?.message || 'Erro ao excluir vidracaria.');
@@ -1319,6 +1351,10 @@ export default function AssinaturasPage() {
                            onClick={() => {
                              setTenantToDelete(tenant);
                              setDeleteConfirmInput('');
+                             setDeleteTenantConfirmInput('');
+                             setDeletePreview(null);
+                             setDeletePreviewError('');
+                             setIsLoadingDeletePreview(true);
                            }}
                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg p-0 text-slate-400 transition-all hover:bg-red-50 hover:text-red-600"
                            title="Excluir definitivamente"
@@ -1836,7 +1872,7 @@ export default function AssinaturasPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Acao Irreversivel</p>
               <h3 className="text-lg font-black text-slate-900 mt-1">Excluir vidracaria definitivamente</h3>
               <p className="text-[12px] text-slate-600 mt-1">
-                Esta acao remove dados, arquivos e usuarios de autentificacao da vidracaria no 791glass.
+                Remove os dados do tenant, incluindo pedidos aprovados e anexos. Usuários Auth compartilhados serão preservados.
               </p>
             </div>
 
@@ -1846,6 +1882,44 @@ export default function AssinaturasPage() {
                 <p><strong>Slug:</strong> /{tenantToDelete.slug}</p>
                 <p><strong>ID:</strong> {tenantToDelete.id}</p>
               </div>
+
+              <div className={`rounded-xl border p-3 text-sm ${
+                deletePreviewError || (deletePreview && !deletePreview.eligible)
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : 'border-amber-200 bg-amber-50 text-amber-900'
+              }`}>
+                {isLoadingDeletePreview ? (
+                  <p className="flex items-center gap-2"><Loader2 size={15} className="animate-spin" /> Verificando trial, pagamentos e dados relacionados...</p>
+                ) : deletePreviewError ? (
+                  <p>{deletePreviewError}</p>
+                ) : deletePreview && !deletePreview.eligible ? (
+                  <p>{deletePreview.reason || 'Este tenant não está elegível para exclusão.'}</p>
+                ) : deletePreview?.eligible ? (
+                  <>
+                    <p className="font-bold">Prévia da exclusão</p>
+                    <p className="mt-1">
+                      {Number(deletePreview.registrosIdentificados || 0).toLocaleString('pt-BR')} registros
+                      {' '}em {Object.keys(deletePreview.tabelas || {}).length.toLocaleString('pt-BR')} tabelas.
+                    </p>
+                    <p className="mt-1 text-xs">Assinatura e pagamentos foram verificados; arquivos e cobranças canceladas também serão removidos.</p>
+                  </>
+                ) : (
+                  <p>A prévia ainda não está disponível. Aguarde a verificação antes de confirmar.</p>
+                )}
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                  Digite o ID completo do tenant para confirmar
+                </span>
+                <input
+                  type="text"
+                  value={deleteTenantConfirmInput}
+                  onChange={(e) => setDeleteTenantConfirmInput(e.target.value)}
+                  placeholder="Cole o ID exibido acima"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-4 h-[44px] text-sm focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+                />
+              </label>
 
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
                 Digite exatamente a frase abaixo para confirmar
@@ -1867,6 +1941,8 @@ export default function AssinaturasPage() {
                 onClick={() => {
                   setTenantToDelete(null);
                   setDeleteConfirmInput('');
+                  setDeleteTenantConfirmInput('');
+                  setIsLoadingDeletePreview(false);
                 }}
                 disabled={isDeletingTenant}
                 className="px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500 disabled:opacity-50"
@@ -1875,7 +1951,14 @@ export default function AssinaturasPage() {
               </button>
               <button
                 onClick={handleDeleteTenant}
-                disabled={isDeletingTenant || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION}
+                disabled={
+                  isDeletingTenant
+                  || isLoadingDeletePreview
+                  || !deletePreview?.eligible
+                  || !Number.isSafeInteger(deletePreview.registrosIdentificados)
+                  || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION
+                  || deleteTenantConfirmInput.trim().toLowerCase() !== tenantToDelete.id.toLowerCase()
+                }
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {isDeletingTenant ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}

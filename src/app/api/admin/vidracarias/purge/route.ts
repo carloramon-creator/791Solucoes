@@ -7,19 +7,22 @@ import {
   loadTenantInvoices,
 } from '@/lib/glass-tenant-billing';
 import { getGlassClient } from '@/lib/glass-client';
-import { getUserProfileIds, userCanAccessResource } from '@/lib/holding-permissions';
+import { hasExplicitHoldingPermission } from '@/lib/holding-route-permissions';
 import { isUuid } from '@/lib/holding-customers';
 import { supabaseServer } from '@/lib/supabase-server';
+import { deleteGlassAuthUser } from '@/lib/glass-auth-user-cleanup';
 
 type DeletePayload = {
   confirmacao?: string;
   confirmacaoTenant?: string;
   confirmacaoRegistros?: number;
+  confirmacaoContasAuth?: number;
   vidracariaId?: string;
 };
 
 type PurgePreview = {
   registrosIdentificados: number;
+  contasAuthIdentificadas: number;
   tabelas: Record<string, number>;
 };
 
@@ -38,15 +41,89 @@ type PurgeEvaluation = {
   tenant: TenantRow | null;
   glass: Awaited<ReturnType<typeof getGlassClient>> | null;
   canceledFinanceRecordIds: string[];
+  tenantAuthUserIds?: string[];
   purgePreview?: PurgePreview;
 };
 
 const REQUIRED_CONFIRMATION = 'EXCLUIR VIDRACARIA DEFINITIVAMENTE';
 const PURGE_PERMISSION = 'action.assinaturas.purge_test_tenant';
 const CANCELED_PAYMENT_STATUSES = new Set(['cancelled', 'canceled', 'cancelada', 'cancelado', 'deleted']);
+const AUTH_USERS_PER_PAGE = 1000;
+const MAX_AUTH_USER_PAGES = 1000;
+const PROFILE_LOOKUP_BATCH_SIZE = 500;
+const AUTH_DELETE_CONCURRENCY = 10;
 
 const json = (body: object, status = 200) =>
   NextResponse.json(body, { status, headers: { 'Cache-Control': 'private, no-store' } });
+
+async function getTenantAuthUserIds(
+  glass: Awaited<ReturnType<typeof getGlassClient>>,
+  vidracariaId: string
+): Promise<string[]> {
+  const linkedProfiles: Array<{ user_id: string; vidracaria_id: string }> = [];
+  for (let offset = 0; ; offset += AUTH_USERS_PER_PAGE) {
+    const { data, error } = await glass
+      .from('user_profiles')
+      .select('user_id, vidracaria_id')
+      .eq('vidracaria_id', vidracariaId)
+      .range(offset, offset + AUTH_USERS_PER_PAGE - 1);
+
+    if (error) {
+      throw new Error(`Falha ao identificar usuários da vidraçaria: ${error.message}`);
+    }
+
+    linkedProfiles.push(...(data || []));
+    if ((data || []).length < AUTH_USERS_PER_PAGE) break;
+  }
+
+  const profileUserIds = [...new Set((linkedProfiles || []).map((profile) => String(profile.user_id || '')).filter(Boolean))];
+  const eligibleUserIds = new Set<string>();
+
+  for (let offset = 0; offset < profileUserIds.length; offset += PROFILE_LOOKUP_BATCH_SIZE) {
+    const userIdBatch = profileUserIds.slice(offset, offset + PROFILE_LOOKUP_BATCH_SIZE);
+    const { data: profiles, error: profilesError } = await glass
+      .from('user_profiles')
+      .select('user_id, vidracaria_id')
+      .in('user_id', userIdBatch);
+
+    if (profilesError) {
+      throw new Error(`Falha ao conferir vínculos dos usuários da vidraçaria: ${profilesError.message}`);
+    }
+
+    const tenantByUserId = new Map<string, Set<string>>();
+    for (const profile of profiles || []) {
+      const userId = String(profile.user_id || '');
+      const tenantIds = tenantByUserId.get(userId) || new Set<string>();
+      tenantIds.add(String(profile.vidracaria_id || ''));
+      tenantByUserId.set(userId, tenantIds);
+    }
+
+    for (const userId of userIdBatch) {
+      const tenantIds = tenantByUserId.get(userId);
+      if (tenantIds?.size === 1 && tenantIds.has(vidracariaId)) eligibleUserIds.add(userId);
+    }
+  }
+
+  for (let page = 1; page <= MAX_AUTH_USER_PAGES; page += 1) {
+    const { data, error } = await glass.auth.admin.listUsers({
+      page,
+      perPage: AUTH_USERS_PER_PAGE,
+    });
+    if (error) throw new Error(`Falha ao identificar contas Auth da vidraçaria: ${error.message}`);
+
+    const users = data.users || [];
+    for (const user of users) {
+      const metadata = user.user_metadata || {};
+      if (metadata.holding_chat === true || metadata.holding_support === true) {
+        eligibleUserIds.delete(user.id);
+      }
+    }
+
+    if (users.length < AUTH_USERS_PER_PAGE) return [...eligibleUserIds].sort();
+  }
+
+  throw new Error('Não foi possível concluir a listagem paginada de usuários Auth; a exclusão foi bloqueada.');
+}
 
 async function authenticatePurgeAdmin(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
@@ -55,17 +132,9 @@ async function authenticatePurgeAdmin(req: Request) {
     return { ok: false as const, status: 403, error: 'Usuário sem e-mail não pode excluir tenants.' };
   }
 
-  const profiles = await getUserProfileIds(auth.user.email);
-  if (profiles.length === 0) {
-    return { ok: false as const, status: 403, error: 'É necessário um perfil administrativo explícito para excluir tenants.' };
-  }
-
   try {
-    const [canOpenSubscriptions, canPurge] = await Promise.all([
-      userCanAccessResource(auth.user.email, 'menu.assinaturas'),
-      userCanAccessResource(auth.user.email, PURGE_PERMISSION),
-    ]);
-    if (!canOpenSubscriptions || !canPurge) {
+    const canPurge = await hasExplicitHoldingPermission(auth.user.email, ['menu.assinaturas', PURGE_PERMISSION]);
+    if (!canPurge) {
       return { ok: false as const, status: 403, error: 'Sem permissão específica para excluir tenants de teste.' };
     }
   } catch {
@@ -250,14 +319,18 @@ async function evaluatePurgeEligibility(vidracariaId: string): Promise<PurgeEval
     throw new Error('O banco 791glass não retornou uma prévia válida dos dados do tenant.');
   }
 
+  const tenantAuthUserIds = await getTenantAuthUserIds(glass, tenant.id);
+
   return {
     eligible: true,
     reason: null,
     tenant,
     glass,
     canceledFinanceRecordIds,
+    tenantAuthUserIds,
     purgePreview: {
       registrosIdentificados: previewData.registrosIdentificados,
+      contasAuthIdentificadas: tenantAuthUserIds.length,
       tabelas: previewData.tabelas as Record<string, number>,
     },
   };
@@ -358,6 +431,9 @@ export async function DELETE(req: Request) {
   if (!Number.isSafeInteger(body.confirmacaoRegistros) || (body.confirmacaoRegistros as number) < 0) {
     return json({ error: 'A quantidade de registros da prévia é inválida. Gere uma nova prévia.' }, 400);
   }
+  if (!Number.isSafeInteger(body.confirmacaoContasAuth) || (body.confirmacaoContasAuth as number) < 0) {
+    return json({ error: 'A quantidade de contas Auth da prévia é inválida. Gere uma nova prévia.' }, 400);
+  }
 
   try {
     const evaluation = await evaluatePurgeEligibility(vidracariaId);
@@ -365,6 +441,9 @@ export async function DELETE(req: Request) {
     if (!evaluation.eligible) return json({ error: evaluation.reason || 'Tenant não elegível para exclusão.' }, 409);
     if (evaluation.purgePreview?.registrosIdentificados !== body.confirmacaoRegistros) {
       return json({ error: 'Os dados mudaram desde a prévia. Feche e abra novamente a confirmação antes de excluir.' }, 409);
+    }
+    if (evaluation.purgePreview?.contasAuthIdentificadas !== body.confirmacaoContasAuth) {
+      return json({ error: 'As contas vinculadas mudaram desde a prévia. Feche e abra novamente a confirmação antes de excluir.' }, 409);
     }
 
     const glass = await getGlassClient(undefined, {
@@ -411,6 +490,38 @@ export async function DELETE(req: Request) {
       throw new Error('O banco 791glass não confirmou o resultado da limpeza. Verifique o tenant antes de tentar novamente.');
     }
 
+    const authCleanupResults: Array<{ userId: string; removed: boolean; error: string | null }> = [];
+    const tenantAuthUserIds = evaluation.tenantAuthUserIds || [];
+    for (let offset = 0; offset < tenantAuthUserIds.length; offset += AUTH_DELETE_CONCURRENCY) {
+      const batch = tenantAuthUserIds.slice(offset, offset + AUTH_DELETE_CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (userId) => {
+          try {
+            const removed = await deleteGlassAuthUser(glass, userId);
+            return { userId, removed, error: null };
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'erro desconhecido ao remover conta Auth';
+            return { userId, removed: false, error: message };
+          }
+        })
+      );
+      authCleanupResults.push(...batchResults);
+    }
+    const authDeletionFailures = authCleanupResults.filter((result) => result.error);
+    const contasAuthRemovidas = authCleanupResults.filter((result) => result.removed).length;
+    const contasAuthJaAusentes = authCleanupResults.filter((result) => !result.removed && !result.error).length;
+
+    if (authDeletionFailures.length > 0) {
+      const firstFailure = authDeletionFailures[0];
+      return json({
+        ok: false,
+        excluidaDefinitivamente: true,
+        error: `A vidraçaria foi excluída, mas ${authDeletionFailures.length} conta(s) Auth não puderam ser removidas. Primeiro erro para ${firstFailure.userId}: ${firstFailure.error}`,
+        contasAuthRemovidas,
+        contasAuthPendentes: authDeletionFailures.map((failure) => failure.userId),
+      }, 500);
+    }
+
     return json({
       ok: true,
       excluidaDefinitivamente: true,
@@ -418,7 +529,8 @@ export async function DELETE(req: Request) {
       nome: evaluation.tenant.nome,
       slug: evaluation.tenant.slug,
       registrosRemovidos: purgeResult.registrosRemovidos,
-      contasAuthPreservadasPorSeguranca: true,
+      contasAuthRemovidas,
+      contasAuthJaAusentes,
       executadoPor: auth.user.email,
     });
   } catch (error: unknown) {

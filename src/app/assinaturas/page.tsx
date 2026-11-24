@@ -61,6 +61,7 @@ interface TenantPurgePreview {
   eligible: boolean;
   reason: string | null;
   registrosIdentificados?: number;
+  contasAuthIdentificadas?: number;
   tabelas?: Record<string, number>;
 }
 
@@ -296,7 +297,9 @@ export default function AssinaturasPage() {
   const [glassUsersSearch, setGlassUsersSearch] = useState('');
   const [glassUsersTenantFilter, setGlassUsersTenantFilter] = useState('all');
   const [glassUsersStatusFilter, setGlassUsersStatusFilter] = useState<'all' | 'active' | 'inactive' | 'tenant-inactive'>('all');
-  const [glassUsersSort, setGlassUsersSort] = useState<'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc'>('last-access-desc');
+  const [glassUsersSort, setGlassUsersSort] = useState<
+    'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc' | 'created-asc' | 'created-desc'
+  >('last-access-desc');
   const [showClosingPreviewModal, setShowClosingPreviewModal] = useState(false);
   const [closingPreviewLoading, setClosingPreviewLoading] = useState(false);
   const [closingPreviewError, setClosingPreviewError] = useState('');
@@ -734,6 +737,7 @@ export default function AssinaturasPage() {
       !tenantToDelete
       || !deletePreview?.eligible
       || !Number.isSafeInteger(deletePreview.registrosIdentificados)
+      || !Number.isSafeInteger(deletePreview.contasAuthIdentificadas)
       || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION
       || deleteTenantConfirmInput.trim().toLowerCase() !== tenantToDelete.id.toLowerCase()
     ) {
@@ -751,15 +755,25 @@ export default function AssinaturasPage() {
           confirmacao: deleteConfirmInput.trim(),
           confirmacaoTenant: deleteTenantConfirmInput.trim(),
           confirmacaoRegistros: deletePreview.registrosIdentificados,
+          confirmacaoContasAuth: deletePreview.contasAuthIdentificadas,
         }),
       });
 
       const payload = await response.json();
       if (!response.ok) {
+        if (payload?.excluidaDefinitivamente) {
+          setTenantToDelete(null);
+          setDeleteConfirmInput('');
+          setDeleteTenantConfirmInput('');
+          setDeletePreview(null);
+          setDeletePreviewError('');
+          setIsLoadingDeletePreview(false);
+          await fetchData();
+        }
         throw new Error(payload?.error || 'Falha ao excluir definitivamente a vidracaria.');
       }
 
-      alert('Vidracaria excluida definitivamente com sucesso. As contas de autenticação foram preservadas por segurança.');
+      alert(`Vidracaria excluida definitivamente com sucesso. ${Number(payload?.contasAuthRemovidas || 0)} conta(s) Auth vinculada(s) exclusivamente a ela foram removidas.`);
       setTenantToDelete(null);
       setDeleteConfirmInput('');
       setDeleteTenantConfirmInput('');
@@ -993,6 +1007,14 @@ export default function AssinaturasPage() {
 
     if (glassUsersSort === 'tenant-asc') {
       return String(left.vidracariaNome || '').localeCompare(String(right.vidracariaNome || ''), 'pt-BR');
+    }
+
+    if (glassUsersSort === 'created-asc' || glassUsersSort === 'created-desc') {
+      const leftCreatedAt = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreatedAt = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return glassUsersSort === 'created-asc'
+        ? leftCreatedAt - rightCreatedAt
+        : rightCreatedAt - leftCreatedAt;
     }
 
     const leftTime = left.lastSignInAt ? new Date(left.lastSignInAt).getTime() : 0;
@@ -1861,7 +1883,7 @@ export default function AssinaturasPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500">Acao Irreversivel</p>
               <h3 className="text-lg font-black text-slate-900 mt-1">Excluir vidracaria definitivamente</h3>
               <p className="text-[12px] text-slate-600 mt-1">
-                Remove dados do tenant, incluindo pedidos aprovados e anexos. Contas Auth são preservadas para evitar afetar usuários de outros tenants.
+                Remove os dados do tenant, incluindo pedidos aprovados e anexos, e apaga as contas Auth vinculadas exclusivamente a ele. Contas de suporte e contas com outro vínculo são preservadas.
               </p>
             </div>
 
@@ -1889,6 +1911,9 @@ export default function AssinaturasPage() {
                     <p className="mt-1">
                       {Number(deletePreview.registrosIdentificados || 0).toLocaleString('pt-BR')} registros
                       {' '}em {Object.keys(deletePreview.tabelas || {}).length.toLocaleString('pt-BR')} tabelas.
+                    </p>
+                    <p className="mt-1">
+                      {Number(deletePreview.contasAuthIdentificadas || 0).toLocaleString('pt-BR')} contas Auth exclusivas também serão removidas.
                     </p>
                     <p className="mt-1 text-xs">Assinatura e pagamentos foram verificados; arquivos e cobranças canceladas também serão removidos.</p>
                   </>
@@ -1945,6 +1970,7 @@ export default function AssinaturasPage() {
                   || isLoadingDeletePreview
                   || !deletePreview?.eligible
                   || !Number.isSafeInteger(deletePreview.registrosIdentificados)
+                  || !Number.isSafeInteger(deletePreview.contasAuthIdentificadas)
                   || deleteConfirmInput.trim().toUpperCase() !== REQUIRED_DELETE_CONFIRMATION
                   || deleteTenantConfirmInput.trim().toLowerCase() !== tenantToDelete.id.toLowerCase()
                 }
@@ -2012,14 +2038,14 @@ export default function AssinaturasPage() {
       )}
 
       {showGlassUsersModal && (
-        <div className="fixed inset-0 z-[123] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
-          <div className="w-full max-w-6xl max-h-[88vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col">
+        <div className="fixed inset-0 z-[123] flex items-center justify-center p-2 bg-slate-900/65 backdrop-blur-sm">
+          <div className="w-[calc(100vw-1rem)] max-w-[1600px] max-h-[94vh] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl flex flex-col">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Usuarios 791glass</p>
-                <h3 className="text-lg font-black text-slate-900 mt-1">Usuarios vinculados por vidracaria</h3>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Usuários vinculados e sem vidraçaria</h3>
                 <p className="text-[12px] text-slate-600 mt-1">
-                  Use esta lista para localizar rapidamente um usuario e remover do Auth quando necessario.
+                  Contas antigas sem vínculo também aparecem como “Sem vidraçaria”. Contas técnicas de suporte e chat ficam ocultas.
                 </p>
               </div>
               <button
@@ -2081,11 +2107,19 @@ export default function AssinaturasPage() {
 
                 <select
                   value={glassUsersSort}
-                  onChange={(e) => setGlassUsersSort(e.target.value as 'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc')}
+                  onChange={(e) => setGlassUsersSort(e.target.value as
+                    | 'last-access-desc'
+                    | 'last-access-asc'
+                    | 'name-asc'
+                    | 'tenant-asc'
+                    | 'created-asc'
+                    | 'created-desc')}
                   className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="last-access-desc">Ultimo acesso: mais recente</option>
                   <option value="last-access-asc">Ultimo acesso: mais antigo</option>
+                  <option value="created-asc">Conta criada: mais antiga</option>
+                  <option value="created-desc">Conta criada: mais recente</option>
                   <option value="name-asc">Nome do usuario</option>
                   <option value="tenant-asc">Nome da vidracaria</option>
                 </select>
@@ -2109,7 +2143,7 @@ export default function AssinaturasPage() {
                   Nenhum usuario encontrado.
                 </div>
               ) : (
-                <table className="w-full text-left border-collapse min-w-[1100px]">
+                <table className="w-full text-left border-collapse min-w-[1260px]">
                   <thead>
                     <tr className="bg-slate-50/60 border-b border-slate-100 text-slate-500">
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Usuario</th>
@@ -2117,6 +2151,7 @@ export default function AssinaturasPage() {
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Perfil</th>
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Status</th>
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Ultimo Acesso</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">Conta Criada</th>
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest whitespace-nowrap">User ID</th>
                       <th className="px-4 py-3 text-[10px] uppercase tracking-widest text-center whitespace-nowrap">Acoes</th>
                     </tr>
@@ -2162,6 +2197,9 @@ export default function AssinaturasPage() {
                         </td>
                         <td className="px-4 py-3 align-top text-sm text-slate-600 whitespace-nowrap">
                           {user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleString('pt-BR') : 'Nunca'}
+                        </td>
+                        <td className="px-4 py-3 align-top text-sm text-slate-600 whitespace-nowrap">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleString('pt-BR') : '—'}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <div className="text-[11px] font-mono text-slate-600 break-all max-w-[280px]">{user.userId}</div>

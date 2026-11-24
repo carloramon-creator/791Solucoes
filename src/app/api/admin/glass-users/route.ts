@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getGlassClient } from '@/lib/glass-client';
+import { hasExplicitHoldingPermission } from '@/lib/holding-route-permissions';
+
+const GLASS_USER_LIST_PERMISSIONS = ['menu.assinaturas', 'menu.suporte'];
 
 type AuthSuccess = {
   ok: true;
@@ -17,6 +20,77 @@ type AuthFailure = {
 };
 
 type AuthResult = AuthSuccess | AuthFailure;
+
+type GlassUserProfile = {
+  user_id: string | null;
+  vidracaria_id: string | null;
+  pessoa_id: string | null;
+  perfil_id: string | null;
+  nome_exibicao: string | null;
+  ativo: boolean | null;
+  is_master: boolean | null;
+  created_at: string | null;
+};
+
+type GlassTenant = {
+  id: string;
+  nome: string | null;
+  nome_fantasia: string | null;
+  slug: string | null;
+  ativa: boolean | null;
+};
+
+type GlassPerson = {
+  id: string;
+  nome: string | null;
+  email: string | null;
+  user_id: string | null;
+};
+
+type GlassAuthUser = {
+  id: string;
+  email?: string | null;
+  created_at?: string;
+  last_sign_in_at?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+};
+
+const PAGE_SIZE = 1000;
+const MAX_PAGES = 1000;
+
+async function fetchAllRows<T>(
+  loadPage: (start: number, end: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  resource: string
+): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const start = page * PAGE_SIZE;
+    const { data, error } = await loadPage(start, start + PAGE_SIZE - 1);
+    if (error) throw new Error(`Falha ao listar ${resource}: ${error.message}`);
+
+    const pageRows = data || [];
+    rows.push(...pageRows);
+    if (pageRows.length < PAGE_SIZE) return rows;
+  }
+
+  throw new Error(`Não foi possível concluir a listagem paginada de ${resource}.`);
+}
+
+async function fetchAllAuthUsers(glass: Awaited<ReturnType<typeof getGlassClient>>): Promise<GlassAuthUser[]> {
+  const users: GlassAuthUser[] = [];
+
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const { data, error } = await glass.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
+    if (error) throw new Error(`Falha ao listar usuários do Auth: ${error.message}`);
+
+    const pageUsers = data.users || [];
+    users.push(...pageUsers);
+    if (pageUsers.length < PAGE_SIZE) return users;
+  }
+
+  throw new Error('Não foi possível concluir a listagem paginada de usuários Auth.');
+}
 
 async function authenticateHoldingAdmin(req: Request): Promise<AuthResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -71,42 +145,62 @@ export async function GET(req: Request) {
   }
 
   try {
-    const glass = await getGlassClient();
-
-    const [
-      { data: profiles, error: profilesError },
-      { data: tenants, error: tenantsError },
-      { data: people, error: peopleError },
-      authUsersResult,
-    ] = await Promise.all([
-      glass
-        .from('user_profiles')
-        .select('user_id, vidracaria_id, pessoa_id, perfil_id, nome_exibicao, ativo, is_master, created_at')
-        .order('created_at', { ascending: false }),
-      glass
-        .from('vidracarias')
-        .select('id, nome, nome_fantasia, slug, ativa')
-        .order('nome', { ascending: true }),
-      glass
-        .from('pessoas')
-        .select('id, nome, email, user_id')
-        .not('user_id', 'is', null),
-      glass.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-    ]);
-
-    const authUsersError = authUsersResult.error;
-    if (profilesError || tenantsError || peopleError || authUsersError) {
-      return NextResponse.json({
-        error: profilesError?.message || tenantsError?.message || peopleError?.message || authUsersError?.message || 'Falha ao listar usuarios do Glass.',
-      }, { status: 500 });
+    if (!await hasExplicitHoldingPermission(auth.user.email, GLASS_USER_LIST_PERMISSIONS, 'any')) {
+      return NextResponse.json({ error: 'Sem permissão para consultar usuários de todas as vidraçarias.' }, { status: 403 });
     }
 
-    const tenantById = new Map((tenants || []).map((tenant: any) => [String(tenant.id), tenant]));
-    const personById = new Map((people || []).map((person: any) => [String(person.id), person]));
-    const personByUserId = new Map((people || []).map((person: any) => [String(person.user_id), person]));
-    const authUserById = new Map((authUsersResult.data?.users || []).map((user: any) => [String(user.id), user]));
+    const glass = await getGlassClient();
 
-    const rows = (profiles || []).map((profile: any) => {
+    const [profiles, tenants, people, authUsers] = await Promise.all([
+      fetchAllRows<GlassUserProfile>(
+        (start, end) => glass
+          .from('user_profiles')
+          .select('user_id, vidracaria_id, pessoa_id, perfil_id, nome_exibicao, ativo, is_master, created_at')
+          .order('created_at', { ascending: false })
+          .order('user_id', { ascending: true })
+          .range(start, end),
+        'perfis de usuários do Glass'
+      ),
+      fetchAllRows<GlassTenant>(
+        (start, end) => glass
+          .from('vidracarias')
+          .select('id, nome, nome_fantasia, slug, ativa')
+          .order('nome', { ascending: true })
+          .order('id', { ascending: true })
+          .range(start, end),
+        'vidraçarias'
+      ),
+      fetchAllRows<GlassPerson>(
+        (start, end) => glass
+          .from('pessoas')
+          .select('id, nome, email, user_id')
+          .not('user_id', 'is', null)
+          .order('id', { ascending: true })
+          .range(start, end),
+        'pessoas vinculadas'
+      ),
+      fetchAllAuthUsers(glass),
+    ]);
+
+    const tenantById = new Map<string, GlassTenant>(
+      tenants.map((tenant) => [String(tenant.id), tenant])
+    );
+    const personById = new Map<string, GlassPerson>(
+      people.map((person) => [String(person.id), person])
+    );
+    const personByUserId = new Map<string, GlassPerson>(
+      people.map((person) => [String(person.user_id), person])
+    );
+    const authUserById = new Map<string, GlassAuthUser>(
+      authUsers.map((user) => [String(user.id), user])
+    );
+    const technicalUserIds = new Set(
+      authUsers
+        .filter((user) => user.user_metadata?.holding_chat === true || user.user_metadata?.holding_support === true)
+        .map((user) => user.id)
+    );
+
+    const rows = profiles.filter((profile) => !technicalUserIds.has(String(profile.user_id || ''))).map((profile) => {
       const userId = String(profile.user_id || '');
       const tenant = tenantById.get(String(profile.vidracaria_id || ''));
       const authUser = authUserById.get(userId);
@@ -129,11 +223,42 @@ export async function GET(req: Request) {
         vidracariaAtiva: tenant?.ativa ?? null,
       };
     });
+    const linkedUserIds = new Set(profiles.map((profile) => String(profile.user_id || '')));
+    const unlinkedRows = authUsers
+      .filter((user) => {
+        const metadata = user.user_metadata || {};
+        return (
+          !linkedUserIds.has(user.id)
+          && metadata.holding_chat !== true
+          && metadata.holding_support !== true
+        );
+      })
+      .map((user) => {
+        const metadataName = user.user_metadata?.nome || user.user_metadata?.full_name;
+        const nomeExibicao = typeof metadataName === 'string' ? metadataName : user.email || user.id;
+        return {
+          userId: user.id,
+          email: user.email || null,
+          nomeExibicao,
+          pessoaNome: null,
+          perfilId: null,
+          ativo: false,
+          isMaster: false,
+          createdAt: user.created_at || null,
+          lastSignInAt: user.last_sign_in_at || null,
+          vidracariaId: null,
+          vidracariaNome: 'Sem vidraçaria',
+          vidracariaNomeFantasia: null,
+          vidracariaSlug: null,
+          vidracariaAtiva: null,
+        };
+      });
+    const allRows = [...rows, ...unlinkedRows];
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      total: rows.length,
-      users: rows,
+      total: allRows.length,
+      users: allRows,
     });
   } catch (error: unknown) {
     const candidate = error as { message?: string };

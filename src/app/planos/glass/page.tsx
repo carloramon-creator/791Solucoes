@@ -686,7 +686,7 @@ export default function PlanosGlassPage() {
           </div>
         </div>
 
-                {/* Box 5: WhatsApp */}
+        {/* Box 5: WhatsApp */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-slate-50/50 px-6 py-4 border-b border-slate-200">
             <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Integração WhatsApp</h2>

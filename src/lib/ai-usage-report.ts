@@ -3,6 +3,8 @@ export const funcoesConsumoIA: Record<string, string> = {
   'credito.analise': 'Análise de crédito',
   'estoque.analise': 'Análise de compras / estoque',
   'financeiro.custos': 'Análise de custos / DRE',
+  'websites.criacao': 'Criação de websites (791 Websites)',
+  'websites.ajuste': 'Ajuste de textos (791 Websites)',
 };
 
 export type ResumoConsumoIA = {

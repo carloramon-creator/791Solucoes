@@ -29,7 +29,14 @@ export async function GET(req: Request) {
         if (tenantError) throw tenantError;
         for (const tenant of tenants || []) nomes.set(tenant.id, tenant.nome);
       }
-      report.tenants = report.tenants.map(t => ({ ...t, nome: nomes.get(t.tenant_id) || `Tenant não encontrado (${t.tenant_id})` }));
+      const missingIds = report.tenants.map(t => t.tenant_id).filter(id => !nomes.has(id));
+      if (missingIds.length) {
+        const { data: contracts } = await supabaseServer.from('holding_website_contracts').select('customer_id, customer_snapshot').in('customer_id', missingIds);
+        for (const c of contracts || []) {
+          if (c.customer_id && c.customer_snapshot?.name) nomes.set(c.customer_id, c.customer_snapshot.name);
+        }
+      }
+      report.tenants = report.tenants.map(t => ({ ...t, nome: nomes.get(t.tenant_id) || '791 SOLUCOES EMPRESARIAIS LTDA' }));
     }
     return NextResponse.json(report, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

@@ -17,6 +17,7 @@ export async function POST(request: Request) {
       'gpt-4.1-mini': { entrada: 0.15, saida: 0.60 },
       'gpt-6-astra': { entrada: 2.50, saida: 10.00 },
       'gpt-6.1-sol': { entrada: 2.50, saida: 10.00 },
+      'gpt-6.2-sol': { entrada: 2.00, saida: 10.00 },
     };
     const tarifa = tarifas[model] || { entrada: 0.15, saida: 0.60 };
     const inTok = Number(tokens_entrada) || 0;

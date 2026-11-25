@@ -1187,7 +1187,7 @@ restrita ao `service_role`; a API da Holding exige a mesma permissao do painel.
 O teste `scripts/tests/monitoramento-tabelas.local.sql`, no Glass, e somente
 para PostgreSQL descartavel.
 
-O painel tambem consulta CPU e memoria da instancia principal pela Metrics API
+O painel tambem consulta CPU, memoria e disco da instancia principal pela Metrics API
 do Supabase hospedado, em beta, usando no servidor a URL e a chave do Glass ja
 configuradas em Financeiro e API. A chave nao e enviada ao navegador; a URL e
 limitada a HTTPS em `*.supabase.co` e redirecionamentos sao recusados. Se a
@@ -1197,6 +1197,18 @@ A API atualiza os dados aproximadamente a cada minuto. Memoria usada corresponde
 a total menos disponivel; CPU e calculada pela diferenca dos contadores de duas
 leituras validas, excluindo tempo ocioso. A primeira leitura, contadores que nao
 avancaram ou diminuiram e intervalo superior a cinco minutos nao geram percentual
-de CPU. As ultimas 20 leituras ficam apenas na pagina aberta: nao ha retencao
-persistente nem alertas automaticos. Uma falha ou metrica ausente e exibida como
+de CPU. O uso dos sistemas de arquivos `/` e `/data` e calculado a partir do
+espaco total e disponivel; cada ponto e exibido separadamente. A atividade de
+leitura e gravacao e estimada por dispositivo a partir de duas leituras, sem
+somar dispositivos que podem se sobrepor. A taxa fica indisponivel se os
+contadores reiniciarem, a amostra nao avancar ou o intervalo for menor que 45
+ou maior que 120 segundos. Disco da instancia nao e o Storage de objetos nem
+necessariamente a cobranca.
+
+As ultimas 20 leituras ficam apenas na pagina aberta, sem retencao persistente.
+O painel avisa para CPU ou memoria a partir de 80% em leituras consecutivas por
+pelo menos cinco minutos, e para disco a partir de 85%. Intervalos entre leituras
+acima de 90 segundos, falhas e valores ausentes interrompem a contagem; as
+leituras nao garantem o comportamento entre amostras. Nao ha notificacoes nem
+monitoramento com a pagina fechada. Uma falha ou metrica ausente e exibida como
 indisponivel, nao como zero. Essas metricas nao representam o Railway.

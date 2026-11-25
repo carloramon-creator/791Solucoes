@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
-import { percentualCpu, validarInfra, type InfraAmostra } from '@/lib/monitoramento-infra';
+import { alertaSustentado, percentualCpu, taxasDisco, validarInfra, type DispositivoAmostra, type InfraAmostra, type LeituraAlerta } from '@/lib/monitoramento-infra';
 
 type Verificacao = {
   status: 'disponivel' | 'indisponivel';
@@ -68,7 +68,7 @@ export default function MonitoramentoGlassPage() {
   const [tabelasAbertas, setTabelasAbertas] = useState(true);
   const [atualizacaoTabelas, setAtualizacaoTabelas] = useState(0);
   const [listaTabelas, setListaTabelas] = useState<{ status: 'carregando' } | { status: 'erro'; mensagem: string } | { status: 'pronto'; lista: ListaTabelas }>({ status: 'carregando' });
-  const [historicoInfra, setHistoricoInfra] = useState<{ consultadoEm: string; cpu: number | null; memoria: number | null }[]>([]);
+  const [historicoInfra, setHistoricoInfra] = useState<(LeituraAlerta & { taxas: DispositivoAmostra[] })[]>([]);
   const emAndamento = useRef(false);
   const montado = useRef(false);
   const infraAnterior = useRef<InfraAmostra | null>(null);
@@ -77,6 +77,10 @@ export default function MonitoramentoGlassPage() {
     if (emAndamento.current) return;
     emAndamento.current = true;
     setCarregando(true);
+    const registrarFalhaInfra = () => {
+      infraAnterior.current = null;
+      setHistoricoInfra(atual => [...atual, { consultadoEm: new Date().toISOString(), cpu: null, memoria: null, taxas: [] }].slice(-20));
+    };
     try {
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
@@ -135,21 +139,22 @@ export default function MonitoramentoGlassPage() {
         if (result.infra) {
           const infra: InfraAmostra = result.infra;
           const cpu = percentualCpu(infraAnterior.current, infra);
+          const taxas = taxasDisco(infraAnterior.current, infra);
           infraAnterior.current = infra;
           const memoria = infra.memoria_total !== null && infra.memoria_disponivel !== null
             ? (1 - infra.memoria_disponivel / infra.memoria_total) * 100 : null;
-          setHistoricoInfra(atual => [...atual, { consultadoEm: infra.consultado_em, cpu, memoria }].slice(-20));
+          setHistoricoInfra(atual => [...atual, { consultadoEm: infra.consultado_em, cpu, memoria, taxas }].slice(-20));
         } else {
-          infraAnterior.current = null;
+          registrarFalhaInfra();
         }
       } else {
         setDadosBanco(null);
-        infraAnterior.current = null;
+        registrarFalhaInfra();
       }
     } catch (error) {
       if (montado.current) {
         setDadosBanco(null);
-        infraAnterior.current = null;
+        registrarFalhaInfra();
         setErro(error instanceof Error ? error.message : 'Não foi possível verificar a integração.');
       }
     } finally {
@@ -227,6 +232,17 @@ export default function MonitoramentoGlassPage() {
   const infra = dadosBanco?.infra;
   const ultimaInfra = historicoInfra.at(-1);
   const percentual = (valor: number) => `${numero.format(Math.round(valor * 10) / 10)}%`;
+  const alertas: string[] = [];
+  if (infra) {
+    if (alertaSustentado(historicoInfra, 'cpu')) alertas.push('CPU a partir de 80% por pelo menos 5 minutos nas leituras.');
+    if (alertaSustentado(historicoInfra, 'memoria')) alertas.push('Memória a partir de 80% por pelo menos 5 minutos nas leituras.');
+    for (const disco of infra.discos) {
+      if (disco.total !== null && disco.disponivel !== null) {
+        const uso = (1 - disco.disponivel / disco.total) * 100;
+        if (disco.disponivel * 100 <= disco.total * 15) alertas.push(`Disco ${disco.ponto} com ${percentual(uso)} de uso (limite: 85%).`);
+      }
+    }
+  }
 
   return <main className="space-y-5 pb-12">
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -280,9 +296,15 @@ export default function MonitoramentoGlassPage() {
     <section className="space-y-4">
       <div>
         <h2 className="text-xl font-bold text-slate-800">Desempenho do banco Glass</h2>
-        <p className="mt-1 text-sm text-slate-500">CPU e memória da instância principal do Supabase, não do aplicativo no Railway.</p>
+        <p className="mt-1 text-sm text-slate-500">CPU, memória e disco da instância principal do Supabase, não do aplicativo no Railway.</p>
       </div>
       {dadosBanco?.infraErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.infraErro}</p>}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <h3 className="font-bold">Alertas nesta tela</h3>
+        <p className="mt-1">CPU ou memória a partir de 80% em leituras consecutivas por 5 minutos; disco a partir de 85%. Avisos apenas enquanto esta página estiver aberta, sem notificações.</p>
+        {alertas.length > 0 ? <ul role="alert" className="mt-2 list-inside list-disc font-bold">{alertas.map(alerta => <li key={alerta}>{alerta}</li>)}</ul>
+          : <p className="mt-2">{infra ? 'Nenhum alerta identificado nas leituras disponíveis; dados ausentes não são avaliados.' : 'Aguardando métricas disponíveis para avaliar os alertas.'}</p>}
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Cartao titulo="Uso de CPU" valor={infra && ultimaInfra?.cpu != null ? percentual(ultimaInfra.cpu) : 'Não disponível'}
           detalhe={infra && infra.cpu.length ? ultimaInfra?.cpu == null ? 'Aguardando duas leituras válidas para calcular o uso.' : 'Calculado entre as duas últimas leituras válidas.' : 'Métrica de CPU não disponível.'} />
@@ -290,6 +312,26 @@ export default function MonitoramentoGlassPage() {
           detalhe={infra?.memoria_total != null && infra.memoria_disponivel != null
             ? `${bytes(infra.memoria_total - infra.memoria_disponivel)} de ${bytes(infra.memoria_total)}; considera memória disponível para o sistema.`
             : 'Métrica de memória não disponível.'} />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {(['/', '/data'] as const).map(ponto => {
+          const disco = infra?.discos.find(item => item.ponto === ponto);
+          const uso = disco?.total != null && disco.disponivel != null ? (1 - disco.disponivel / disco.total) * 100 : null;
+          return <Cartao key={ponto} titulo={`Disco ${ponto}`} valor={uso === null ? 'Não disponível' : percentual(uso)}
+            detalhe={disco?.total != null && disco.disponivel != null
+              ? `${bytes(disco.total - disco.disponivel)} ocupados ou reservados de ${bytes(disco.total)}; ${bytes(disco.disponivel)} disponíveis.`
+              : 'Métrica deste sistema de arquivos não disponível.'} />;
+        })}
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="font-bold text-slate-800">Atividade de disco por dispositivo</h3>
+        <p className="mt-1 text-xs text-slate-500">Taxas aproximadas entre leituras; dispositivos não são somados, pois podem se sobrepor. Disco da instância não é o Storage de objetos nem a cobrança.</p>
+        {infra?.dispositivos.length ? <div className="mt-3 space-y-2">
+          {(ultimaInfra?.taxas ?? []).map(dispositivo => <p key={dispositivo.nome} className="text-sm text-slate-700">
+            <strong>{dispositivo.nome}</strong>: leitura {dispositivo.leitura === null ? 'indisponível' : `${bytes(dispositivo.leitura)}/s`} · gravação {dispositivo.gravacao === null ? 'indisponível' : `${bytes(dispositivo.gravacao)}/s`}
+          </p>)}
+          {!ultimaInfra?.taxas?.length && <p className="text-sm text-slate-500">Aguardando leituras para calcular as taxas.</p>}
+        </div> : <p className="mt-3 text-sm text-slate-500">Métricas de atividade de disco não disponíveis.</p>}
       </div>
       {infra && <p className="text-xs text-slate-500">Última consulta à API de métricas: {dataHora.format(new Date(infra.consultado_em))}. A origem é atualizada aproximadamente a cada minuto.</p>}
       <div className="rounded-xl border border-slate-200 bg-white p-5">

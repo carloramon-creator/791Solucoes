@@ -35,6 +35,8 @@ const storage = { coletado_em: '2026-11-25T18:00:00Z', bytes_conhecidos: 3000000
 const infra = {
   consultado_em: '2026-11-25T18:00:00Z', memoria_total: 1000000000, memoria_disponivel: 400000000,
   cpu: [{ cpu: '0', inativo: 100, total: 200 }],
+  discos: [{ ponto: '/', total: 1000, disponivel: 100 }, { ponto: '/data', total: null, disponivel: null }],
+  dispositivos: [{ nome: 'sda', leitura: 1000, gravacao: 2000 }],
 };
 const listaTabelas = {
   consultado_em: '2026-11-25T18:00:00Z',
@@ -205,6 +207,67 @@ test('lê somente métricas da instância principal e calcula CPU entre leituras
   assert.throws(() => infraLib.interpretarMetricas(dados(100, 100).replace('mode="idle"', 'mode="unknown"'), 'projeto', a.consultado_em));
 });
 
+test('interpreta discos por ponto de montagem sem misturar sistemas de arquivos', () => {
+  const labels = 'supabase_identifier="projeto",service_type="db"';
+  const fs = (metrica, ponto, device, valor, fstype = 'ext4') =>
+    `${metrica}{${labels},mountpoint="${ponto}",device="${device}",fstype="${fstype}"} ${valor}`;
+  const texto = [
+    fs('node_filesystem_size_bytes', '/', '/dev/a', 1000),
+    fs('node_filesystem_avail_bytes', '/', '/dev/a', 150),
+    fs('node_filesystem_size_bytes', '/data', '/dev/b', 2000),
+    fs('node_filesystem_avail_bytes', '/data', '/dev/b', 1000),
+    fs('node_filesystem_size_bytes', '/', 'rootfs', 999, 'rootfs'),
+    fs('node_filesystem_size_bytes', '/ignorado', '/dev/c', 'NaN'),
+    `node_disk_read_bytes_total{${labels},device="sda"} 1200`,
+    `node_disk_written_bytes_total{${labels},device="sda"} 2400`,
+    `node_disk_read_bytes_total{${labels},device="sda1"} 600`,
+    'node_disk_read_bytes_total{supabase_identifier="replica",service_type="db",device="sda"} 9999',
+  ].join('\n');
+  const a = infraLib.interpretarMetricas(texto, 'projeto', infra.consultado_em);
+  assert.deepEqual(a.discos, [{ ponto: '/', total: 1000, disponivel: 150 }, { ponto: '/data', total: 2000, disponivel: 1000 }]);
+  assert.deepEqual(a.dispositivos, [
+    { nome: 'sda', leitura: 1200, gravacao: 2400 },
+    { nome: 'sda1', leitura: 600, gravacao: null },
+  ]);
+  assert.equal(infraLib.validarInfra(a), true);
+  assert.equal(infraLib.validarInfra({ ...a, discos: [null, a.discos[1]] }), false);
+  assert.equal(infraLib.validarInfra({ ...a, discos: [a.discos[0], a.discos[0]] }), false);
+  const incompleto = infraLib.interpretarMetricas(`${fs('node_filesystem_size_bytes', '/', '/dev/a', 1000)}\nnode_disk_read_bytes_total{${labels},device="sda"} 1`, 'projeto', infra.consultado_em);
+  assert.deepEqual(incompleto.discos[0], { ponto: '/', total: null, disponivel: null });
+  assert.throws(() => infraLib.interpretarMetricas(`${texto}\n${fs('node_filesystem_size_bytes', '/', '/dev/a', 1000)}`, 'projeto', infra.consultado_em));
+  assert.throws(() => infraLib.interpretarMetricas(texto.replace('mountpoint="/",device="/dev/a",fstype="ext4"} 150', 'mountpoint="/",device="/dev/z",fstype="ext4"} 150'), 'projeto', infra.consultado_em));
+  assert.throws(() => infraLib.interpretarMetricas(texto.replace('fstype="ext4"} 150', 'fstype="ext4"} 1001'), 'projeto', infra.consultado_em));
+});
+
+test('calcula taxas por dispositivo e trata ausência, reinício e leituras repetidas', () => {
+  const antes = { ...infra, dispositivos: [{ nome: 'sda', leitura: 1000, gravacao: 2000 }] };
+  const atual = {
+    ...antes, consultado_em: '2026-11-25T18:01:00Z', cpu: [{ cpu: '0', inativo: 130, total: 240 }],
+    dispositivos: [{ nome: 'sda', leitura: 1600, gravacao: 3200 }, { nome: 'novo', leitura: 10, gravacao: null }],
+  };
+  assert.deepEqual(infraLib.taxasDisco(antes, atual), [
+    { nome: 'sda', leitura: 10, gravacao: 20 }, { nome: 'novo', leitura: null, gravacao: null },
+  ]);
+  assert.equal(infraLib.taxasDisco(null, atual)[0].leitura, null);
+  assert.equal(infraLib.taxasDisco(antes, { ...atual, cpu: antes.cpu })[0].leitura, null);
+  assert.equal(infraLib.taxasDisco(antes, { ...atual, consultado_em: '2026-11-25T18:00:10Z' })[0].leitura, null);
+  assert.equal(infraLib.taxasDisco(antes, { ...atual, consultado_em: '2026-11-25T18:03:00Z' })[0].leitura, null);
+  assert.equal(infraLib.taxasDisco(antes, { ...atual, dispositivos: [{ nome: 'sda', leitura: 1, gravacao: 3200 }] })[0].leitura, null);
+});
+
+test('alerta apenas com cinco minutos de leituras consecutivas no limite', () => {
+  const leituras = Array.from({ length: 6 }, (_, i) => ({
+    consultadoEm: new Date(Date.parse('2026-11-25T18:00:00Z') + i * 60000).toISOString(), cpu: 80, memoria: 81,
+  }));
+  assert.equal(infraLib.alertaSustentado(leituras.slice(0, 5), 'cpu'), false);
+  assert.equal(infraLib.alertaSustentado(leituras, 'cpu'), true);
+  assert.equal(infraLib.alertaSustentado(leituras, 'memoria'), true);
+  assert.equal(infraLib.alertaSustentado(leituras.map((l, i) => i === 3 ? { ...l, cpu: null } : l), 'cpu'), false);
+  assert.equal(infraLib.alertaSustentado(leituras.map((l, i) => i === 3 ? { ...l, cpu: 79.9 } : l), 'cpu'), false);
+  assert.equal(infraLib.alertaSustentado(leituras.map((l, i) => i === 3 ? { ...l, consultadoEm: '2026-11-25T18:02:01Z' } : l), 'cpu'), false);
+  assert.equal(infraLib.alertaSustentado([...leituras, { ...leituras[5], memoria: null }], 'memoria'), false);
+});
+
 test('métricas são consultadas somente no endpoint Supabase configurado, sem seguir redirecionamentos', async () => {
   let config = { glassUrl: 'https://projeto.supabase.co', glassServiceKey: 'segredo-ficticio' };
   let chamada;
@@ -327,7 +390,7 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
     { status: 'disponivel', verificadoEm: '2026-11-25T18:00:00.000Z', tempoMs: 42 },
     { status: 'indisponivel', verificadoEm: '2026-11-25T18:01:00.000Z' },
   ];
-  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null, storage, storageErro: null, indices, indicesErro: null, referencias, referenciasErro: null, infra, infraErro: null }, true, 0, { status: 'pronto', lista: listaTabelas }, [{ consultadoEm: infra.consultado_em, cpu: 25, memoria: 60 }]];
+  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null, storage, storageErro: null, indices, indicesErro: null, referencias, referenciasErro: null, infra, infraErro: null }, true, 0, { status: 'pronto', lista: listaTabelas }, [{ consultadoEm: infra.consultado_em, cpu: 25, memoria: 60, taxas: [{ nome: 'sda', leitura: 10, gravacao: null }] }]];
   const dependencies = {
     'react/jsx-runtime': jsxRuntime,
     react: {
@@ -366,11 +429,52 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
   assert.match(html, /Uso de CPU/);
   assert.match(html, /25%/);
   assert.match(html, /60%/);
+  assert.match(html, /Disco \/ com 90% de uso/);
+  assert.match(html, /Disco \/data/);
+  assert.match(html, /leitura 10 B\/s/);
+  assert.match(html, /gravação indisponível/);
+  assert.match(html, /sem notificações/);
   assert.match(html, /ficticia/);
   assert.match(html, /338,2 MB/);
   assert.match(html, /Parcial: 300 MB/);
   assert.match(html, /1 objeto\(s\) sem tamanho válido/);
   assert.match(html, /não garante ausência de toda corrupção/);
+});
+
+test('painel mostra alertas nos limites e não interpreta métricas ausentes como normais', () => {
+  const historico = Array.from({ length: 6 }, (_, i) => ({
+    consultadoEm: new Date(Date.parse(infra.consultado_em) + i * 60000).toISOString(),
+    cpu: 80, memoria: 80, taxas: [],
+  }));
+  const dados = {
+    historico: null, historicoErro: null, integridade: null, integridadeErro: null, storage: null, storageErro: null,
+    indices: null, indicesErro: null, referencias: null, referenciasErro: null, infraErro: null,
+    infra: { ...infra, discos: [{ ponto: '/', total: 10000, disponivel: 1500 }, { ponto: '/data', total: 10000, disponivel: 1510 }] },
+  };
+  const states = [[], '', false, dados, true, 0, { status: 'carregando' }, historico];
+  let hook = 0;
+  const Page = load('src/app/configuracoes/monitoramento-glass/page.tsx', {
+    'react/jsx-runtime': jsxRuntime,
+    react: {
+      useCallback: fn => fn, useEffect: () => {}, useMemo: fn => fn(), useRef: value => ({ current: value }),
+      useState: () => [states[hook++], () => {}],
+    },
+    'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) },
+    '@/lib/supabase-browser': { createSupabaseBrowser: () => ({}) },
+    '@/lib/monitoramento-glass': validators,
+    '@/lib/monitoramento-infra': infraLib,
+  }).default;
+  function render() { hook = 0; return renderToStaticMarkup(React.createElement(Page)); }
+  const html = render();
+  assert.match(html, /CPU a partir de 80% por pelo menos 5 minutos nas leituras/);
+  assert.match(html, /Memória a partir de 80% por pelo menos 5 minutos nas leituras/);
+  assert.match(html, /Disco \/ com 85% de uso/);
+  assert.doesNotMatch(html, /Disco \/data com .* de uso/);
+  states[3] = { ...dados, infra: null, infraErro: 'Métricas indisponíveis.' };
+  const falha = render();
+  assert.match(falha, /Métricas indisponíveis/);
+  assert.match(falha, /Aguardando métricas disponíveis para avaliar os alertas/);
+  assert.doesNotMatch(falha, /CPU a partir de 80% por pelo menos 5 minutos nas leituras/);
 });
 
 test('card recolhe e expande a lista completa', () => {

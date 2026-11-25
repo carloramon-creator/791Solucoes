@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
+import type { BackupStatus } from '@/lib/backup-glass';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
 import { alertaSustentado, percentualCpu, taxasDisco, validarInfra, type DispositivoAmostra, type InfraAmostra, type LeituraAlerta } from '@/lib/monitoramento-infra';
 
@@ -58,6 +59,115 @@ function Cartao({ titulo, valor, detalhe }: { titulo: string; valor: string; det
     <p className="mt-1 text-xs text-slate-500">{detalhe}</p>
   </div>;
 }
+
+// ─── Estado e lógica do botão de backup ──────────────────────────────────────
+
+const faseLabel: Record<BackupStatus['fase'], string> = {
+  ocioso: 'Fazer backup agora',
+  exportando: 'Exportando banco...',
+  enviando: 'Enviando para o Drive...',
+  concluido: 'Fazer backup agora',
+  erro: 'Tentar novamente',
+};
+
+function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabaseBrowser> }) {
+  const [statusBackup, setStatusBackup] = useState<BackupStatus>({ fase: 'ocioso' });
+  const [erroBackup, setErroBackup] = useState('');
+  const [disparando, setDisparando] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const pararPolling = useCallback(() => {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+  }, []);
+
+  const consultarStatus = useCallback(async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) return;
+    try {
+      const r = await fetch('/api/admin/backup-glass', {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        cache: 'no-store',
+      });
+      const json = await r.json() as { status?: BackupStatus; error?: string };
+      if (!r.ok) { setErroBackup(json.error ?? 'Erro ao consultar status.'); return; }
+      if (json.status) {
+        setStatusBackup(json.status);
+        if (json.status.fase !== 'exportando' && json.status.fase !== 'enviando') {
+          pararPolling();
+          setDisparando(false);
+        }
+      }
+    } catch { /* polling silencioso */ }
+  }, [supabase, pararPolling]);
+
+  const dispararBackup = useCallback(async () => {
+    setErroBackup('');
+    setDisparando(true);
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) { setErroBackup('Sessão expirada.'); setDisparando(false); return; }
+    try {
+      const r = await fetch('/api/admin/backup-glass', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      });
+      const json = await r.json() as { error?: string };
+      if (!r.ok) { setErroBackup(json.error ?? 'Não foi possível iniciar o backup.'); setDisparando(false); return; }
+      // Polling a cada 3 s enquanto estiver em andamento
+      pollingRef.current = setInterval(() => void consultarStatus(), 3000);
+    } catch { setErroBackup('Falha de comunicação ao iniciar o backup.'); setDisparando(false); }
+  }, [supabase, consultarStatus]);
+
+  // Limpar polling ao desmontar
+  useEffect(() => () => pararPolling(), [pararPolling]);
+
+  const emAndamento = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-xs font-bold uppercase text-slate-500">Backup e restauração</p>
+          {statusBackup.fase === 'ocioso' && (
+            <p className="mt-1 text-sm text-slate-600">Nenhum backup registrado nesta sessão.</p>
+          )}
+          {statusBackup.fase === 'exportando' && (
+            <p className="mt-1 text-sm text-slate-600">Exportando banco do Glass...</p>
+          )}
+          {statusBackup.fase === 'enviando' && (
+            <p className="mt-1 text-sm text-slate-600">
+              Enviando para o Drive ({Math.round(statusBackup.bytesExportados / 1024)} KB exportados)...
+            </p>
+          )}
+          {statusBackup.fase === 'concluido' && (
+            <p className="mt-1 text-sm text-slate-600">
+              ✅ Concluído em {new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(statusBackup.concluidoEm))}{' '}
+              · {Math.round(statusBackup.bytesExportados / 1024)} KB exportados
+            </p>
+          )}
+          {statusBackup.fase === 'erro' && (
+            <p className="mt-1 text-sm text-red-700">❌ {statusBackup.mensagem}</p>
+          )}
+          {erroBackup && (
+            <p role="alert" className="mt-1 text-sm text-red-700">{erroBackup}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => void dispararBackup()}
+          disabled={emAndamento || disparando}
+          className="rounded-lg bg-[#3b597b] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 whitespace-nowrap"
+        >
+          {emAndamento ? faseLabel[statusBackup.fase] : faseLabel[statusBackup.fase]}
+        </button>
+      </div>
+      <p className="text-xs text-slate-500">
+        Exportação lógica (schema + dados públicos e de autenticação). Objetos do Storage e configurações gerenciadas pelo Supabase não são incluídos neste backup. Restauração deve ser testada em projeto isolado.
+      </p>
+    </div>
+  );
+}
+
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function MonitoramentoGlassPage() {
   const supabase = useMemo(() => createSupabaseBrowser(), []);
@@ -539,9 +649,16 @@ export default function MonitoramentoGlassPage() {
       </>}
     </section>
     <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">Backup do banco</h2>
+        <p className="mt-1 text-sm text-slate-500">Exportação manual para o Google Drive. Restauração deve ser testada em projeto isolado, nunca em produção.</p>
+      </div>
+      <PainelBackup supabase={supabase} />
+    </section>
+    <section className="space-y-4">
       <h2 className="text-xl font-bold text-slate-800">Verificações ainda não disponíveis</h2>
       <div className="grid gap-4 md:grid-cols-2">
-        <Cartao titulo="Backup e restauração" valor="Sem teste registrado" detalhe="Este painel ainda não monitora backups no Drive nem testes de restauração." />
+        <Cartao titulo="Restauração testada" valor="Sem teste registrado" detalhe="Nenhuma restauração foi executada e comprovada em projeto isolado até o momento." />
         <Cartao titulo="Dados e arquivos" valor="Cobertura parcial" detalhe="Outras regras de negócio, outros relacionamentos sem chave estrangeira e existência física dos arquivos não são verificados por este painel." />
       </div>
     </section>

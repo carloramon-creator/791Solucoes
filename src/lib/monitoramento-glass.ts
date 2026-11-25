@@ -5,6 +5,11 @@ export type TabelaMetrica = {
   linhas_mortas_estimadas: number | null;
   ultimo_autovacuum: string | null;
 };
+export type TabelaAtual = Omit<TabelaMetrica, 'bytes'> & {
+  bytes: number | null;
+  tipo: 'tabela' | 'particionada' | 'externa' | 'materializada';
+};
+export type ListaTabelas = { consultado_em: string; tabelas: TabelaAtual[] };
 
 export type MetricasBanco = {
   banco_bytes: number;
@@ -69,6 +74,21 @@ function numeroOuNulo(value: unknown): value is number | null {
   return value === null || numero(value);
 }
 
+function validarTabela(value: unknown): value is TabelaMetrica {
+  return objeto(value) && typeof value.nome === 'string' && numero(value.bytes)
+    && numeroOuNulo(value.linhas_vivas_estimadas) && numeroOuNulo(value.linhas_mortas_estimadas)
+    && (value.ultimo_autovacuum === null || data(value.ultimo_autovacuum));
+}
+
+export function validarListaTabelas(value: unknown): value is ListaTabelas {
+  return objeto(value) && data(value.consultado_em) && Array.isArray(value.tabelas)
+    && value.tabelas.every((t: unknown) => objeto(t) && typeof t.nome === 'string'
+      && (t.tipo === 'tabela' || t.tipo === 'particionada' || t.tipo === 'externa' || t.tipo === 'materializada')
+      && numeroOuNulo(t.bytes) && numeroOuNulo(t.linhas_vivas_estimadas)
+      && numeroOuNulo(t.linhas_mortas_estimadas) && (t.ultimo_autovacuum === null || data(t.ultimo_autovacuum)))
+    && new Set(value.tabelas.map((t: unknown) => objeto(t) ? t.nome : null)).size === value.tabelas.length;
+}
+
 export function validarStorage(value: unknown): value is AmostraStorage | null {
   return value === null || (objeto(value) && data(value.coletado_em)
     && Number.isSafeInteger(value.bytes_conhecidos) && numero(value.bytes_conhecidos)
@@ -86,9 +106,7 @@ export function validarHistorico(value: unknown): value is AmostraBanco[] {
       && numero(m.limite_conexoes_servidor) && numeroOuNulo(m.cache_percentual)
       && (m.cache_percentual === null || m.cache_percentual <= 100)
       && typeof m.estatisticas_ativas === 'boolean' && numeroOuNulo(m.linhas_mortas_estimadas)
-      && Array.isArray(m.maiores_tabelas) && m.maiores_tabelas.every((t: unknown) => objeto(t)
-        && typeof t.nome === 'string' && numero(t.bytes) && numeroOuNulo(t.linhas_vivas_estimadas)
-        && numeroOuNulo(t.linhas_mortas_estimadas) && (t.ultimo_autovacuum === null || data(t.ultimo_autovacuum)));
+      && Array.isArray(m.maiores_tabelas) && m.maiores_tabelas.every(validarTabela);
   });
 }
 

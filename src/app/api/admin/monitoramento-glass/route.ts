@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { hasExplicitHoldingPermission } from '@/lib/holding-route-permissions';
 import { getGlassClient } from '@/lib/glass-client';
-import { validarHistorico, validarIndices, validarIntegridade, validarReferencias, validarStorage } from '@/lib/monitoramento-glass';
+import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage } from '@/lib/monitoramento-glass';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +27,18 @@ export async function GET(req: Request) {
   } catch {
     console.error('[monitoramento-glass] Falha ao verificar permissão.');
     return NextResponse.json({ error: 'Não foi possível verificar sua permissão.' }, { status: 503, headers });
+  }
+
+  if (new URL(req.url).searchParams.get('tabelas') === '1') {
+    try {
+      const glass = await getGlassClient();
+      const { data, error } = await glass.rpc('monitoramento_banco_glass_tabelas').abortSignal(AbortSignal.timeout(10000));
+      if (error || !validarListaTabelas(data)) throw new Error('Lista indisponível ou inválida');
+      return NextResponse.json({ lista: data }, { headers });
+    } catch {
+      console.error('[monitoramento-glass] Falha ao consultar lista completa de tabelas.');
+      return NextResponse.json({ error: 'Não foi possível consultar todas as tabelas. Verifique a migração de listagem no Glass.' }, { status: 503, headers });
+    }
   }
 
   const start = performance.now();

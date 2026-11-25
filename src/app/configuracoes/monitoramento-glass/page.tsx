@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import { validarHistorico, validarIndices, validarIntegridade, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
+import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
 
 type Verificacao = {
   status: 'disponivel' | 'indisponivel';
@@ -61,6 +61,9 @@ export default function MonitoramentoGlassPage() {
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [dadosBanco, setDadosBanco] = useState<DadosBanco | null>(null);
+  const [tabelasAbertas, setTabelasAbertas] = useState(true);
+  const [atualizacaoTabelas, setAtualizacaoTabelas] = useState(0);
+  const [listaTabelas, setListaTabelas] = useState<{ status: 'carregando' } | { status: 'erro'; mensagem: string } | { status: 'pronto'; lista: ListaTabelas }>({ status: 'carregando' });
   const emAndamento = useRef(false);
   const montado = useRef(false);
 
@@ -144,12 +147,44 @@ export default function MonitoramentoGlassPage() {
     };
   }, [verificar]);
 
+  useEffect(() => {
+    if (!tabelasAbertas) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setListaTabelas({ status: 'carregando' });
+      void (async () => {
+        try {
+          const { data, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          if (!data.session) throw new Error('Sessão expirada. Entre novamente.');
+          const response = await fetch('/api/admin/monitoramento-glass?tabelas=1', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(typeof result.error === 'string' ? result.error : 'Não foi possível consultar todas as tabelas.');
+          if (!validarListaTabelas(result.lista)) throw new Error('A lista de tabelas retornada é inválida.');
+          if (!controller.signal.aborted) setListaTabelas({ status: 'pronto', lista: result.lista });
+        } catch (error) {
+          if (!controller.signal.aborted) setListaTabelas({
+            status: 'erro',
+            mensagem: error instanceof Error ? error.message : 'Não foi possível consultar todas as tabelas.',
+          });
+        }
+      })();
+    }, 0);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [supabase, tabelasAbertas, atualizacaoTabelas]);
+
   const ultima = historico.at(-1);
   const tempos = historico.flatMap(item => item.tempoMs === undefined ? [] : [item.tempoMs]);
   const maximo = Math.max(1, ...tempos);
   const amostras = dadosBanco?.historico ?? [];
   const ultimaAmostra = amostras.at(-1);
   const metricas = ultimaAmostra?.metricas;
+  const tabelasExibidas = listaTabelas.status === 'pronto' ? listaTabelas.lista.tabelas
+    : listaTabelas.status === 'erro' ? metricas?.maiores_tabelas : undefined;
   const dias = new Map<string, AmostraBanco>();
   for (const amostra of amostras) dias.set(diaChave.format(new Date(amostra.coletado_em)), amostra);
   const diarias = Array.from(dias.values()).slice(-30);
@@ -253,17 +288,38 @@ export default function MonitoramentoGlassPage() {
         </div> : <p className="mt-4 text-sm text-slate-500">Sem dados para o gráfico.</p>}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        <h3 className="p-5 font-bold text-slate-800">Maiores tabelas públicas</h3>
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Tamanho com índices</th><th className="p-3">Linhas vivas estimadas</th><th className="p-3">Linhas mortas estimadas</th><th className="p-3">Último autovacuum</th></tr></thead>
-          <tbody>{metricas?.maiores_tabelas.map(t => <tr key={t.nome} className="border-t border-slate-100">
-            <td className="p-3">{t.nome}</td><td className="p-3">{bytes(t.bytes)}</td>
-            <td className="p-3">{t.linhas_vivas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_vivas_estimadas)}</td>
-            <td className="p-3">{t.linhas_mortas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_mortas_estimadas)}</td>
-            <td className="p-3">{t.ultimo_autovacuum ? dataHora.format(new Date(t.ultimo_autovacuum)) : 'Não informado'}</td>
-          </tr>)}</tbody>
-        </table>
-        {!metricas?.maiores_tabelas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela disponível na última coleta.</p>}
+        <h3><button type="button" aria-expanded={tabelasAbertas} aria-controls="lista-tabelas-publicas"
+          onClick={() => setTabelasAbertas(aberto => !aberto)}
+          className="flex w-full items-center justify-between gap-3 p-5 text-left font-bold text-slate-800">
+          <span>Tabelas públicas</span><span className="text-sm text-slate-500">{tabelasAbertas ? 'Recolher' : 'Expandir'}</span>
+        </button></h3>
+        <div id="lista-tabelas-publicas" hidden={!tabelasAbertas}>
+        {tabelasAbertas && <>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4">
+            <p className="text-xs text-slate-500">{listaTabelas.status === 'pronto'
+              ? `${numero.format(listaTabelas.lista.tabelas.length)} itens · consulta em ${dataHora.format(new Date(listaTabelas.lista.consultado_em))}.`
+              : listaTabelas.status === 'erro' && ultimaAmostra ? `Exibindo apenas as maiores da coleta de ${dataHora.format(new Date(ultimaAmostra.coletado_em))}.` : 'Consulta da lista completa sob demanda.'}</p>
+            <button type="button" onClick={() => setAtualizacaoTabelas(atual => atual + 1)}
+              disabled={listaTabelas.status === 'carregando'} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 disabled:opacity-50">Atualizar lista</button>
+          </div>
+          {listaTabelas.status === 'carregando' && <p className="px-5 pb-4 text-sm text-slate-500">Carregando todas as tabelas...</p>}
+          {listaTabelas.status === 'erro' && <p role="alert" className="mx-5 mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{listaTabelas.mensagem}</p>}
+          {tabelasExibidas && <>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Tamanho com índices</th><th className="p-3">Linhas vivas estimadas</th><th className="p-3">Linhas mortas estimadas</th><th className="p-3">Último autovacuum</th></tr></thead>
+              <tbody>{tabelasExibidas.map(t => <tr key={t.nome} className="border-t border-slate-100">
+                <td className="p-3">{t.nome}{'tipo' in t && t.tipo !== 'tabela' ? ` (${t.tipo})` : ''}</td>
+                <td className="p-3">{t.bytes === null ? 'Não disponível' : bytes(t.bytes)}</td>
+                <td className="p-3">{t.linhas_vivas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_vivas_estimadas)}</td>
+                <td className="p-3">{t.linhas_mortas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_mortas_estimadas)}</td>
+                <td className="p-3">{t.ultimo_autovacuum ? dataHora.format(new Date(t.ultimo_autovacuum)) : 'Não informado'}</td>
+              </tr>)}</tbody>
+            </table>
+            {!tabelasExibidas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela disponível.</p>}
+          </>}
+          <p className="px-5 pb-4 pt-3 text-xs text-slate-500">Inclui tabelas físicas, particionadas e externas e visões materializadas de public. Tamanho de tabelas particionadas e externas não é informado; as partições físicas aparecem separadamente.</p>
+        </>}
+        </div>
       </div>
     </section>
 

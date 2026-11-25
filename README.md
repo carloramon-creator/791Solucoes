@@ -1174,3 +1174,15 @@ em producao. Interrupcoes nao geram resultado concluido; conferir o cron e a
 idade da ultima coleta. Os registros sao mantidos por 30 dias.
 O teste `scripts/tests/monitoramento-referencias.local.sql`, no Glass, e somente
 para PostgreSQL descartavel.
+
+Para listar todas as tabelas no card expansivel, testar e aplicar no Glass
+`20261125190000_monitoramento_todas_tabelas_glass.sql` antes de publicar a
+Holding. A lista e consultada ao abrir o card ou ao atualizar a lista e nao
+altera a coleta horaria nem o historico, que continuam guardando as dez maiores.
+Inclui tabelas fisicas, particionadas e externas e visoes materializadas de
+`public`; tamanhos de tabelas particionadas e externas nao sao informados.
+Em caso de falha, o painel informa que a lista completa esta indisponivel e,
+se houver dados, mostra apenas as maiores da ultima coleta. A consulta e
+restrita ao `service_role`; a API da Holding exige a mesma permissao do painel.
+O teste `scripts/tests/monitoramento-tabelas.local.sql`, no Glass, e somente
+para PostgreSQL descartavel.

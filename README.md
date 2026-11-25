@@ -1127,6 +1127,15 @@ corrupção e não criam backups. As tabelas de histórico não são acessíveis
 diretamente à API; funções de consulta são restritas ao `service_role`.
 Nenhuma credencial é enviada ao navegador.
 
+O card de Storage usa a migration
+`20261125182000_monitoramento_storage_glass.sql` do Glass. Ela coleta por hora
+os tamanhos dos metadados em `storage.objects`, retém 30 dias e falha caso RLS
+impeça a leitura integral. Objetos com tamanho ausente ou inválido são
+indicados como não contabilizados; o valor não corresponde necessariamente ao
+consumo de cobrança do Supabase. Tamanhos são exibidos em unidades decimais
+(1 MB = 1.000.000 bytes). Aplicar a migration individualmente após teste.
+
 Testes da Holding: `node --test scripts/tests/monitoramento-glass.test.mjs`.
 O teste SQL `scripts/tests/monitoramento-banco.local.sql`, no Glass, deve ser
 executado apenas em um banco PostgreSQL descartável: ele cria roles e objetos.
+O mesmo se aplica a `scripts/tests/monitoramento-storage.local.sql`.

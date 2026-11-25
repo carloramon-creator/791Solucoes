@@ -20,7 +20,7 @@ function load(file, dependencies = {}) {
 
 const validators = load('src/lib/monitoramento-glass.ts');
 const metricas = {
-  banco_bytes: 4096, tabelas_publicas: 1, restricoes_nao_validadas: 0,
+  banco_bytes: 338197217, tabelas_publicas: 1, restricoes_nao_validadas: 0,
   conexoes: 3, conexoes_ativas: 1, aguardando_bloqueio: 0, limite_conexoes_servidor: 100,
   cache_percentual: 99.5, estatisticas_ativas: true, linhas_mortas_estimadas: 10,
   maiores_tabelas: [{ nome: 'ficticia', bytes: 2048, linhas_vivas_estimadas: 30, linhas_mortas_estimadas: 10, ultimo_autovacuum: null }],
@@ -30,6 +30,7 @@ const integridade = {
   iniciado_em: '2026-11-25T06:00:00Z', concluido_em: '2026-11-25T06:01:00Z',
   tabelas: [{ nome: 'ficticia', status: 'sem_problemas_detectados', ocorrencias_primeiro_bloco: 0 }],
 };
+const storage = { coletado_em: '2026-11-25T18:00:00Z', bytes_conhecidos: 300000000, objetos: 4, objetos_sem_tamanho: 1 };
 
 function route({ authenticated = true, permitted = true, queryError = null, configError = false, rpcError = null } = {}) {
   const calls = [];
@@ -58,7 +59,7 @@ function route({ authenticated = true, permitted = true, queryError = null, conf
           assert.ok(signal instanceof AbortSignal);
           calls.push(['rpc', name]);
           if (rpcError === name) return { data: null, error: new Error('confidential settings') };
-          return { data: name === 'monitoramento_banco_glass_historico' ? amostras : integridade, error: null };
+          return { data: name === 'monitoramento_banco_glass_historico' ? amostras : name === 'monitoramento_integridade_glass_ultimo' ? integridade : storage, error: null };
         } }), from: table => {
           calls.push(['table', table]);
           return { select: fields => {
@@ -102,9 +103,10 @@ test('verifica uma leitura limitada, inclusive quando não existem vidraçarias'
   assert.ok(Number.isFinite(result.tempoMs));
   assert.ok(Number.isFinite(Date.parse(result.verificadoEm)));
   assert.deepEqual(api.calls.slice(1), [['client'], ['table', 'vidracarias'], ['select', 'id'], ['limit', 1],
-    ['rpc', 'monitoramento_banco_glass_historico'], ['rpc', 'monitoramento_integridade_glass_ultimo']]);
-  assert.equal(result.historico[0].metricas.banco_bytes, 4096);
+    ['rpc', 'monitoramento_banco_glass_historico'], ['rpc', 'monitoramento_integridade_glass_ultimo'], ['rpc', 'monitoramento_storage_glass_ultimo']]);
+  assert.equal(result.historico[0].metricas.banco_bytes, 338197217);
   assert.equal(result.integridade.tabelas[0].status, 'sem_problemas_detectados');
+  assert.equal(result.storage.bytes_conhecidos, 300000000);
 });
 
 test('falhas de configuração ou consulta não são relatadas como sucesso nem expõem detalhes', async () => {
@@ -139,12 +141,28 @@ test('falha das métricas não é confundida com indisponibilidade da conexão o
   } finally { console.error = original; }
 });
 
+test('falha do Storage não oculta métricas do banco nem retorna tamanho fictício', async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const response = await route({ rpcError: 'monitoramento_storage_glass_ultimo' }).GET(new Request('http://localhost'));
+    const result = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(result.storage, null);
+    assert.match(result.storageErro, /indisponível/);
+    assert.equal(result.historico[0].metricas.banco_bytes, 338197217);
+  } finally { console.error = original; }
+});
+
 test('rejeita respostas inválidas e preserva valores nulos de métricas não disponíveis', () => {
   assert.equal(validators.validarHistorico(amostras), true);
   assert.equal(validators.validarHistorico([{ ...amostras[0], metricas: { ...metricas, cache_percentual: null } }]), true);
   assert.equal(validators.validarHistorico([{ ...amostras[0], metricas: { ...metricas, banco_bytes: -1 } }]), false);
   assert.equal(validators.validarIntegridade(integridade), true);
   assert.equal(validators.validarIntegridade({ ...integridade, tabelas: [{ nome: 'ficticia', status: 'sem_problemas_detectados', ocorrencias_primeiro_bloco: 1 }] }), false);
+  assert.equal(validators.validarStorage(storage), true);
+  assert.equal(validators.validarStorage({ ...storage, objetos_sem_tamanho: 5 }), false);
+  assert.equal(validators.validarStorage({ ...storage, bytes_conhecidos: Number.MAX_SAFE_INTEGER + 1 }), false);
 });
 
 test('painel distingue a verificação de leitura de backup e exibe falhas no histórico', () => {
@@ -155,7 +173,7 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
     { status: 'disponivel', verificadoEm: '2026-11-25T18:00:00.000Z', tempoMs: 42 },
     { status: 'indisponivel', verificadoEm: '2026-11-25T18:01:00.000Z' },
   ];
-  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null }];
+  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null, storage, storageErro: null }];
   const dependencies = {
     'react/jsx-runtime': jsxRuntime,
     react: {
@@ -180,6 +198,8 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
   assert.match(html, /histórico não é salvo/);
   assert.match(html, /Integridade estrutural das tabelas/);
   assert.match(html, /ficticia/);
-  assert.match(html, /4 KiB/);
+  assert.match(html, /338,2 MB/);
+  assert.match(html, /Parcial: 300 MB/);
+  assert.match(html, /1 objeto\(s\) sem tamanho válido/);
   assert.match(html, /não garante ausência de toda corrupção/);
 });

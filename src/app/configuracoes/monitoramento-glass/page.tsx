@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import { validarHistorico, validarIntegridade, type AmostraBanco, type ResultadoIntegridade } from '@/lib/monitoramento-glass';
+import { validarHistorico, validarIntegridade, validarStorage, type AmostraBanco, type AmostraStorage, type ResultadoIntegridade } from '@/lib/monitoramento-glass';
 
 type Verificacao = {
   status: 'disponivel' | 'indisponivel';
@@ -18,11 +18,11 @@ const dia = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', da
 const diaChave = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const numero = new Intl.NumberFormat('pt-BR');
 const bytes = (valor: number) => {
-  const unidades = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const unidades = ['B', 'KB', 'MB', 'GB', 'TB'];
   let tamanho = valor;
   let unidade = 0;
-  while (tamanho >= 1024 && unidade < unidades.length - 1) {
-    tamanho /= 1024;
+  while (tamanho >= 1000 && unidade < unidades.length - 1) {
+    tamanho /= 1000;
     unidade++;
   }
   return `${numero.format(Math.round(tamanho * 100) / 100)} ${unidades[unidade]}`;
@@ -33,6 +33,8 @@ type DadosBanco = {
   historicoErro: string | null;
   integridade: ResultadoIntegridade | null;
   integridadeErro: string | null;
+  storage: AmostraStorage | null;
+  storageErro: string | null;
 };
 
 function Cartao({ titulo, valor, detalhe }: { titulo: string; valor: string; detalhe: string }) {
@@ -85,8 +87,10 @@ export default function MonitoramentoGlassPage() {
       if (response.ok) {
         if (!(result.historico === null || validarHistorico(result.historico))
           || !validarIntegridade(result.integridade)
+          || !validarStorage(result.storage)
           || !(result.historicoErro === null || typeof result.historicoErro === 'string')
-          || !(result.integridadeErro === null || typeof result.integridadeErro === 'string')) {
+          || !(result.integridadeErro === null || typeof result.integridadeErro === 'string')
+          || !(result.storageErro === null || typeof result.storageErro === 'string')) {
           throw new Error('Os dados do banco retornados são inválidos.');
         }
         setDadosBanco({
@@ -94,6 +98,8 @@ export default function MonitoramentoGlassPage() {
           historicoErro: result.historicoErro,
           integridade: result.integridade,
           integridadeErro: result.integridadeErro,
+          storage: result.storage,
+          storageErro: result.storageErro,
         });
       } else {
         setDadosBanco(null);
@@ -137,6 +143,8 @@ export default function MonitoramentoGlassPage() {
   const verificadoMs = ultima ? new Date(ultima.verificadoEm).getTime() : null;
   const integridadeAntiga = integridade && verificadoMs !== null && verificadoMs - new Date(integridade.concluido_em).getTime() > 48 * 60 * 60 * 1000;
   const metricasAntigas = ultimaAmostra && verificadoMs !== null && verificadoMs - new Date(ultimaAmostra.coletado_em).getTime() > 2 * 60 * 60 * 1000;
+  const storage = dadosBanco?.storage;
+  const storageAntigo = storage && verificadoMs !== null && verificadoMs - new Date(storage.coletado_em).getTime() > 2 * 60 * 60 * 1000;
 
   return <main className="space-y-5 pb-12">
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -194,9 +202,14 @@ export default function MonitoramentoGlassPage() {
       </div>
       {dadosBanco?.historicoErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.historicoErro}</p>}
       {metricasAntigas && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">A última coleta tem mais de duas horas. Verifique o agendamento no Supabase.</p>}
+      {dadosBanco?.storageErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.storageErro}</p>}
+      {storageAntigo && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">A última coleta do Storage tem mais de duas horas. Verifique o agendamento no Supabase.</p>}
+      {storage && storage.objetos_sem_tamanho > 0 && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">O tamanho do Storage é parcial: {numero.format(storage.objetos_sem_tamanho)} objeto(s) sem tamanho válido nos metadados.</p>}
       {ultimaAmostra && <p className="text-xs text-slate-500">Última coleta: {dataHora.format(new Date(ultimaAmostra.coletado_em))}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Cartao titulo="Tamanho do banco" valor={metricas ? bytes(metricas.banco_bytes) : 'Não disponível'} detalhe="Tamanho do banco PostgreSQL, não do disco completo." />
+        <Cartao titulo="Storage" valor={storage && (storage.objetos === 0 || storage.objetos_sem_tamanho < storage.objetos) ? `${storage.objetos_sem_tamanho ? 'Parcial: ' : ''}${bytes(storage.bytes_conhecidos)}` : 'Não disponível'}
+          detalhe={storage ? `${numero.format(storage.objetos)} objetos; coleta em ${dataHora.format(new Date(storage.coletado_em))}.` : 'Aguardando coleta dos metadados dos arquivos.'} />
         <Cartao titulo="Tabelas públicas" valor={metricas ? numero.format(metricas.tabelas_publicas) : 'Não disponível'} detalhe="Tabelas físicas e visões materializadas do esquema public." />
         <Cartao titulo="Conexões do banco" valor={metricas ? numero.format(metricas.conexoes) : 'Não disponível'} detalhe={metricas ? `${metricas.conexoes_ativas === null ? 'Ativas não disponíveis' : `${numero.format(metricas.conexoes_ativas)} ativas`}; limite do servidor ${numero.format(metricas.limite_conexoes_servidor)}.` : 'Aguardando coleta.'} />
         <Cartao titulo="Aguardando bloqueio" valor={metricas?.aguardando_bloqueio != null ? numero.format(metricas.aguardando_bloqueio) : 'Não disponível'} detalhe="Sessões clientes esperando por bloqueio no momento da coleta." />
@@ -204,6 +217,7 @@ export default function MonitoramentoGlassPage() {
         <Cartao titulo="Linhas mortas" valor={metricas?.linhas_mortas_estimadas != null ? numero.format(metricas.linhas_mortas_estimadas) : 'Não disponível'} detalhe="Estimativa das tabelas públicas; não indica corrupção." />
         <Cartao titulo="Restrições não validadas" valor={metricas ? numero.format(metricas.restricoes_nao_validadas) : 'Não disponível'} detalhe="Restrições do esquema public pendentes de validação; não confirma erro nos dados." />
       </div>
+      <p className="text-xs text-slate-500">O Storage soma os tamanhos presentes nos metadados de storage.objects; não é verificação dos arquivos nem representa outras categorias de uso ou a cobrança oficial.</p>
       {dadosBanco?.historico && amostras.length === 0 && <p className="text-sm text-slate-500">Ainda não há coletas registradas.</p>}
       <div className="rounded-xl border border-slate-200 bg-white p-5">
         <h3 className="font-bold text-slate-800">Evolução do tamanho do banco</h3>

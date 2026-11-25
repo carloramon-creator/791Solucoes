@@ -21,6 +21,7 @@ export type MetricasBanco = {
 };
 
 export type AmostraBanco = { coletado_em: string; metricas: MetricasBanco };
+export type AmostraStorage = { coletado_em: string; bytes_conhecidos: number; objetos: number; objetos_sem_tamanho: number };
 export type TabelaIntegridade = {
   nome: string;
   status: 'sem_problemas_detectados' | 'problemas' | 'erro_verificacao';
@@ -43,6 +44,14 @@ function data(value: unknown): value is string {
 
 function numeroOuNulo(value: unknown): value is number | null {
   return value === null || numero(value);
+}
+
+export function validarStorage(value: unknown): value is AmostraStorage | null {
+  return value === null || (objeto(value) && data(value.coletado_em)
+    && Number.isSafeInteger(value.bytes_conhecidos) && numero(value.bytes_conhecidos)
+    && Number.isSafeInteger(value.objetos) && numero(value.objetos)
+    && Number.isSafeInteger(value.objetos_sem_tamanho) && numero(value.objetos_sem_tamanho)
+    && value.objetos_sem_tamanho <= value.objetos);
 }
 
 export function validarHistorico(value: unknown): value is AmostraBanco[] {

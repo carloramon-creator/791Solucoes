@@ -29,6 +29,29 @@ export type TabelaIntegridade = {
   codigo?: string;
 };
 export type ResultadoIntegridade = { iniciado_em: string; concluido_em: string; tabelas: TabelaIntegridade[] };
+export type IndiceIntegridade = {
+  nome: string;
+  status: 'sem_problemas_detectados' | 'problemas' | 'erro_verificacao' | 'indice_invalido';
+  codigo?: string;
+};
+export type ResultadoIndices = { iniciado_em: string; concluido_em: string; indices: IndiceIntegridade[] };
+export type RelacionamentoVerificado = {
+  tabela: string;
+  restricao: string;
+} & ({ status: 'sem_ocorrencias' | 'possivel_violacao' } | { status: 'erro_verificacao'; codigo: string });
+export type ArquivosVerificados = {
+  tabela: string;
+} & ({ status: 'verificado'; registros: number; sem_metadados: number } | { status: 'erro_verificacao'; codigo: string });
+export type RegraVerificada = {
+  nome: string;
+} & ({ status: 'sem_ocorrencias' | 'possivel_violacao' } | { status: 'erro_verificacao'; codigo: string });
+export type ResultadoReferencias = {
+  iniciado_em: string;
+  concluido_em: string;
+  relacionamentos: RelacionamentoVerificado[];
+  arquivos: ArquivosVerificados[];
+  regras: RegraVerificada[];
+};
 
 function objeto(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -76,4 +99,35 @@ export function validarIntegridade(value: unknown): value is ResultadoIntegridad
       && ((t.status === 'sem_problemas_detectados' && numero(t.ocorrencias_primeiro_bloco) && t.ocorrencias_primeiro_bloco === 0)
         || (t.status === 'problemas' && numero(t.ocorrencias_primeiro_bloco) && t.ocorrencias_primeiro_bloco > 0)
         || (t.status === 'erro_verificacao' && typeof t.codigo === 'string'))));
+}
+
+export function validarIndices(value: unknown): value is ResultadoIndices | null {
+  return value === null || (objeto(value) && data(value.iniciado_em) && data(value.concluido_em)
+    && Array.isArray(value.indices) && value.indices.every((i: unknown) => objeto(i)
+      && typeof i.nome === 'string'
+      && (i.status === 'sem_problemas_detectados' || i.status === 'indice_invalido'
+        || ((i.status === 'problemas' || i.status === 'erro_verificacao')
+          && typeof i.codigo === 'string' && /^[0-9A-Z]{5}$/.test(i.codigo)))));
+}
+
+export function validarReferencias(value: unknown): value is ResultadoReferencias | null {
+  return value === null || (objeto(value) && data(value.iniciado_em) && data(value.concluido_em)
+    && Array.isArray(value.relacionamentos) && value.relacionamentos.every((r: unknown) => objeto(r)
+      && typeof r.tabela === 'string' && typeof r.restricao === 'string'
+      && (r.status === 'sem_ocorrencias' || r.status === 'possivel_violacao'
+        || (r.status === 'erro_verificacao' && typeof r.codigo === 'string' && /^[0-9A-Z]{5}$/.test(r.codigo))))
+    && Array.isArray(value.arquivos) && value.arquivos.length === 4
+    && new Set(value.arquivos.map((a: unknown) => objeto(a) ? a.tabela : null)).size === 4
+    && value.arquivos.every((a: unknown) => objeto(a)
+      && typeof a.tabela === 'string'
+      && ['orcamento_anexos', 'os_anexos', 'fin_lancamentos_anexos', 'internal_chat_attachments'].includes(a.tabela)
+      && ((a.status === 'verificado' && numero(a.registros) && Number.isSafeInteger(a.registros)
+        && numero(a.sem_metadados) && Number.isSafeInteger(a.sem_metadados) && a.sem_metadados <= a.registros)
+        || (a.status === 'erro_verificacao' && typeof a.codigo === 'string' && /^[0-9A-Z]{5}$/.test(a.codigo))))
+    && Array.isArray(value.regras) && value.regras.length === 4
+    && new Set(value.regras.map((r: unknown) => objeto(r) ? r.nome : null)).size === 4
+    && value.regras.every((r: unknown) => objeto(r) && typeof r.nome === 'string'
+      && ['orcamento_anexo_empresa', 'orcamento_historico_empresa', 'financeiro_anexo_empresa', 'financeiro_anexo_baixa'].includes(r.nome)
+      && (r.status === 'sem_ocorrencias' || r.status === 'possivel_violacao'
+        || (r.status === 'erro_verificacao' && typeof r.codigo === 'string' && /^[0-9A-Z]{5}$/.test(r.codigo)))));
 }

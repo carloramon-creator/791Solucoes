@@ -1139,3 +1139,38 @@ Testes da Holding: `node --test scripts/tests/monitoramento-glass.test.mjs`.
 O teste SQL `scripts/tests/monitoramento-banco.local.sql`, no Glass, deve ser
 executado apenas em um banco PostgreSQL descartável: ele cria roles e objetos.
 O mesmo se aplica a `scripts/tests/monitoramento-storage.local.sql`.
+
+Para a verificacao separada de indices B-tree, testar e aplicar no Glass
+`20261125183000_monitoramento_indices_glass.sql` depois da migration de
+integridade. A verificacao usa `bt_index_check` sem `heapallindexed`, diariamente
+as 07:00 UTC (04:00 em Brasilia), com limite de 20 minutos e 5 segundos para
+bloqueios; testar o custo no ambiente de testes antes de ativar em producao.
+Ela pode atrasar operacoes DDL que precisem de bloqueio exclusivo. Somente
+indices B-tree fisicos de `public` sao incluidos; invalidos ou nao prontos
+sao sinalizados e nao verificados. Falhas e verificacoes antigas nao significam
+sucesso. O teste nao cobre todos os tipos de indice, a correspondencia com todas
+as linhas da tabela nem garante ausencia de corrupcao. Ele nao valida dados de
+negocio, arquivos, backups ou restauracao.
+O teste SQL `scripts/tests/monitoramento-indices.local.sql`, no Glass, e
+somente para PostgreSQL descartavel: modifica catalogos e substitui uma funcao
+do amcheck para simular falhas. Nunca executa-lo em banco real.
+
+Para referencias, testar e aplicar no Glass
+`20261125184000_monitoramento_referencias_glass.sql`. A coleta diaria as 09:00
+UTC (06:00 em Brasilia) examina chaves estrangeiras `NOT VALID` de tabelas
+`public` e procura referencias sem metadados em `storage.objects` para anexos
+de orcamentos, OS, lancamentos financeiros e chat interno. Ignora anexos com
+menos de uma hora; exclusoes em andamento podem produzir alertas temporarios.
+Tambem verifica quatro regras existentes de correspondencia de empresa entre
+orcamento e seus anexos/historico e entre lancamento e seus anexos/baixas.
+Nao verifica outros tipos de arquivo, conteudo fisico dos objetos, chaves ja
+validadas, outros relacionamentos sem chave, outras regras de negocio ou backups. Nenhuma
+restricao e validada e nenhum dado e corrigido. Os resultados sao agregados,
+sem nomes de arquivos ou dados individuais. Os erros de permissao e outras
+falhas sao mostrados separadamente. `row_security = off` impede resultados
+parciais silenciosos quando RLS bloqueia a leitura. A coleta tem limite de
+20 minutos e 5 segundos de espera por bloqueio; testar o custo antes de ativar
+em producao. Interrupcoes nao geram resultado concluido; conferir o cron e a
+idade da ultima coleta. Os registros sao mantidos por 30 dias.
+O teste `scripts/tests/monitoramento-referencias.local.sql`, no Glass, e somente
+para PostgreSQL descartavel.

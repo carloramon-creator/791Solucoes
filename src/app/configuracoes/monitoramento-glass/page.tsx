@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
+import { validarHistorico, validarIntegridade, type AmostraBanco, type ResultadoIntegridade } from '@/lib/monitoramento-glass';
 
 type Verificacao = {
   status: 'disponivel' | 'indisponivel';
@@ -13,12 +14,41 @@ type Verificacao = {
 const dataHora = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium',
 });
+const dia = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+const diaChave = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const numero = new Intl.NumberFormat('pt-BR');
+const bytes = (valor: number) => {
+  const unidades = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let tamanho = valor;
+  let unidade = 0;
+  while (tamanho >= 1024 && unidade < unidades.length - 1) {
+    tamanho /= 1024;
+    unidade++;
+  }
+  return `${numero.format(Math.round(tamanho * 100) / 100)} ${unidades[unidade]}`;
+};
+
+type DadosBanco = {
+  historico: AmostraBanco[] | null;
+  historicoErro: string | null;
+  integridade: ResultadoIntegridade | null;
+  integridadeErro: string | null;
+};
+
+function Cartao({ titulo, valor, detalhe }: { titulo: string; valor: string; detalhe: string }) {
+  return <div className="rounded-xl border border-slate-200 bg-white p-5">
+    <p className="text-xs font-bold uppercase text-slate-500">{titulo}</p>
+    <p className="mt-2 text-xl font-bold text-slate-800">{valor}</p>
+    <p className="mt-1 text-xs text-slate-500">{detalhe}</p>
+  </div>;
+}
 
 export default function MonitoramentoGlassPage() {
   const supabase = useMemo(() => createSupabaseBrowser(), []);
   const [historico, setHistorico] = useState<Verificacao[]>([]);
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [dadosBanco, setDadosBanco] = useState<DadosBanco | null>(null);
   const emAndamento = useRef(false);
   const montado = useRef(false);
 
@@ -52,8 +82,27 @@ export default function MonitoramentoGlassPage() {
         ...(result.status === 'disponivel' ? { tempoMs: result.tempoMs } : {}),
       }].slice(-20));
       setErro(response.ok ? '' : result.error);
+      if (response.ok) {
+        if (!(result.historico === null || validarHistorico(result.historico))
+          || !validarIntegridade(result.integridade)
+          || !(result.historicoErro === null || typeof result.historicoErro === 'string')
+          || !(result.integridadeErro === null || typeof result.integridadeErro === 'string')) {
+          throw new Error('Os dados do banco retornados são inválidos.');
+        }
+        setDadosBanco({
+          historico: result.historico,
+          historicoErro: result.historicoErro,
+          integridade: result.integridade,
+          integridadeErro: result.integridadeErro,
+        });
+      } else {
+        setDadosBanco(null);
+      }
     } catch (error) {
-      if (montado.current) setErro(error instanceof Error ? error.message : 'Não foi possível verificar a integração.');
+      if (montado.current) {
+        setDadosBanco(null);
+        setErro(error instanceof Error ? error.message : 'Não foi possível verificar a integração.');
+      }
     } finally {
       emAndamento.current = false;
       if (montado.current) setCarregando(false);
@@ -74,6 +123,20 @@ export default function MonitoramentoGlassPage() {
   const ultima = historico.at(-1);
   const tempos = historico.flatMap(item => item.tempoMs === undefined ? [] : [item.tempoMs]);
   const maximo = Math.max(1, ...tempos);
+  const amostras = dadosBanco?.historico ?? [];
+  const ultimaAmostra = amostras.at(-1);
+  const metricas = ultimaAmostra?.metricas;
+  const dias = new Map<string, AmostraBanco>();
+  for (const amostra of amostras) dias.set(diaChave.format(new Date(amostra.coletado_em)), amostra);
+  const diarias = Array.from(dias.values()).slice(-30);
+  const maiorBanco = Math.max(1, ...diarias.map(item => item.metricas.banco_bytes));
+  const integridade = dadosBanco?.integridade;
+  const problemas = integridade?.tabelas.filter(t => t.status === 'problemas') ?? [];
+  const errosIntegridade = integridade?.tabelas.filter(t => t.status === 'erro_verificacao') ?? [];
+  const semProblemas = integridade?.tabelas.filter(t => t.status === 'sem_problemas_detectados') ?? [];
+  const verificadoMs = ultima ? new Date(ultima.verificadoEm).getTime() : null;
+  const integridadeAntiga = integridade && verificadoMs !== null && verificadoMs - new Date(integridade.concluido_em).getTime() > 48 * 60 * 60 * 1000;
+  const metricasAntigas = ultimaAmostra && verificadoMs !== null && verificadoMs - new Date(ultimaAmostra.coletado_em).getTime() > 2 * 60 * 60 * 1000;
 
   return <main className="space-y-5 pb-12">
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -123,6 +186,88 @@ export default function MonitoramentoGlassPage() {
         </div>)}
       </div> : <p className="mt-4 text-sm text-slate-500">Nenhuma verificação concluída nesta página.</p>}
     </section>
-    <p className="text-xs text-slate-500">A verificação apenas lê um registro da tabela de vidraçarias. Ela não mede o tamanho do banco, não testa o Storage e não confirma a existência ou restauração de backups.</p>
+
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">Banco de dados do Glass</h2>
+        <p className="mt-1 text-sm text-slate-500">Coletas horárias; histórico de 30 dias. Não representam espaço total do disco ou dos arquivos no Storage.</p>
+      </div>
+      {dadosBanco?.historicoErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.historicoErro}</p>}
+      {metricasAntigas && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">A última coleta tem mais de duas horas. Verifique o agendamento no Supabase.</p>}
+      {ultimaAmostra && <p className="text-xs text-slate-500">Última coleta: {dataHora.format(new Date(ultimaAmostra.coletado_em))}</p>}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Cartao titulo="Tamanho do banco" valor={metricas ? bytes(metricas.banco_bytes) : 'Não disponível'} detalhe="Tamanho do banco PostgreSQL, não do disco completo." />
+        <Cartao titulo="Tabelas públicas" valor={metricas ? numero.format(metricas.tabelas_publicas) : 'Não disponível'} detalhe="Tabelas físicas e visões materializadas do esquema public." />
+        <Cartao titulo="Conexões do banco" valor={metricas ? numero.format(metricas.conexoes) : 'Não disponível'} detalhe={metricas ? `${metricas.conexoes_ativas === null ? 'Ativas não disponíveis' : `${numero.format(metricas.conexoes_ativas)} ativas`}; limite do servidor ${numero.format(metricas.limite_conexoes_servidor)}.` : 'Aguardando coleta.'} />
+        <Cartao titulo="Aguardando bloqueio" valor={metricas?.aguardando_bloqueio != null ? numero.format(metricas.aguardando_bloqueio) : 'Não disponível'} detalhe="Sessões clientes esperando por bloqueio no momento da coleta." />
+        <Cartao titulo="Acertos de cache" valor={metricas?.cache_percentual != null ? `${numero.format(metricas.cache_percentual)}%` : 'Não disponível'} detalhe="Estatística acumulada do PostgreSQL desde o último reset." />
+        <Cartao titulo="Linhas mortas" valor={metricas?.linhas_mortas_estimadas != null ? numero.format(metricas.linhas_mortas_estimadas) : 'Não disponível'} detalhe="Estimativa das tabelas públicas; não indica corrupção." />
+        <Cartao titulo="Restrições não validadas" valor={metricas ? numero.format(metricas.restricoes_nao_validadas) : 'Não disponível'} detalhe="Restrições do esquema public pendentes de validação; não confirma erro nos dados." />
+      </div>
+      {dadosBanco?.historico && amostras.length === 0 && <p className="text-sm text-slate-500">Ainda não há coletas registradas.</p>}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="font-bold text-slate-800">Evolução do tamanho do banco</h3>
+        <p className="mt-1 text-xs text-slate-500">Última coleta de cada dia, nos últimos 30 dias; lacunas indicam dias sem coleta.</p>
+        {diarias.length ? <div className="mt-4 flex h-40 items-end gap-2 overflow-x-auto" aria-label="Tamanho do banco por dia">
+          {diarias.map(item => <div key={item.coletado_em} className="flex min-w-10 flex-col items-center justify-end gap-1">
+            <div className="w-7 rounded-t bg-[#3b597b]" style={{ height: Math.max(8, Math.round(item.metricas.banco_bytes / maiorBanco * 105)) }}
+              title={`${dataHora.format(new Date(item.coletado_em))}: ${bytes(item.metricas.banco_bytes)}`} />
+            <span className="text-[10px] text-slate-500">{dia.format(new Date(item.coletado_em))}</span>
+          </div>)}
+        </div> : <p className="mt-4 text-sm text-slate-500">Sem dados para o gráfico.</p>}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <h3 className="p-5 font-bold text-slate-800">Maiores tabelas públicas</h3>
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Tamanho com índices</th><th className="p-3">Linhas vivas estimadas</th><th className="p-3">Linhas mortas estimadas</th><th className="p-3">Último autovacuum</th></tr></thead>
+          <tbody>{metricas?.maiores_tabelas.map(t => <tr key={t.nome} className="border-t border-slate-100">
+            <td className="p-3">{t.nome}</td><td className="p-3">{bytes(t.bytes)}</td>
+            <td className="p-3">{t.linhas_vivas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_vivas_estimadas)}</td>
+            <td className="p-3">{t.linhas_mortas_estimadas === null ? 'Não disponível' : numero.format(t.linhas_mortas_estimadas)}</td>
+            <td className="p-3">{t.ultimo_autovacuum ? dataHora.format(new Date(t.ultimo_autovacuum)) : 'Não informado'}</td>
+          </tr>)}</tbody>
+        </table>
+        {!metricas?.maiores_tabelas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela disponível na última coleta.</p>}
+      </div>
+    </section>
+
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">Integridade estrutural das tabelas</h2>
+        <p className="mt-1 text-sm text-slate-500">Verificação diária às 3h de Brasília usando amcheck nas tabelas heap do esquema public.</p>
+      </div>
+      {dadosBanco?.integridadeErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.integridadeErro}</p>}
+      {integridadeAntiga && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">A última verificação tem mais de 48 horas. Confira a execução agendada no Supabase.</p>}
+      {problemas.length > 0 && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">Foram detectados possíveis problemas estruturais em {numero.format(problemas.length)} tabela(s). Investigue com o suporte antes de qualquer reparo.</p>}
+      {errosIntegridade.length > 0 && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Não foi possível verificar {numero.format(errosIntegridade.length)} tabela(s). Confira os códigos na lista e os logs no Supabase.</p>}
+      {!integridade && !dadosBanco?.integridadeErro && <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Nenhuma verificação concluída disponível.</p>}
+      {integridade && <>
+        <p className="text-xs text-slate-500">Concluída em {dataHora.format(new Date(integridade.concluido_em))} · {numero.format(integridade.tabelas.length)} tabelas verificadas ou tentadas.</p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Cartao titulo="Sem problemas detectados" valor={numero.format(semProblemas.length)} detalhe="Somente no escopo verificado pelo amcheck." />
+          <Cartao titulo="Problemas detectados" valor={numero.format(problemas.length)} detalhe="Tabelas com ocorrências estruturais detectadas." />
+          <Cartao titulo="Falha ao verificar" valor={numero.format(errosIntegridade.length)} detalhe="Não são consideradas íntegras nem corrompidas." />
+        </div>
+        {integridade.tabelas.length > 0 && <figure className="rounded-xl border border-slate-200 bg-white p-5">
+          <figcaption className="font-bold text-slate-800">Resultado da última verificação</figcaption>
+          <div className="mt-4 flex h-5 overflow-hidden rounded-full" aria-label={`${semProblemas.length} sem problemas detectados, ${problemas.length} com problemas, ${errosIntegridade.length} sem verificação`}>
+            <div className="bg-emerald-500" style={{ width: `${semProblemas.length / integridade.tabelas.length * 100}%` }} />
+            <div className="bg-red-500" style={{ width: `${problemas.length / integridade.tabelas.length * 100}%` }} />
+            <div className="bg-amber-400" style={{ width: `${errosIntegridade.length / integridade.tabelas.length * 100}%` }} />
+          </div>
+          <p className="mt-2 text-xs text-slate-600">Sem problemas detectados: {numero.format(semProblemas.length)} · Problemas: {numero.format(problemas.length)} · Falhas de verificação: {numero.format(errosIntegridade.length)}</p>
+        </figure>}
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Resultado</th></tr></thead>
+            <tbody>{integridade.tabelas.map(t => <tr key={t.nome} className="border-t border-slate-100">
+              <td className="p-3">{t.nome}</td><td className="p-3">{t.status === 'sem_problemas_detectados' ? 'Sem problemas detectados' : t.status === 'problemas' ? 'Problema detectado' : `Não foi possível verificar (${t.codigo})`}</td>
+            </tr>)}</tbody>
+          </table>
+          {!integridade.tabelas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela compatível foi verificada.</p>}
+        </div>
+      </>}
+      <p className="text-xs text-slate-500">O teste examina a estrutura das tabelas heap, parando no primeiro bloco com problemas. Não verifica índices, valores TOAST, arquivos do Storage, lógica dos dados ou backups; um resultado sem problemas não garante ausência de toda corrupção.</p>
+    </section>
   </main>;
 }

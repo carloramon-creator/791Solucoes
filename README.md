@@ -1104,7 +1104,29 @@ Teste: `node --test scripts/tests/glass-user-billing.test.mjs`.
 
 Em Configurações → Monitoramento do Glass, uma consulta de leitura verifica a
 integração da Holding com a API de dados do Glass. O acesso exige a permissão
-`submenu.configuracoes.financeiro`. O histórico e o gráfico guardam até 20
-verificações somente enquanto a página estiver aberta; não são monitoramento
-contínuo, nem verificam Storage, capacidade do banco ou backups. Nenhuma
-credencial é enviada ao navegador.
+`submenu.configuracoes.financeiro`. O gráfico de conexão guarda até 20
+verificações apenas enquanto a página estiver aberta.
+
+As migrations `20261125180000_monitoramento_banco_glass.sql` e
+`20261125181000_monitoramento_integridade_glass.sql`, no repositório Glass,
+criam coletas no banco Glass. Aplicar individualmente, nessa ordem, após
+validar em ambiente de teste; não executar migrations não relacionadas.
+A primeira coleta métricas de hora em hora e retém 30 dias. A segunda exige
+`pg_cron`, extensão `amcheck` e permissão do proprietário da função para
+executar `verify_heapam`; a migration falha explicitamente sem essa permissão.
+Ela agenda a verificação de tabelas heap de `public` às 06:00 UTC (03:00 em
+Brasília), com `statement_timeout` de 20 minutos e `lock_timeout` de 5 segundos.
+Verificações não concluídas não produzem resultado de sucesso; confira
+`cron.job_run_details` e os avisos de coleta antiga. Avaliar o custo da leitura
+no projeto de teste antes de habilitar em produção.
+
+Os resultados indicam apenas problemas detectados na estrutura das tabelas
+verificadas: não incluem índices, TOAST, arquivos Storage, consistência das
+regras de negócio ou testes de restauração. Não garantem ausência de
+corrupção e não criam backups. As tabelas de histórico não são acessíveis
+diretamente à API; funções de consulta são restritas ao `service_role`.
+Nenhuma credencial é enviada ao navegador.
+
+Testes da Holding: `node --test scripts/tests/monitoramento-glass.test.mjs`.
+O teste SQL `scripts/tests/monitoramento-banco.local.sql`, no Glass, deve ser
+executado apenas em um banco PostgreSQL descartável: ele cria roles e objetos.

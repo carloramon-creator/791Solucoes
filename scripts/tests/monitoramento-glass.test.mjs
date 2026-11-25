@@ -19,6 +19,7 @@ function load(file, dependencies = {}) {
 }
 
 const validators = load('src/lib/monitoramento-glass.ts');
+const infraLib = load('src/lib/monitoramento-infra.ts');
 const metricas = {
   banco_bytes: 338197217, tabelas_publicas: 1, restricoes_nao_validadas: 0,
   conexoes: 3, conexoes_ativas: 1, aguardando_bloqueio: 0, limite_conexoes_servidor: 100,
@@ -31,6 +32,10 @@ const integridade = {
   tabelas: [{ nome: 'ficticia', status: 'sem_problemas_detectados', ocorrencias_primeiro_bloco: 0 }],
 };
 const storage = { coletado_em: '2026-11-25T18:00:00Z', bytes_conhecidos: 300000000, objetos: 4, objetos_sem_tamanho: 1 };
+const infra = {
+  consultado_em: '2026-11-25T18:00:00Z', memoria_total: 1000000000, memoria_disponivel: 400000000,
+  cpu: [{ cpu: '0', inativo: 100, total: 200 }],
+};
 const listaTabelas = {
   consultado_em: '2026-11-25T18:00:00Z',
   tabelas: Array.from({ length: 15 }, (_, i) => ({ ...metricas.maiores_tabelas[0], nome: `tabela_${i + 1}`, tipo: 'tabela' })),
@@ -56,7 +61,7 @@ const referencias = {
   ],
 };
 
-function route({ authenticated = true, permitted = true, queryError = null, configError = false, rpcError = null, listaInvalida = false } = {}) {
+function route({ authenticated = true, permitted = true, queryError = null, configError = false, rpcError = null, listaInvalida = false, infraError = false } = {}) {
   const calls = [];
   const code = ts.transpileModule(readFileSync('src/app/api/admin/monitoramento-glass/route.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -75,6 +80,11 @@ function route({ authenticated = true, permitted = true, queryError = null, conf
       },
     },
     '@/lib/monitoramento-glass': validators,
+    '@/lib/monitoramento-infra': infraLib,
+    '@/lib/monitoramento-infra-server': { consultarInfraGlass: async () => {
+      if (infraError) throw new Error('confidential settings');
+      return infra;
+    } },
     '@/lib/glass-client': {
       getGlassClient: async () => {
         calls.push(['client']);
@@ -158,6 +168,65 @@ test('verifica uma leitura limitada, inclusive quando não existem vidraçarias'
   assert.equal(result.storage.bytes_conhecidos, 300000000);
   assert.deepEqual(result.indices, indices);
   assert.deepEqual(result.referencias, referencias);
+  assert.deepEqual(result.infra, infra);
+});
+
+test('falha das métricas de infraestrutura não derruba o restante do painel', async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const result = await (await route({ infraError: true }).GET(new Request('http://localhost'))).json();
+    assert.equal(result.infra, null);
+    assert.match(result.infraErro, /indisponíveis/);
+    assert.ok(result.historico);
+    assert.doesNotMatch(JSON.stringify(result), /confidential settings/);
+  } finally { console.error = original; }
+});
+
+test('lê somente métricas da instância principal e calcula CPU entre leituras', () => {
+  function dados(idle, user, disponivel = 400) {
+    const labels = 'supabase_identifier="projeto",service_type="db"';
+    const cpu = Object.entries({ idle, user, nice: 0, system: 0, iowait: 0, irq: 0, softirq: 0, steal: 0 })
+      .map(([modo, valor]) => `node_cpu_seconds_total{${labels},cpu="0",mode="${modo}"} ${valor}`).join('\n');
+    return `${cpu}\nnode_memory_MemTotal_bytes{${labels}} 1000\nnode_memory_MemAvailable_bytes{${labels}} ${disponivel}\nnode_memory_MemTotal_bytes{supabase_identifier="replica",service_type="db"} 9999`;
+  }
+  const a = infraLib.interpretarMetricas(dados(100, 100), 'projeto', '2026-11-25T18:00:00Z');
+  const b = infraLib.interpretarMetricas(dados(130, 110), 'projeto', '2026-11-25T18:01:00Z');
+  assert.equal(a.memoria_total, 1000);
+  assert.equal(a.memoria_disponivel, 400);
+  assert.equal(infraLib.validarInfra(a), true);
+  assert.equal(infraLib.percentualCpu(null, a), null);
+  assert.equal(infraLib.percentualCpu(a, b), 25);
+  assert.equal(infraLib.percentualCpu(a, { ...a, consultado_em: b.consultado_em }), null);
+  assert.equal(infraLib.percentualCpu(b, { ...a, consultado_em: '2026-11-25T18:02:00Z' }), null);
+  assert.equal(infraLib.percentualCpu(a, { ...b, consultado_em: '2026-11-25T19:00:00Z' }), null);
+  assert.throws(() => infraLib.interpretarMetricas(dados(100, 100, 1001), 'projeto', a.consultado_em));
+  assert.throws(() => infraLib.interpretarMetricas(dados(100, 100), 'outra', a.consultado_em));
+  assert.throws(() => infraLib.interpretarMetricas(dados(100, 100).replace('mode="idle"', 'mode="unknown"'), 'projeto', a.consultado_em));
+});
+
+test('métricas são consultadas somente no endpoint Supabase configurado, sem seguir redirecionamentos', async () => {
+  let config = { glassUrl: 'https://projeto.supabase.co', glassServiceKey: 'segredo-ficticio' };
+  let chamada;
+  const server = load('src/lib/monitoramento-infra-server.ts', {
+    '@/lib/finance-config-server': { readFinanceConfig: async () => config },
+    '@/lib/monitoramento-infra': infraLib,
+  });
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    chamada = { url, options };
+    return new Response('node_memory_MemTotal_bytes{supabase_identifier="projeto",service_type="db"} 1000\nnode_memory_MemAvailable_bytes{supabase_identifier="projeto",service_type="db"} 400');
+  };
+  try {
+    assert.equal((await server.consultarInfraGlass()).memoria_disponivel, 400);
+    assert.equal(chamada.url, 'https://projeto.supabase.co/customer/v1/privileged/metrics');
+    assert.equal(chamada.options.redirect, 'error');
+    assert.equal(chamada.options.headers.Authorization, `Basic ${Buffer.from('service_role:segredo-ficticio').toString('base64')}`);
+    config = { ...config, glassUrl: 'https://outro.example' };
+    chamada = undefined;
+    await assert.rejects(server.consultarInfraGlass());
+    assert.equal(chamada, undefined);
+  } finally { globalThis.fetch = original; }
 });
 
 test('falha na consulta de índices é informada separadamente', async () => {
@@ -258,7 +327,7 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
     { status: 'disponivel', verificadoEm: '2026-11-25T18:00:00.000Z', tempoMs: 42 },
     { status: 'indisponivel', verificadoEm: '2026-11-25T18:01:00.000Z' },
   ];
-  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null, storage, storageErro: null, indices, indicesErro: null, referencias, referenciasErro: null }, true, 0, { status: 'pronto', lista: listaTabelas }];
+  const states = [history, 'Falha ao consultar o Glass.', false, { historico: amostras, historicoErro: null, integridade, integridadeErro: null, storage, storageErro: null, indices, indicesErro: null, referencias, referenciasErro: null, infra, infraErro: null }, true, 0, { status: 'pronto', lista: listaTabelas }, [{ consultadoEm: infra.consultado_em, cpu: 25, memoria: 60 }]];
   const dependencies = {
     'react/jsx-runtime': jsxRuntime,
     react: {
@@ -271,6 +340,7 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) },
     '@/lib/supabase-browser': { createSupabaseBrowser: () => ({}) },
     '@/lib/monitoramento-glass': validators,
+    '@/lib/monitoramento-infra': infraLib,
   };
   const module = { exports: {} };
   new Function('require', 'module', 'exports', code)(id => {
@@ -293,6 +363,9 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
   assert.match(html, /Outras regras de negócio, outros relacionamentos sem chave estrangeira/);
   assert.match(html, /tabela_15/);
   assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /Uso de CPU/);
+  assert.match(html, /25%/);
+  assert.match(html, /60%/);
   assert.match(html, /ficticia/);
   assert.match(html, /338,2 MB/);
   assert.match(html, /Parcial: 300 MB/);
@@ -301,7 +374,7 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
 });
 
 test('card recolhe e expande a lista completa', () => {
-  const states = [[], '', false, null, true, 0, { status: 'pronto', lista: listaTabelas }];
+  const states = [[], '', false, null, true, 0, { status: 'pronto', lista: listaTabelas }, []];
   let hook = 0;
   const dependencies = {
     'react/jsx-runtime': jsxRuntime,
@@ -318,6 +391,7 @@ test('card recolhe e expande a lista completa', () => {
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) },
     '@/lib/supabase-browser': { createSupabaseBrowser: () => ({}) },
     '@/lib/monitoramento-glass': validators,
+    '@/lib/monitoramento-infra': infraLib,
   };
   const Page = load('src/app/configuracoes/monitoramento-glass/page.tsx', dependencies).default;
   function render() { hook = 0; return Page(); }

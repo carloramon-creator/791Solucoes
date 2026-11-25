@@ -1186,3 +1186,17 @@ se houver dados, mostra apenas as maiores da ultima coleta. A consulta e
 restrita ao `service_role`; a API da Holding exige a mesma permissao do painel.
 O teste `scripts/tests/monitoramento-tabelas.local.sql`, no Glass, e somente
 para PostgreSQL descartavel.
+
+O painel tambem consulta CPU e memoria da instancia principal pela Metrics API
+do Supabase hospedado, em beta, usando no servidor a URL e a chave do Glass ja
+configuradas em Financeiro e API. A chave nao e enviada ao navegador; a URL e
+limitada a HTTPS em `*.supabase.co` e redirecionamentos sao recusados. Se a
+chave configurada nao for aceita pela API de metricas, e necessario configurar
+uma chave secreta aceita pelo Supabase; nao fornecer segredos em chats ou logs.
+A API atualiza os dados aproximadamente a cada minuto. Memoria usada corresponde
+a total menos disponivel; CPU e calculada pela diferenca dos contadores de duas
+leituras validas, excluindo tempo ocioso. A primeira leitura, contadores que nao
+avancaram ou diminuiram e intervalo superior a cinco minutos nao geram percentual
+de CPU. As ultimas 20 leituras ficam apenas na pagina aberta: nao ha retencao
+persistente nem alertas automaticos. Uma falha ou metrica ausente e exibida como
+indisponivel, nao como zero. Essas metricas nao representam o Railway.

@@ -3,6 +3,8 @@ import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { hasExplicitHoldingPermission } from '@/lib/holding-route-permissions';
 import { getGlassClient } from '@/lib/glass-client';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage } from '@/lib/monitoramento-glass';
+import { consultarInfraGlass } from '@/lib/monitoramento-infra-server';
+import { validarInfra } from '@/lib/monitoramento-infra';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,23 +50,26 @@ export async function GET(req: Request) {
     if (error) throw error;
 
     const tempoMs = Math.round(performance.now() - start);
-    const [historico, integridade, storage, indices, referencias] = await Promise.all([
+    const [historico, integridade, storage, indices, referencias, infra] = await Promise.all([
       consultar(() => glass.rpc('monitoramento_banco_glass_historico').abortSignal(AbortSignal.timeout(10000))),
       consultar(() => glass.rpc('monitoramento_integridade_glass_ultimo').abortSignal(AbortSignal.timeout(10000))),
       consultar(() => glass.rpc('monitoramento_storage_glass_ultimo').abortSignal(AbortSignal.timeout(10000))),
       consultar(() => glass.rpc('monitoramento_indices_glass_ultimo').abortSignal(AbortSignal.timeout(10000))),
       consultar(() => glass.rpc('monitoramento_referencias_glass_ultimo').abortSignal(AbortSignal.timeout(10000))),
+      consultar(async () => ({ data: await consultarInfraGlass(), error: null })),
     ]);
     const historicoValido = !historico.error && validarHistorico(historico.data);
     const integridadeValida = !integridade.error && validarIntegridade(integridade.data);
     const storageValido = !storage.error && validarStorage(storage.data);
     const indicesValidos = !indices.error && validarIndices(indices.data);
     const referenciasValidas = !referencias.error && validarReferencias(referencias.data);
+    const infraValida = !infra.error && validarInfra(infra.data);
     if (!historicoValido) console.error('[monitoramento-glass] Falha ao consultar histórico de métricas.');
     if (!integridadeValida) console.error('[monitoramento-glass] Falha ao consultar integridade das tabelas.');
     if (!storageValido) console.error('[monitoramento-glass] Falha ao consultar as métricas do Storage.');
     if (!indicesValidos) console.error('[monitoramento-glass] Falha ao consultar integridade dos índices.');
     if (!referenciasValidas) console.error('[monitoramento-glass] Falha ao consultar referências.');
+    if (!infraValida) console.error('[monitoramento-glass] Falha ao consultar métricas de infraestrutura.');
 
     return NextResponse.json({
       status: 'disponivel',
@@ -80,6 +85,8 @@ export async function GET(req: Request) {
       indicesErro: indicesValidos ? null : 'Verificação de índices indisponível. Verifique a migração e o acesso ao amcheck.',
       referencias: referenciasValidas ? referencias.data : null,
       referenciasErro: referenciasValidas ? null : 'Verificação de referências indisponível. Verifique a migração no Glass.',
+      infra: infraValida ? infra.data : null,
+      infraErro: infraValida ? null : 'Métricas de CPU e memória indisponíveis. Verifique a chave e a API de métricas do Glass.',
     }, { headers });
   } catch {
     console.error('[monitoramento-glass] Falha na verificação de leitura do Glass.');

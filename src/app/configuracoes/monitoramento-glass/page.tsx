@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
+import { percentualCpu, validarInfra, type InfraAmostra } from '@/lib/monitoramento-infra';
 
 type Verificacao = {
   status: 'disponivel' | 'indisponivel';
@@ -15,6 +16,7 @@ const dataHora = new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium',
 });
 const dia = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+const hora = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 const diaChave = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const numero = new Intl.NumberFormat('pt-BR');
 const nomesRegras: Record<string, string> = {
@@ -45,6 +47,8 @@ type DadosBanco = {
   indicesErro: string | null;
   referencias: ResultadoReferencias | null;
   referenciasErro: string | null;
+  infra: InfraAmostra | null;
+  infraErro: string | null;
 };
 
 function Cartao({ titulo, valor, detalhe }: { titulo: string; valor: string; detalhe: string }) {
@@ -64,8 +68,10 @@ export default function MonitoramentoGlassPage() {
   const [tabelasAbertas, setTabelasAbertas] = useState(true);
   const [atualizacaoTabelas, setAtualizacaoTabelas] = useState(0);
   const [listaTabelas, setListaTabelas] = useState<{ status: 'carregando' } | { status: 'erro'; mensagem: string } | { status: 'pronto'; lista: ListaTabelas }>({ status: 'carregando' });
+  const [historicoInfra, setHistoricoInfra] = useState<{ consultadoEm: string; cpu: number | null; memoria: number | null }[]>([]);
   const emAndamento = useRef(false);
   const montado = useRef(false);
+  const infraAnterior = useRef<InfraAmostra | null>(null);
 
   const verificar = useCallback(async () => {
     if (emAndamento.current) return;
@@ -103,11 +109,13 @@ export default function MonitoramentoGlassPage() {
           || !validarStorage(result.storage)
           || !validarIndices(result.indices)
           || !validarReferencias(result.referencias)
+          || !(result.infra === null || validarInfra(result.infra))
           || !(result.historicoErro === null || typeof result.historicoErro === 'string')
           || !(result.integridadeErro === null || typeof result.integridadeErro === 'string')
           || !(result.storageErro === null || typeof result.storageErro === 'string')
           || !(result.indicesErro === null || typeof result.indicesErro === 'string')
-          || !(result.referenciasErro === null || typeof result.referenciasErro === 'string')) {
+          || !(result.referenciasErro === null || typeof result.referenciasErro === 'string')
+          || !(result.infraErro === null || typeof result.infraErro === 'string')) {
           throw new Error('Os dados do banco retornados são inválidos.');
         }
         setDadosBanco({
@@ -121,13 +129,27 @@ export default function MonitoramentoGlassPage() {
           indicesErro: result.indicesErro,
           referencias: result.referencias,
           referenciasErro: result.referenciasErro,
+          infra: result.infra,
+          infraErro: result.infraErro,
         });
+        if (result.infra) {
+          const infra: InfraAmostra = result.infra;
+          const cpu = percentualCpu(infraAnterior.current, infra);
+          infraAnterior.current = infra;
+          const memoria = infra.memoria_total !== null && infra.memoria_disponivel !== null
+            ? (1 - infra.memoria_disponivel / infra.memoria_total) * 100 : null;
+          setHistoricoInfra(atual => [...atual, { consultadoEm: infra.consultado_em, cpu, memoria }].slice(-20));
+        } else {
+          infraAnterior.current = null;
+        }
       } else {
         setDadosBanco(null);
+        infraAnterior.current = null;
       }
     } catch (error) {
       if (montado.current) {
         setDadosBanco(null);
+        infraAnterior.current = null;
         setErro(error instanceof Error ? error.message : 'Não foi possível verificar a integração.');
       }
     } finally {
@@ -202,6 +224,9 @@ export default function MonitoramentoGlassPage() {
   const indicesAntigos = indices && verificadoMs !== null && verificadoMs - new Date(indices.concluido_em).getTime() > 48 * 60 * 60 * 1000;
   const referencias = dadosBanco?.referencias;
   const referenciasAntigas = referencias && verificadoMs !== null && verificadoMs - new Date(referencias.concluido_em).getTime() > 48 * 60 * 60 * 1000;
+  const infra = dadosBanco?.infra;
+  const ultimaInfra = historicoInfra.at(-1);
+  const percentual = (valor: number) => `${numero.format(Math.round(valor * 10) / 10)}%`;
 
   return <main className="space-y-5 pb-12">
     <header className="flex flex-wrap items-center justify-between gap-3">
@@ -250,6 +275,37 @@ export default function MonitoramentoGlassPage() {
             title={`${dataHora.format(new Date(item.verificadoEm))}: ${item.tempoMs === undefined ? 'falhou' : `${item.tempoMs} ms`}`} />
         </div>)}
       </div> : <p className="mt-4 text-sm text-slate-500">Nenhuma verificação concluída nesta página.</p>}
+    </section>
+
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-800">Desempenho do banco Glass</h2>
+        <p className="mt-1 text-sm text-slate-500">CPU e memória da instância principal do Supabase, não do aplicativo no Railway.</p>
+      </div>
+      {dadosBanco?.infraErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.infraErro}</p>}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Cartao titulo="Uso de CPU" valor={infra && ultimaInfra?.cpu != null ? percentual(ultimaInfra.cpu) : 'Não disponível'}
+          detalhe={infra && infra.cpu.length ? ultimaInfra?.cpu == null ? 'Aguardando duas leituras válidas para calcular o uso.' : 'Calculado entre as duas últimas leituras válidas.' : 'Métrica de CPU não disponível.'} />
+        <Cartao titulo="Memória utilizada" valor={infra && ultimaInfra?.memoria != null ? percentual(ultimaInfra.memoria) : 'Não disponível'}
+          detalhe={infra?.memoria_total != null && infra.memoria_disponivel != null
+            ? `${bytes(infra.memoria_total - infra.memoria_disponivel)} de ${bytes(infra.memoria_total)}; considera memória disponível para o sistema.`
+            : 'Métrica de memória não disponível.'} />
+      </div>
+      {infra && <p className="text-xs text-slate-500">Última consulta à API de métricas: {dataHora.format(new Date(infra.consultado_em))}. A origem é atualizada aproximadamente a cada minuto.</p>}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <h3 className="font-bold text-slate-800">Evolução nesta tela</h3>
+        <p className="mt-1 text-xs text-slate-500">Até 20 leituras enquanto a página estiver aberta; o histórico não é salvo. CPU depende de duas leituras diferentes.</p>
+        {historicoInfra.length ? <div className="mt-4 flex h-36 items-end gap-3 overflow-x-auto" aria-label="Histórico de CPU e memória">
+          {historicoInfra.map((item, index) => <div key={`${item.consultadoEm}-${index}`} className="flex min-w-12 flex-col items-center gap-1">
+            <div className="flex h-24 items-end gap-1" title={`${dataHora.format(new Date(item.consultadoEm))}: CPU ${item.cpu === null ? 'indisponível' : percentual(item.cpu)}; memória ${item.memoria === null ? 'indisponível' : percentual(item.memoria)}`}>
+              <div className="w-4 rounded-t bg-[#3b597b]" style={{ height: item.cpu === null ? 0 : Math.max(2, item.cpu * 0.9) }} />
+              <div className="w-4 rounded-t bg-emerald-500" style={{ height: item.memoria === null ? 0 : Math.max(2, item.memoria * 0.9) }} />
+            </div>
+            <span className="text-[10px] text-slate-500">{hora.format(new Date(item.consultadoEm))}</span>
+          </div>)}
+        </div> : <p className="mt-4 text-sm text-slate-500">Nenhuma leitura disponível nesta página.</p>}
+        <p className="mt-2 text-xs text-slate-500">Azul: CPU · Verde: memória. Ausência de barra não indica uso zero.</p>
+      </div>
     </section>
 
     <section className="space-y-4">

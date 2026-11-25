@@ -13,7 +13,8 @@ import {
   Monitor,
   Wallet,
   Receipt,
-  Tag
+  Tag,
+  Database
 } from 'lucide-react';
 
 export default function ConfiguracoesPage() {
@@ -22,6 +23,15 @@ export default function ConfiguracoesPage() {
   const [unrestrictedFallback, setUnrestrictedFallback] = useState(true);
 
   const configSections = [
+    {
+      title: 'Monitoramento do Glass',
+      desc: 'Acompanhe a conexão da Holding com o banco do Glass.',
+      href: '/configuracoes/monitoramento-glass',
+      resourceCode: 'submenu.configuracoes.financeiro',
+      icon: Database,
+      color: 'text-cyan-700',
+      bg: 'bg-cyan-50'
+    },
     {
       title: 'Financeiro e API',
       desc: 'Gerencie as chaves do Asaas, Inter e faturamento.',

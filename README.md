@@ -1099,3 +1099,12 @@ Aplicar primeiro as migrations de acessos no banco Glass; a API nao mascara
 ausencia de tabelas como uma estimativa de zero.
 
 Teste: `node --test scripts/tests/glass-user-billing.test.mjs`.
+
+## Monitoramento da conexão com o Glass
+
+Em Configurações → Monitoramento do Glass, uma consulta de leitura verifica a
+integração da Holding com a API de dados do Glass. O acesso exige a permissão
+`submenu.configuracoes.financeiro`. O histórico e o gráfico guardam até 20
+verificações somente enquanto a página estiver aberta; não são monitoramento
+contínuo, nem verificam Storage, capacidade do banco ou backups. Nenhuma
+credencial é enviada ao navegador.

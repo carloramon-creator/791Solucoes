@@ -52,9 +52,9 @@ type DadosBanco = {
 };
 
 function Cartao({ titulo, valor, detalhe }: { titulo: string; valor: string; detalhe: string }) {
-  return <div className="rounded-xl border border-slate-200 bg-white p-5">
+  return <div className="rounded-xl border border-slate-200 bg-white p-4">
     <p className="text-xs font-bold uppercase text-slate-500">{titulo}</p>
-    <p className="mt-2 text-xl font-bold text-slate-800">{valor}</p>
+    <p className="mt-1 text-xl font-bold text-slate-800">{valor}</p>
     <p className="mt-1 text-xs text-slate-500">{detalhe}</p>
   </div>;
 }
@@ -244,7 +244,7 @@ export default function MonitoramentoGlassPage() {
     }
   }
 
-  return <main className="space-y-5 pb-12">
+  return <main className="space-y-4 pb-12">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Monitoramento do Glass</h1>
@@ -261,27 +261,27 @@ export default function MonitoramentoGlassPage() {
     {erro && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</p>}
 
     <section className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-xs font-bold uppercase text-slate-500">Última verificação do Glass</p>
         <p className={`mt-2 text-xl font-bold ${ultima?.status === 'disponivel' && !erro ? 'text-emerald-700' : 'text-slate-700'}`}>
           {erro && ultima?.status !== 'indisponivel' ? 'Não verificado' : ultima ? ultima.status === 'disponivel' ? 'Consulta realizada' : 'Consulta falhou' : 'Ainda não verificado'}
         </p>
         <p className="mt-1 text-xs text-slate-500">{ultima ? dataHora.format(new Date(ultima.verificadoEm)) : 'Aguardando verificação'}</p>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-xs font-bold uppercase text-slate-500">Tempo da última consulta</p>
         <p className="mt-2 text-xl font-bold text-slate-800">{!erro && ultima?.tempoMs !== undefined ? `${ultima.tempoMs} ms` : 'Não disponível'}</p>
         <p className="mt-1 text-xs text-slate-500">Inclui a obtenção da configuração na Holding.</p>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <p className="text-xs font-bold uppercase text-slate-500">Verificações nesta tela</p>
         <p className="mt-2 text-xl font-bold text-slate-800">{historico.length}</p>
         <p className="mt-1 text-xs text-slate-500">Atualiza a cada minuto enquanto a página estiver aberta.</p>
       </div>
     </section>
 
-    <section className="rounded-xl border border-slate-200 bg-white p-5">
-      <h2 className="font-bold text-slate-800">Tempo de resposta das últimas verificações</h2>
+    <details className="rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="cursor-pointer font-bold text-slate-800">Tempo de resposta das últimas verificações</summary>
       <p className="mt-1 text-xs text-slate-500">Até 20 medições nesta página; falhas aparecem em vermelho. O histórico não é salvo.</p>
       {historico.length ? <div className="mt-4 flex h-36 items-end gap-2 overflow-x-auto" aria-label="Histórico de verificações">
         {historico.map((item, index) => <div key={`${item.verificadoEm}-${index}`} className="flex min-w-8 flex-col items-center justify-end gap-1">
@@ -291,29 +291,27 @@ export default function MonitoramentoGlassPage() {
             title={`${dataHora.format(new Date(item.verificadoEm))}: ${item.tempoMs === undefined ? 'falhou' : `${item.tempoMs} ms`}`} />
         </div>)}
       </div> : <p className="mt-4 text-sm text-slate-500">Nenhuma verificação concluída nesta página.</p>}
-    </section>
+    </details>
 
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div>
         <h2 className="text-xl font-bold text-slate-800">Desempenho do banco Glass</h2>
         <p className="mt-1 text-sm text-slate-500">CPU, memória e disco da instância principal do Supabase, não do aplicativo no Railway.</p>
       </div>
       {dadosBanco?.infraErro && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{dadosBanco.infraErro}</p>}
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className={`rounded-xl border p-3 text-sm ${alertas.length || !infra ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white text-slate-700'}`}>
         <h3 className="font-bold">Alertas nesta tela</h3>
-        <p className="mt-1">CPU ou memória a partir de 80% em leituras consecutivas por 5 minutos; disco a partir de 85%. Avisos apenas enquanto esta página estiver aberta, sem notificações.</p>
         {alertas.length > 0 ? <ul role="alert" className="mt-2 list-inside list-disc font-bold">{alertas.map(alerta => <li key={alerta}>{alerta}</li>)}</ul>
-          : <p className="mt-2">{infra ? 'Nenhum alerta identificado nas leituras disponíveis; dados ausentes não são avaliados.' : 'Aguardando métricas disponíveis para avaliar os alertas.'}</p>}
+          : <p className="mt-1">{infra ? 'Nenhum alerta identificado nas leituras disponíveis; dados ausentes não são avaliados.' : 'Aguardando métricas disponíveis para avaliar os alertas.'}</p>}
+        <p className="mt-1 text-xs">CPU ou memória a partir de 80% em leituras consecutivas por 5 minutos; disco a partir de 85%. Avisos apenas enquanto esta página estiver aberta, sem notificações.</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Cartao titulo="Uso de CPU" valor={infra && ultimaInfra?.cpu != null ? percentual(ultimaInfra.cpu) : 'Não disponível'}
           detalhe={infra && infra.cpu.length ? ultimaInfra?.cpu == null ? 'Aguardando duas leituras válidas para calcular o uso.' : 'Calculado entre as duas últimas leituras válidas.' : 'Métrica de CPU não disponível.'} />
         <Cartao titulo="Memória utilizada" valor={infra && ultimaInfra?.memoria != null ? percentual(ultimaInfra.memoria) : 'Não disponível'}
           detalhe={infra?.memoria_total != null && infra.memoria_disponivel != null
             ? `${bytes(infra.memoria_total - infra.memoria_disponivel)} de ${bytes(infra.memoria_total)}; considera memória disponível para o sistema.`
             : 'Métrica de memória não disponível.'} />
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
         {(['/', '/data'] as const).map(ponto => {
           const disco = infra?.discos.find(item => item.ponto === ponto);
           const uso = disco?.total != null && disco.disponivel != null ? (1 - disco.disponivel / disco.total) * 100 : null;
@@ -323,8 +321,8 @@ export default function MonitoramentoGlassPage() {
               : 'Métrica deste sistema de arquivos não disponível.'} />;
         })}
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="font-bold text-slate-800">Atividade de disco por dispositivo</h3>
+      <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Atividade de disco por dispositivo</summary>
         <p className="mt-1 text-xs text-slate-500">Taxas aproximadas entre leituras; dispositivos não são somados, pois podem se sobrepor. Disco da instância não é o Storage de objetos nem a cobrança.</p>
         {infra?.dispositivos.length ? <div className="mt-3 space-y-2">
           {(ultimaInfra?.taxas ?? []).map(dispositivo => <p key={dispositivo.nome} className="text-sm text-slate-700">
@@ -332,10 +330,10 @@ export default function MonitoramentoGlassPage() {
           </p>)}
           {!ultimaInfra?.taxas?.length && <p className="text-sm text-slate-500">Aguardando leituras para calcular as taxas.</p>}
         </div> : <p className="mt-3 text-sm text-slate-500">Métricas de atividade de disco não disponíveis.</p>}
-      </div>
+      </details>
       {infra && <p className="text-xs text-slate-500">Última consulta à API de métricas: {dataHora.format(new Date(infra.consultado_em))}. A origem é atualizada aproximadamente a cada minuto.</p>}
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="font-bold text-slate-800">Evolução nesta tela</h3>
+      <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Evolução nesta tela (CPU e memória)</summary>
         <p className="mt-1 text-xs text-slate-500">Até 20 leituras enquanto a página estiver aberta; o histórico não é salvo. CPU depende de duas leituras diferentes.</p>
         {historicoInfra.length ? <div className="mt-4 flex h-36 items-end gap-3 overflow-x-auto" aria-label="Histórico de CPU e memória">
           {historicoInfra.map((item, index) => <div key={`${item.consultadoEm}-${index}`} className="flex min-w-12 flex-col items-center gap-1">
@@ -347,7 +345,7 @@ export default function MonitoramentoGlassPage() {
           </div>)}
         </div> : <p className="mt-4 text-sm text-slate-500">Nenhuma leitura disponível nesta página.</p>}
         <p className="mt-2 text-xs text-slate-500">Azul: CPU · Verde: memória. Ausência de barra não indica uso zero.</p>
-      </div>
+      </details>
     </section>
 
     <section className="space-y-4">
@@ -361,7 +359,7 @@ export default function MonitoramentoGlassPage() {
       {storageAntigo && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">A última coleta do Storage tem mais de duas horas. Verifique o agendamento no Supabase.</p>}
       {storage && storage.objetos_sem_tamanho > 0 && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">O tamanho do Storage é parcial: {numero.format(storage.objetos_sem_tamanho)} objeto(s) sem tamanho válido nos metadados.</p>}
       {ultimaAmostra && <p className="text-xs text-slate-500">Última coleta: {dataHora.format(new Date(ultimaAmostra.coletado_em))}</p>}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <Cartao titulo="Tamanho do banco" valor={metricas ? bytes(metricas.banco_bytes) : 'Não disponível'} detalhe="Tamanho do banco PostgreSQL, não do disco completo." />
         <Cartao titulo="Storage" valor={storage && (storage.objetos === 0 || storage.objetos_sem_tamanho < storage.objetos) ? `${storage.objetos_sem_tamanho ? 'Parcial: ' : ''}${bytes(storage.bytes_conhecidos)}` : 'Não disponível'}
           detalhe={storage ? `${numero.format(storage.objetos)} objetos; coleta em ${dataHora.format(new Date(storage.coletado_em))}.` : 'Aguardando coleta dos metadados dos arquivos.'} />
@@ -374,8 +372,8 @@ export default function MonitoramentoGlassPage() {
       </div>
       <p className="text-xs text-slate-500">O Storage soma os tamanhos presentes nos metadados de storage.objects; não é verificação dos arquivos nem representa outras categorias de uso ou a cobrança oficial.</p>
       {dadosBanco?.historico && amostras.length === 0 && <p className="text-sm text-slate-500">Ainda não há coletas registradas.</p>}
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="font-bold text-slate-800">Evolução do tamanho do banco</h3>
+      <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Evolução do tamanho do banco</summary>
         <p className="mt-1 text-xs text-slate-500">Última coleta de cada dia, nos últimos 30 dias; lacunas indicam dias sem coleta.</p>
         {diarias.length ? <div className="mt-4 flex h-40 items-end gap-2 overflow-x-auto" aria-label="Tamanho do banco por dia">
           {diarias.map(item => <div key={item.coletado_em} className="flex min-w-10 flex-col items-center justify-end gap-1">
@@ -384,7 +382,7 @@ export default function MonitoramentoGlassPage() {
             <span className="text-[10px] text-slate-500">{dia.format(new Date(item.coletado_em))}</span>
           </div>)}
         </div> : <p className="mt-4 text-sm text-slate-500">Sem dados para o gráfico.</p>}
-      </div>
+      </details>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <h3><button type="button" aria-expanded={tabelasAbertas} aria-controls="lista-tabelas-publicas"
           onClick={() => setTabelasAbertas(aberto => !aberto)}
@@ -403,6 +401,7 @@ export default function MonitoramentoGlassPage() {
           {listaTabelas.status === 'carregando' && <p className="px-5 pb-4 text-sm text-slate-500">Carregando todas as tabelas...</p>}
           {listaTabelas.status === 'erro' && <p role="alert" className="mx-5 mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{listaTabelas.mensagem}</p>}
           {tabelasExibidas && <>
+            <div className="max-h-80 overflow-auto" tabIndex={0} role="region" aria-label="Lista de tabelas públicas">
             <table className="w-full text-left text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Tamanho com índices</th><th className="p-3">Linhas vivas estimadas</th><th className="p-3">Linhas mortas estimadas</th><th className="p-3">Último autovacuum</th></tr></thead>
               <tbody>{tabelasExibidas.map(t => <tr key={t.nome} className="border-t border-slate-100">
@@ -413,6 +412,7 @@ export default function MonitoramentoGlassPage() {
                 <td className="p-3">{t.ultimo_autovacuum ? dataHora.format(new Date(t.ultimo_autovacuum)) : 'Não informado'}</td>
               </tr>)}</tbody>
             </table>
+            </div>
             {!tabelasExibidas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela disponível.</p>}
           </>}
           <p className="px-5 pb-4 pt-3 text-xs text-slate-500">Inclui tabelas físicas, particionadas e externas e visões materializadas de public. Tamanho de tabelas particionadas e externas não é informado; as partições físicas aparecem separadamente.</p>
@@ -438,7 +438,9 @@ export default function MonitoramentoGlassPage() {
           <Cartao titulo="Problemas detectados" valor={numero.format(problemas.length)} detalhe="Tabelas com ocorrências estruturais detectadas." />
           <Cartao titulo="Falha ao verificar" valor={numero.format(errosIntegridade.length)} detalhe="Não são consideradas íntegras nem corrompidas." />
         </div>
-        {integridade.tabelas.length > 0 && <figure className="rounded-xl border border-slate-200 bg-white p-5">
+        <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Detalhes da verificação de tabelas</summary>
+        {integridade.tabelas.length > 0 && <figure className="mt-4">
           <figcaption className="font-bold text-slate-800">Resultado da última verificação</figcaption>
           <div className="mt-4 flex h-5 overflow-hidden rounded-full" aria-label={`${semProblemas.length} sem problemas detectados, ${problemas.length} com problemas, ${errosIntegridade.length} sem verificação`}>
             <div className="bg-emerald-500" style={{ width: `${semProblemas.length / integridade.tabelas.length * 100}%` }} />
@@ -447,7 +449,7 @@ export default function MonitoramentoGlassPage() {
           </div>
           <p className="mt-2 text-xs text-slate-600">Sem problemas detectados: {numero.format(semProblemas.length)} · Problemas: {numero.format(problemas.length)} · Falhas de verificação: {numero.format(errosIntegridade.length)}</p>
         </figure>}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="mt-4 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white" tabIndex={0} role="region" aria-label="Resultados de integridade das tabelas">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Tabela</th><th className="p-3">Resultado</th></tr></thead>
             <tbody>{integridade.tabelas.map(t => <tr key={t.nome} className="border-t border-slate-100">
@@ -456,6 +458,7 @@ export default function MonitoramentoGlassPage() {
           </table>
           {!integridade.tabelas.length && <p className="p-5 text-sm text-slate-500">Nenhuma tabela compatível foi verificada.</p>}
         </div>
+        </details>
       </>}
       <p className="text-xs text-slate-500">O teste examina a estrutura das tabelas heap, parando no primeiro bloco com problemas. Não verifica índices, valores TOAST, arquivos do Storage, lógica dos dados ou backups; um resultado sem problemas não garante ausência de toda corrupção.</p>
     </section>
@@ -470,7 +473,9 @@ export default function MonitoramentoGlassPage() {
       {indices && <>
         <p className="text-xs text-slate-500">Concluída em {dataHora.format(new Date(indices.concluido_em))} · {numero.format(indices.indices.length)} índices identificados.</p>
         {indices.indices.some(i => i.status !== 'sem_problemas_detectados') && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Há índices com problemas, inválidos ou não verificados. Investigue antes de qualquer reparo.</p>}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Detalhes da verificação de índices</summary>
+        <div className="mt-4 max-h-80 overflow-auto rounded-xl border border-slate-200" tabIndex={0} role="region" aria-label="Resultados de integridade dos índices">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="p-3">Índice</th><th className="p-3">Resultado</th></tr></thead>
             <tbody>{indices.indices.map(i => <tr key={i.nome} className="border-t border-slate-100">
@@ -479,6 +484,7 @@ export default function MonitoramentoGlassPage() {
           </table>
           {!indices.indices.length && <p className="p-5 text-sm text-slate-500">Nenhum índice B-tree compatível identificado.</p>}
         </div>
+        </details>
       </>}
       <p className="text-xs text-slate-500">Examina somente índices B-tree físicos de public; não verifica a correspondência de todas as linhas da tabela com o índice nem garante ausência de corrupção.</p>
     </section>
@@ -495,7 +501,9 @@ export default function MonitoramentoGlassPage() {
         {referencias.relacionamentos.some(r => r.status !== 'sem_ocorrencias') && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Há possíveis violações ou falhas na verificação de relacionamentos pendentes.</p>}
         {referencias.arquivos.some(a => a.status === 'erro_verificacao' || (a.status === 'verificado' && a.sem_metadados > 0)) && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Há referências sem metadados no Storage ou fontes não verificadas. Confira os detalhes antes de qualquer ação.</p>}
         {referencias.regras.some(r => r.status !== 'sem_ocorrencias') && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Há possíveis inconsistências ou falhas nas regras verificadas.</p>}
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
+        <details className="rounded-xl border border-slate-200 bg-white p-4">
+        <summary className="cursor-pointer font-bold text-slate-800">Detalhes de relacionamentos e arquivos</summary>
+        <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
           <h3 className="font-bold text-slate-800">Chaves estrangeiras ainda não validadas</h3>
           <p className="mt-1 text-xs text-slate-500">Somente restrições NOT VALID do esquema public. Sem ocorrências não valida a restrição nem cobre relacionamentos sem chave estrangeira.</p>
           {referencias.relacionamentos.length === 0 ? <p className="mt-3 text-sm text-slate-500">Nenhuma chave estrangeira pendente de validação encontrada.</p> :
@@ -506,7 +514,7 @@ export default function MonitoramentoGlassPage() {
               </tr>)}</tbody>
             </table>}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
           <h3 className="font-bold text-slate-800">Regras de vínculo entre registros</h3>
           <p className="mt-1 text-xs text-slate-500">Apenas as quatro regras listadas, baseadas nos vínculos de orçamento e financeiro. Não substituem a verificação de todas as regras de negócio.</p>
           <table className="mt-3 w-full text-left text-sm">
@@ -516,7 +524,7 @@ export default function MonitoramentoGlassPage() {
             </tr>)}</tbody>
           </table>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
           <h3 className="font-bold text-slate-800">Referências de anexos ao Storage</h3>
           <p className="mt-1 text-xs text-slate-500">Somente anexos de orçamento, OS, financeiro e chat interno criados há mais de uma hora. Compara os caminhos com os metadados; não confirma a existência física nem inclui todos os arquivos. Ausências podem ser temporárias.</p>
           <table className="mt-3 w-full text-left text-sm">
@@ -527,6 +535,7 @@ export default function MonitoramentoGlassPage() {
           </table>
           {!referencias.arquivos.length && <p className="mt-3 text-sm text-slate-500">Nenhuma fonte de arquivos verificada.</p>}
         </div>
+        </details>
       </>}
     </section>
     <section className="space-y-4">

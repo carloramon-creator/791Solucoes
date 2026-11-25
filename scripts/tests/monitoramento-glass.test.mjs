@@ -439,6 +439,23 @@ test('painel distingue a verificação de leitura de backup e exibe falhas no hi
   assert.match(html, /Parcial: 300 MB/);
   assert.match(html, /1 objeto\(s\) sem tamanho válido/);
   assert.match(html, /não garante ausência de toda corrupção/);
+  for (const titulo of [
+    'Tempo de resposta das últimas verificações',
+    'Atividade de disco por dispositivo',
+    'Evolução nesta tela (CPU e memória)',
+    'Evolução do tamanho do banco',
+    'Detalhes da verificação de tabelas',
+    'Detalhes da verificação de índices',
+    'Detalhes de relacionamentos e arquivos',
+  ]) {
+    const inicio = html.indexOf(`>${titulo}</summary>`);
+    assert.ok(inicio > 0, `Detalhe ausente: ${titulo}`);
+    const abertura = html.slice(html.lastIndexOf('<details', inicio), inicio);
+    assert.doesNotMatch(abertura, /\sopen(?:=|\s|>)/);
+  }
+  assert.ok(html.indexOf('Há índices com problemas, inválidos ou não verificados') < html.indexOf('Detalhes da verificação de índices'));
+  assert.ok(html.indexOf('Há referências sem metadados no Storage') < html.indexOf('Detalhes de relacionamentos e arquivos'));
+  assert.match(html, /max-h-80 overflow-auto[^"]*"[^>]*aria-label="Lista de tabelas públicas"/);
 });
 
 test('painel mostra alertas nos limites e não interpreta métricas ausentes como normais', () => {

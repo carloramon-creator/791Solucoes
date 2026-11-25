@@ -1187,6 +1187,10 @@ restrita ao `service_role`; a API da Holding exige a mesma permissao do painel.
 O teste `scripts/tests/monitoramento-tabelas.local.sql`, no Glass, e somente
 para PostgreSQL descartavel.
 
+Para compactar a tela, graficos e detalhes das verificacoes podem ser
+expandidos sob demanda; alertas continuam visiveis. A lista completa de
+tabelas permanece expansivel e possui rolagem propria.
+
 O painel tambem consulta CPU, memoria e disco da instancia principal pela Metrics API
 do Supabase hospedado, em beta, usando no servidor a URL e a chave do Glass ja
 configuradas em Financeiro e API. A chave nao e enviada ao navegador; a URL e

@@ -14,7 +14,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createCipheriv, randomBytes, createHash } from 'crypto';
-import { Readable } from 'stream';
 
 const execFileAsync = promisify(execFile);
 
@@ -212,7 +211,7 @@ async function uploadDrive(
         'Content-Type': `multipart/related; boundary=${boundary}`,
         'Content-Length': String(corpo.length),
       },
-      body: Readable.from(corpo) as unknown as BodyInit,
+      body: new Uint8Array(corpo),
     },
   );
 

@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { Loader2 } from 'lucide-react';
 import InternalTenantChatWidget from '@/components/InternalTenantChatWidget';
+import NewGlassTenantNotifications from '@/components/NewGlassTenantNotifications';
 
 const MENU_ORDER: Array<{ path: string; resourceCode: string }> = [
   { path: '/', resourceCode: 'menu.dashboard' },
@@ -255,6 +256,7 @@ function HoldingLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-[#f8fafc]">
           {children}
         </main>
+        <NewGlassTenantNotifications />
         <InternalTenantChatWidget />
       </div>
     </div>

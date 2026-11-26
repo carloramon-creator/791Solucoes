@@ -217,7 +217,8 @@ export async function GET(req: Request) {
       glass
         .from('vidracarias')
         .select('*')
-        .order('nome'),
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }),
       glass
         .from('user_profiles')
         .select('vidracaria_id, user_id, ativo, created_at'),

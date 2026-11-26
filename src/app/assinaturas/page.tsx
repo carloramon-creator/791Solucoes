@@ -892,7 +892,14 @@ export default function AssinaturasPage() {
   const extrasValueOf = (tenant: Vidracaria) => Number(usageByTenant[tenant.id]?.overage.values.total || 0);
 
   const sortedTenants = (() => {
-    if (!sort) return filteredTenants;
+    if (!sort) {
+      return [...filteredTenants].sort((a, b) => {
+        const createdAtDifference = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        return Number.isNaN(createdAtDifference)
+          ? (a.nome || '').localeCompare(b.nome || '', 'pt-BR')
+          : createdAtDifference || (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+      });
+    }
     const valueOf = (tenant: Vidracaria): string | number => {
       switch (sort.key) {
         case 'nome': return (tenant.nome || '').toLocaleLowerCase('pt-BR');

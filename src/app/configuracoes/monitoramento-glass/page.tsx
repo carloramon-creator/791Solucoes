@@ -197,11 +197,21 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
 
   useEffect(() => {
     void carregarLista();
+    void consultarStatus();
+    void consultarStatusStorage();
+
+    // Polling contínuo automático a cada 5 segundos para refletir backups automáticos do cron
+    const intervalGeral = setInterval(() => {
+      void consultarStatus();
+      void consultarStatusStorage();
+    }, 5000);
+
     return () => {
+      clearInterval(intervalGeral);
       pararPolling();
       pararPollingStorage();
     };
-  }, [carregarLista, pararPolling, pararPollingStorage]);
+  }, [carregarLista, consultarStatus, consultarStatusStorage, pararPolling, pararPollingStorage]);
 
   const abrirModalRestauracao = (arq: BackupArquivoDrive) => {
     setModalRestaurar(arq);
@@ -228,6 +238,11 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
   const arquivosBanco = useMemo(() => arquivos.filter(a => a.nome.endsWith('.bkgl')), [arquivos]);
   const arquivosStorage = useMemo(() => arquivos.filter(a => a.nome.endsWith('.bksg')), [arquivos]);
 
+  const progressoStorage = useMemo(() => {
+    if (statusStorage.fase !== 'baixando' || !statusStorage.totalArquivos) return 0;
+    return Math.min(100, Math.round((statusStorage.processados / statusStorage.totalArquivos) * 100));
+  }, [statusStorage]);
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -243,12 +258,18 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
 
           {/* Status Banco */}
           {statusBackup.fase === 'exportando' && (
-            <p className="mt-1 text-sm text-slate-600">Exportando banco do Glass (PostgreSQL)...</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
+              <p className="text-sm font-medium text-blue-700">Exportando banco do Glass (PostgreSQL)...</p>
+            </div>
           )}
           {statusBackup.fase === 'enviando' && (
-            <p className="mt-1 text-sm text-slate-600">
-              Enviando banco para o Drive ({Math.round(statusBackup.bytesExportados / 1024)} KB)...
-            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
+              <p className="text-sm font-medium text-blue-700">
+                Enviando banco para o Drive ({Math.round(statusBackup.bytesExportados / 1024)} KB)...
+              </p>
+            </div>
           )}
           {statusBackup.fase === 'concluido' && (
             <p className="mt-1 text-sm text-emerald-700 font-medium">
@@ -263,19 +284,52 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
             <p role="alert" className="mt-1 text-sm text-red-700">{erroBackup}</p>
           )}
 
-          {/* Status Storage */}
+          {/* Status Storage com círculo de porcentagem */}
           {statusStorage.fase === 'listando' && (
-            <p className="mt-1 text-sm text-indigo-600 font-medium animate-pulse">Storage: mapeando buckets e arquivos...</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
+              <p className="text-sm text-indigo-700 font-medium">Storage: mapeando buckets e arquivos...</p>
+            </div>
           )}
           {statusStorage.fase === 'baixando' && (
-            <p className="mt-1 text-sm text-indigo-600 font-medium">
-              Storage: baixando arquivos ({statusStorage.processados}/{statusStorage.totalArquivos} · {bytes(statusStorage.bytesBaixados)})...
-            </p>
+            <div className="flex items-center gap-3 mt-2">
+              {/* Círculo SVG de progresso */}
+              <div className="relative flex items-center justify-center">
+                <svg className="h-9 w-9 -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="text-slate-100"
+                    strokeWidth="3.5"
+                    stroke="currentColor"
+                    fill="none"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                  <path
+                    className="text-indigo-600 transition-all duration-300 ease-out"
+                    strokeDasharray={`${progressoStorage}, 100`}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="none"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                </svg>
+                <span className="absolute text-[9px] font-bold text-indigo-900 font-mono">{progressoStorage}%</span>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-indigo-900">
+                  Storage: baixando ({statusStorage.processados}/{statusStorage.totalArquivos} arquivos)
+                </p>
+                <p className="text-[11px] text-indigo-600 font-medium">{bytes(statusStorage.bytesBaixados)} processados</p>
+              </div>
+            </div>
           )}
           {statusStorage.fase === 'enviando' && (
-            <p className="mt-1 text-sm text-indigo-600 font-medium animate-pulse">
-              Storage: criptografando e enviando para o Drive ({bytes(statusStorage.bytesEnviados)})...
-            </p>
+            <div className="flex items-center gap-2 mt-1.5">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent"></div>
+              <p className="text-sm text-indigo-700 font-medium">
+                Storage: criptografando e enviando para o Drive ({bytes(statusStorage.bytesEnviados)})...
+              </p>
+            </div>
           )}
           {statusStorage.fase === 'concluido' && (
             <p className="mt-1 text-sm text-emerald-700 font-medium">

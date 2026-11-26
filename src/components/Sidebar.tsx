@@ -68,7 +68,6 @@ const navigationItems: NavItem[] = [
     ],
   },
   { name: 'CUPONS', href: '/cupons', icon: Percent, resourceCode: 'menu.cupons' },
-  { name: 'RECURSOS HUMANOS', href: '/rh', icon: Users },
   { name: '791 WEBSITES', href: 'https://websites.791solucoes.com.br/auth/holding/start', icon: Globe, resourceCode: 'menu.websites', newTab: true },
   { name: 'CONFIGURAÇÕES', href: '/configuracoes', icon: Settings, hasSubmenu: false, resourceCode: 'menu.configuracoes' },
 ];

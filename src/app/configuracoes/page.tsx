@@ -77,6 +77,14 @@ export default function ConfiguracoesPage() {
       bg: 'bg-amber-50'
     },
     {
+      title: 'Recursos Humanos & Ponto',
+      desc: 'Gestão da equipe, cargos, salários e espelho de ponto digital.',
+      href: '/rh',
+      icon: Users,
+      color: 'text-indigo-600',
+      bg: 'bg-indigo-50'
+    },
+    {
       title: 'Notificações',
       desc: 'Configure avisos de pagamentos e webhooks.',
       href: '/configuracoes/notificacoes',

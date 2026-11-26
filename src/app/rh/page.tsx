@@ -78,6 +78,38 @@ export default function RHPage() {
     tipo: 'entrada'
   });
 
+  // Relógio Digital em tempo real & GPS
+  const [horaAgora, setHoraAgora] = useState<Date>(new Date());
+  const [geoLoc, setGeoLoc] = useState<{ lat: number | null; lng: number | null; obtendo: boolean }>({
+    lat: null,
+    lng: null,
+    obtendo: false
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => setHoraAgora(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const abrirModalPonto = () => {
+    setModalPonto(true);
+    if (funcionarios.length > 0 && !novoPonto.funcionario_id) {
+      setNovoPonto(prev => ({ ...prev, funcionario_id: funcionarios[0].id }));
+    }
+    if ('geolocation' in navigator) {
+      setGeoLoc(prev => ({ ...prev, obtendo: true }));
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          setGeoLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude, obtendo: false });
+        },
+        () => {
+          setGeoLoc({ lat: null, lng: null, obtendo: false });
+        },
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+  };
+
   const carregarDados = useCallback(async () => {
     setCarregando(true);
     setErro('');
@@ -218,10 +250,16 @@ export default function RHPage() {
     }
   };
 
-  const salvarPonto = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const salvarPonto = async (e?: React.FormEvent, tipoEscolhido?: string) => {
+    if (e) e.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
+
+    const funcId = novoPonto.funcionario_id || (funcionarios[0]?.id ?? '');
+    if (!funcId) {
+      alert('Selecione ou cadastre um colaborador primeiro.');
+      return;
+    }
 
     try {
       const res = await fetch('/api/admin/rh', {
@@ -230,11 +268,18 @@ export default function RHPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({ acao: 'registrar_ponto', ...novoPonto })
+        body: JSON.stringify({
+          acao: 'registrar_ponto',
+          funcionario_id: funcId,
+          tipo: tipoEscolhido || novoPonto.tipo,
+          latitude: geoLoc.lat,
+          longitude: geoLoc.lng,
+          origem: 'web'
+        })
       });
       if (res.ok) {
         setModalPonto(false);
-        setNovoPonto({ funcionario_id: '', tipo: 'entrada' });
+        setNovoPonto({ funcionario_id: funcionarios[0]?.id || '', tipo: 'entrada' });
         void carregarDados();
       } else {
         const j = await res.json();
@@ -309,7 +354,7 @@ export default function RHPage() {
 
           {abaAtiva === 'ponto' && (
             <button
-              onClick={() => setModalPonto(true)}
+              onClick={abrirModalPonto}
               className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
             >
               <Clock className="h-4 w-4" />
@@ -722,7 +767,7 @@ export default function RHPage() {
                 Últimos Registros de Ponto
               </h3>
               <button
-                onClick={() => setModalPonto(true)}
+                onClick={abrirModalPonto}
                 className="rounded-lg bg-[#3b597b] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#2d445f]"
               >
                 + Bater Ponto Manual
@@ -971,55 +1016,156 @@ export default function RHPage() {
         </div>
       )}
 
-      {/* MODAL REGISTRO MANUAL DE PONTO */}
+      {/* MODAL REGISTRO DIGITAL DE PONTO */}
       {modalPonto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">Registrar Ponto Manual</h3>
-            <form onSubmit={salvarPonto} className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700">Colaborador</label>
-                <select
-                  required
-                  value={novoPonto.funcionario_id}
-                  onChange={e => setNovoPonto({ ...novoPonto, funcionario_id: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
-                >
-                  <option value="">Selecione o colaborador...</option>
-                  {funcionarios.map(f => (
-                    <option key={f.id} value={f.id}>{f.nome} (#{f.matricula})</option>
-                  ))}
-                </select>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-5">
+            {/* Display do Relógio Digital */}
+            <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-[#1e3a5f] p-5 text-center text-white shadow-inner">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                Horário Oficial de Brasília
+              </span>
+              <div className="my-2 font-mono text-4xl font-black tracking-wider text-emerald-400">
+                {horaAgora.toLocaleTimeString('pt-BR', { hour12: false })}
               </div>
-              <div>
-                <label className="font-semibold text-slate-700">Tipo de Marcação</label>
-                <select
-                  value={novoPonto.tipo}
-                  onChange={e => setNovoPonto({ ...novoPonto, tipo: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
-                >
-                  <option value="entrada">Entrada</option>
-                  <option value="intervalo_saida">Saída para Intervalo</option>
-                  <option value="intervalo_retorno">Retorno de Intervalo</option>
-                  <option value="saida">Saída Fim de Expediente</option>
-                </select>
+              <div className="text-xs text-slate-300 capitalize">
+                {horaAgora.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
               </div>
-              <div className="flex justify-end gap-2 pt-3 border-t">
+
+              {/* Status GPS / Rede */}
+              <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-slate-300">
+                {geoLoc.obtendo ? (
+                  <span className="inline-flex items-center gap-1 text-amber-300">
+                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                    Obtendo coordenadas GPS...
+                  </span>
+                ) : geoLoc.lat ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-300">
+                    <CheckCircle2 className="h-3 w-3" />
+                    GPS Sincronizado ({geoLoc.lat.toFixed(4)}, {geoLoc.lng?.toFixed(4)})
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-slate-400">
+                    <Clock className="h-3 w-3" />
+                    Registro web via Holding Command Center
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {funcionarios.length === 0 ? (
+              /* Caso não haja colaborador ainda cadastrado */
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center space-y-3">
+                <AlertCircle className="mx-auto h-8 w-8 text-amber-600" />
+                <div>
+                  <h4 className="text-xs font-bold text-amber-900">Nenhum Colaborador Cadastrado</h4>
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Para registrar ponto, a Holding precisa ter ao menos um colaborador no quadro (ex: você mesmo).
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setModalPonto(false)}
-                  className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100"
+                  onClick={() => {
+                    setModalPonto(false);
+                    setNovoFuncionario({
+                      nome: 'Ramon',
+                      matricula: '001',
+                      cpf: '',
+                      email: 'ramon@791solucoes.com.br',
+                      telefone: '',
+                      cargo_id: cargos[0]?.id || '',
+                      admissao: new Date().toISOString().slice(0, 10),
+                      salario_base: '5000.00'
+                    });
+                    setModalFuncionario(true);
+                  }}
+                  className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow hover:bg-[#2d445f]"
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-[#3b597b] px-4 py-1.5 font-bold text-white hover:bg-[#2d445f]"
-                >
-                  Confirmar Registro
+                  + Cadastrar Ramon como Colaborador
                 </button>
               </div>
-            </form>
+            ) : (
+              /* Formulário com Colaborador & Batidas Rápidas */
+              <div className="space-y-4 text-xs">
+                <div>
+                  <label className="font-semibold text-slate-700">Colaborador</label>
+                  <select
+                    value={novoPonto.funcionario_id || funcionarios[0]?.id || ''}
+                    onChange={e => setNovoPonto({ ...novoPonto, funcionario_id: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-medium text-slate-800 focus:outline-none focus:border-[#3b597b]"
+                  >
+                    {funcionarios.map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.nome} (#{f.matricula}) {f.cargo?.nome ? `— ${f.cargo.nome}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-2">Bater Ponto Agora (1 Clique):</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => salvarPonto(undefined, 'entrada')}
+                      className="rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 p-3 text-left transition-colors group"
+                    >
+                      <span className="block text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        Entrada
+                      </span>
+                      <span className="text-[10px] text-emerald-600 mt-0.5 block">Início da jornada</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => salvarPonto(undefined, 'intervalo_saida')}
+                      className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 p-3 text-left transition-colors group"
+                    >
+                      <span className="block text-amber-800 font-bold text-xs flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                        Saída Almoço
+                      </span>
+                      <span className="text-[10px] text-amber-600 mt-0.5 block">Intervalo refeição</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => salvarPonto(undefined, 'intervalo_retorno')}
+                      className="rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 p-3 text-left transition-colors group"
+                    >
+                      <span className="block text-blue-800 font-bold text-xs flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        Retorno Almoço
+                      </span>
+                      <span className="text-[10px] text-blue-600 mt-0.5 block">Volta do intervalo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => salvarPonto(undefined, 'saida')}
+                      className="rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 p-3 text-left transition-colors group"
+                    >
+                      <span className="block text-rose-800 font-bold text-xs flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-rose-500" />
+                        Saída
+                      </span>
+                      <span className="text-[10px] text-rose-600 mt-0.5 block">Fim de expediente</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalPonto(false)}
+                className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

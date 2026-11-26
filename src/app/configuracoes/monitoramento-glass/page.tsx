@@ -215,8 +215,15 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     setTextoConfirmacao('');
   };
 
-  const emAndamentoBanco = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
-  const emAndamentoStorage = statusStorage.fase === 'listando' || statusStorage.fase === 'baixando' || statusStorage.fase === 'enviando';
+  const dispararBackupCompleto = useCallback(async () => {
+    void dispararBackup();
+    void dispararBackupStorage();
+  }, [dispararBackup, dispararBackupStorage]);
+
+  const emAndamentoGeral = emAndamentoBanco || emAndamentoStorage || disparando || disparandoStorage;
+
+  const arquivosBanco = useMemo(() => arquivos.filter(a => a.nome.endsWith('.bkgl')), [arquivos]);
+  const arquivosStorage = useMemo(() => arquivos.filter(a => a.nome.endsWith('.bksg')), [arquivos]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
@@ -283,33 +290,42 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
         <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
+            onClick={() => void dispararBackupCompleto()}
+            disabled={emAndamentoGeral}
+            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50 whitespace-nowrap shadow-sm transition-colors flex items-center gap-1.5"
+          >
+            <span>⚡</span>
+            {emAndamentoGeral ? 'Executando Backup...' : 'Fazer Backup Completo (Tudo)'}
+          </button>
+          <button
+            type="button"
             onClick={() => void dispararBackup()}
             disabled={emAndamentoBanco || disparando}
-            className="rounded-lg bg-[#3b597b] px-4 py-2 text-sm font-bold text-white hover:bg-[#2e4663] disabled:opacity-50 whitespace-nowrap shadow-sm transition-colors"
+            className="rounded-lg bg-[#3b597b] px-3 py-2 text-xs font-semibold text-white hover:bg-[#2e4663] disabled:opacity-50 whitespace-nowrap transition-colors"
           >
-            {emAndamentoBanco ? faseLabel[statusBackup.fase] : 'Backup do Banco (.bkgl)'}
+            {emAndamentoBanco ? 'Exportando Banco...' : 'Só Banco (.bkgl)'}
           </button>
           <button
             type="button"
             onClick={() => void dispararBackupStorage()}
             disabled={emAndamentoStorage || disparandoStorage}
-            className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-800 disabled:opacity-50 whitespace-nowrap shadow-sm transition-colors"
+            className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50 whitespace-nowrap transition-colors"
           >
-            {emAndamentoStorage ? 'Exportando Storage...' : 'Backup do Storage (.bksg)'}
+            {emAndamentoStorage ? 'Exportando Storage...' : 'Só Storage (.bksg)'}
           </button>
         </div>
       </div>
 
       <div className="border-t border-slate-100 pt-3">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-xs font-bold uppercase text-slate-500">Backups salvos no Google Drive (últimos 30 · retenção de 90 dias)</p>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <p className="text-xs font-bold uppercase text-slate-500">Histórico de Backups no Google Drive (retenção de 90 dias)</p>
           <button
             type="button"
             onClick={() => void carregarLista()}
             disabled={carregandoLista}
             className="text-xs font-semibold text-[#3b597b] hover:underline disabled:opacity-50"
           >
-            {carregandoLista ? 'Atualizando...' : 'Atualizar lista'}
+            {carregandoLista ? 'Atualizando...' : 'Atualizar listas'}
           </button>
         </div>
         {erroLista && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{erroLista}</p>}
@@ -319,36 +335,100 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
         {!erroLista && !carregandoLista && arquivos.length === 0 && (
           <p className="text-xs text-slate-500">Nenhum backup encontrado na pasta do Drive.</p>
         )}
+
         {arquivos.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-500">
-                <tr>
-                  <th className="p-2.5">Arquivo</th>
-                  <th className="p-2.5">Data / Hora</th>
-                  <th className="p-2.5 text-right">Tamanho</th>
-                  <th className="p-2.5 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {arquivos.map(arq => (
-                  <tr key={arq.id} className="border-t border-slate-100 text-slate-700 hover:bg-slate-50/50 transition-colors">
-                    <td className="p-2.5 font-mono">{arq.nome}</td>
-                    <td className="p-2.5 whitespace-nowrap">{dataHora.format(new Date(arq.criadoEm))}</td>
-                    <td className="p-2.5 text-right whitespace-nowrap">{bytes(arq.tamanhoBytes)}</td>
-                    <td className="p-2.5 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => abrirModalRestauracao(arq)}
-                        className="rounded bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors"
-                      >
-                        Restaurar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* ── COLUNA 1: BANCO DE DADOS (.BKGL) ── */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-blue-600 inline-block"></span>
+                  Banco de Dados ({arquivosBanco.length})
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">.bkgl</span>
+              </div>
+              {arquivosBanco.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">Nenhum backup de banco encontrado.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100/70 text-slate-500 text-[11px]">
+                      <tr>
+                        <th className="p-2">Data / Hora</th>
+                        <th className="p-2 text-right">Tamanho</th>
+                        <th className="p-2 text-center">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {arquivosBanco.map(arq => (
+                        <tr key={arq.id} className="text-slate-700 hover:bg-slate-50 transition-colors">
+                          <td className="p-2 whitespace-nowrap">
+                            <p className="font-semibold">{dataHora.format(new Date(arq.criadoEm))}</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">{arq.nome}</p>
+                          </td>
+                          <td className="p-2 text-right whitespace-nowrap font-mono text-[11px]">{bytes(arq.tamanhoBytes)}</td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => abrirModalRestauracao(arq)}
+                              className="rounded bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors"
+                            >
+                              Restaurar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* ── COLUNA 2: STORAGE / ARQUIVOS (.BKSG) ── */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-slate-700 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-indigo-600 inline-block"></span>
+                  Storage / Arquivos ({arquivosStorage.length})
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">.bksg</span>
+              </div>
+              {arquivosStorage.length === 0 ? (
+                <p className="text-xs text-slate-400 py-4 text-center">Nenhum backup de storage encontrado.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100/70 text-slate-500 text-[11px]">
+                      <tr>
+                        <th className="p-2">Data / Hora</th>
+                        <th className="p-2 text-right">Tamanho</th>
+                        <th className="p-2 text-center">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {arquivosStorage.map(arq => (
+                        <tr key={arq.id} className="text-slate-700 hover:bg-slate-50 transition-colors">
+                          <td className="p-2 whitespace-nowrap">
+                            <p className="font-semibold">{dataHora.format(new Date(arq.criadoEm))}</p>
+                            <p className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">{arq.nome}</p>
+                          </td>
+                          <td className="p-2 text-right whitespace-nowrap font-mono text-[11px]">{bytes(arq.tamanhoBytes)}</td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => abrirModalRestauracao(arq)}
+                              className="rounded bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors"
+                            >
+                              Restaurar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

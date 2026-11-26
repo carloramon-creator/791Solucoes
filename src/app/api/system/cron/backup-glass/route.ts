@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { iniciarBackupGlass, obterStatusBackup } from '@/lib/backup-glass';
+import { iniciarBackupStorageGlass, obterStatusStorageBackup } from '@/lib/backup-glass-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,23 +33,37 @@ async function executarBackup(req: Request) {
     return NextResponse.json({ error: 'Acesso não autorizado. Informe o segredo do cron.' }, { status: 401 });
   }
 
-  const statusAtual = obterStatusBackup();
-  if (statusAtual.fase === 'exportando' || statusAtual.fase === 'enviando') {
+  const statusBanco = obterStatusBackup();
+  const statusStorage = obterStatusStorageBackup();
+
+  const bancoOcupado = statusBanco.fase === 'exportando' || statusBanco.fase === 'enviando';
+  const storageOcupado = statusStorage.fase === 'listando' || statusStorage.fase === 'baixando' || statusStorage.fase === 'enviando';
+
+  if (bancoOcupado && storageOcupado) {
     return NextResponse.json({
       status: 'ignorado',
-      mensagem: 'Um backup já está em andamento. Nenhuma ação disparada.',
+      mensagem: 'Tanto o backup do Banco quanto do Storage já estão em execução.',
     }, { status: 200 });
   }
 
   try {
-    // Dispara o backup do banco de forma assíncrona
-    void iniciarBackupGlass().catch(err => {
-      console.error('[CRON BACKUP GLASS] Erro:', err);
-    });
+    // 1. Disparar backup do Banco se não estiver ocupado
+    if (!bancoOcupado) {
+      void iniciarBackupGlass().catch(err => {
+        console.error('[CRON BACKUP GLASS - BANCO] Erro:', err);
+      });
+    }
+
+    // 2. Disparar backup do Storage se não estiver ocupado
+    if (!storageOcupado) {
+      void iniciarBackupStorageGlass().catch(err => {
+        console.error('[CRON BACKUP GLASS - STORAGE] Erro:', err);
+      });
+    }
 
     return NextResponse.json({
       status: 'disparado',
-      mensagem: 'Backup horário do Glass disparado com sucesso.',
+      mensagem: 'Backup horário completo do Glass (Banco + Storage) disparado com sucesso.',
       timestamp: new Date().toISOString(),
     }, { status: 202 });
   } catch (err) {

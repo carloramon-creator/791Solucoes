@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import type { BackupArquivoDrive, BackupStatus } from '@/lib/backup-glass';
+import type { StorageBackupStatus } from '@/lib/backup-glass-storage';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
 import { alertaSustentado, percentualCpu, taxasDisco, validarInfra, type DispositivoAmostra, type InfraAmostra, type LeituraAlerta } from '@/lib/monitoramento-infra';
 
@@ -72,8 +73,11 @@ const faseLabel: Record<BackupStatus['fase'], string> = {
 
 function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabaseBrowser> }) {
   const [statusBackup, setStatusBackup] = useState<BackupStatus>({ fase: 'ocioso' });
+  const [statusStorage, setStatusStorage] = useState<StorageBackupStatus>({ fase: 'ocioso' });
   const [erroBackup, setErroBackup] = useState('');
+  const [erroStorage, setErroStorage] = useState('');
   const [disparando, setDisparando] = useState(false);
+  const [disparandoStorage, setDisparandoStorage] = useState(false);
   const [arquivos, setArquivos] = useState<BackupArquivoDrive[]>([]);
   const [carregandoLista, setCarregandoLista] = useState(true);
   const [erroLista, setErroLista] = useState('');
@@ -81,9 +85,14 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
   const [etapaConfirmacao, setEtapaConfirmacao] = useState<1 | 2>(1);
   const [textoConfirmacao, setTextoConfirmacao] = useState('');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingStorageRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const pararPolling = useCallback(() => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
+  }, []);
+
+  const pararPollingStorage = useCallback(() => {
+    if (pollingStorageRef.current) { clearInterval(pollingStorageRef.current); pollingStorageRef.current = null; }
   }, []);
 
   const carregarLista = useCallback(async () => {
@@ -131,6 +140,29 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     } catch { /* polling silencioso */ }
   }, [supabase, pararPolling, carregarLista]);
 
+  const consultarStatusStorage = useCallback(async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) return;
+    try {
+      const r = await fetch('/api/admin/backup-glass-storage', {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        cache: 'no-store',
+      });
+      const json = await r.json() as { status?: StorageBackupStatus; error?: string };
+      if (!r.ok) { setErroStorage(json.error ?? 'Erro ao consultar status do Storage.'); return; }
+      if (json.status) {
+        setStatusStorage(json.status);
+        if (json.status.fase !== 'listando' && json.status.fase !== 'baixando' && json.status.fase !== 'enviando') {
+          pararPollingStorage();
+          setDisparandoStorage(false);
+          if (json.status.fase === 'concluido') {
+            void carregarLista();
+          }
+        }
+      }
+    } catch { /* polling silencioso */ }
+  }, [supabase, pararPollingStorage, carregarLista]);
+
   const dispararBackup = useCallback(async () => {
     setErroBackup('');
     setDisparando(true);
@@ -147,10 +179,29 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     } catch { setErroBackup('Falha de comunicação ao iniciar o backup.'); setDisparando(false); }
   }, [supabase, consultarStatus]);
 
+  const dispararBackupStorage = useCallback(async () => {
+    setErroStorage('');
+    setDisparandoStorage(true);
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) { setErroStorage('Sessão expirada.'); setDisparandoStorage(false); return; }
+    try {
+      const r = await fetch('/api/admin/backup-glass-storage', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      });
+      const json = await r.json() as { error?: string };
+      if (!r.ok) { setErroStorage(json.error ?? 'Não foi possível iniciar o backup do Storage.'); setDisparandoStorage(false); return; }
+      pollingStorageRef.current = setInterval(() => void consultarStatusStorage(), 3000);
+    } catch { setErroStorage('Falha de comunicação ao iniciar o backup do Storage.'); setDisparandoStorage(false); }
+  }, [supabase, consultarStatusStorage]);
+
   useEffect(() => {
     void carregarLista();
-    return () => pararPolling();
-  }, [carregarLista, pararPolling]);
+    return () => {
+      pararPolling();
+      pararPollingStorage();
+    };
+  }, [carregarLista, pararPolling, pararPollingStorage]);
 
   const abrirModalRestauracao = (arq: BackupArquivoDrive) => {
     setModalRestaurar(arq);
@@ -164,50 +215,89 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     setTextoConfirmacao('');
   };
 
-  const emAndamento = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
+  const emAndamentoBanco = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
+  const emAndamentoStorage = statusStorage.fase === 'listando' || statusStorage.fase === 'baixando' || statusStorage.fase === 'enviando';
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-xs font-bold uppercase text-slate-500">Backup e restauração</p>
-          {statusBackup.fase === 'ocioso' && (
+          {statusBackup.fase === 'ocioso' && statusStorage.fase === 'ocioso' && (
             <p className="mt-1 text-sm text-slate-600">
               {arquivos.length > 0
                 ? `✅ Último backup no Drive: ${dataHora.format(new Date(arquivos[0].criadoEm))} (${bytes(arquivos[0].tamanhoBytes)})`
                 : 'Nenhum backup em execução no momento.'}
             </p>
           )}
+
+          {/* Status Banco */}
           {statusBackup.fase === 'exportando' && (
-            <p className="mt-1 text-sm text-slate-600">Exportando banco do Glass...</p>
+            <p className="mt-1 text-sm text-slate-600">Exportando banco do Glass (PostgreSQL)...</p>
           )}
           {statusBackup.fase === 'enviando' && (
             <p className="mt-1 text-sm text-slate-600">
-              Enviando para o Drive ({Math.round(statusBackup.bytesExportados / 1024)} KB exportados)...
+              Enviando banco para o Drive ({Math.round(statusBackup.bytesExportados / 1024)} KB)...
             </p>
           )}
           {statusBackup.fase === 'concluido' && (
-            <p className="mt-1 text-sm text-slate-600">
-              ✅ Concluído em {dataHora.format(new Date(statusBackup.concluidoEm))}{' '}
+            <p className="mt-1 text-sm text-emerald-700 font-medium">
+              ✅ Banco concluído em {dataHora.format(new Date(statusBackup.concluidoEm))}{' '}
               · {Math.round(statusBackup.bytesExportados / 1024)} KB exportados
-              {statusBackup.bytesEnviados ? ` · ${Math.round(statusBackup.bytesEnviados / 1024)} KB enviados (comprimido)` : ''}
             </p>
           )}
           {statusBackup.fase === 'erro' && (
-            <p className="mt-1 text-sm text-red-700">❌ {statusBackup.mensagem}</p>
+            <p className="mt-1 text-sm text-red-700">❌ Banco: {statusBackup.mensagem}</p>
           )}
           {erroBackup && (
             <p role="alert" className="mt-1 text-sm text-red-700">{erroBackup}</p>
           )}
+
+          {/* Status Storage */}
+          {statusStorage.fase === 'listando' && (
+            <p className="mt-1 text-sm text-indigo-600 font-medium animate-pulse">Storage: mapeando buckets e arquivos...</p>
+          )}
+          {statusStorage.fase === 'baixando' && (
+            <p className="mt-1 text-sm text-indigo-600 font-medium">
+              Storage: baixando arquivos ({statusStorage.processados}/{statusStorage.totalArquivos} · {bytes(statusStorage.bytesBaixados)})...
+            </p>
+          )}
+          {statusStorage.fase === 'enviando' && (
+            <p className="mt-1 text-sm text-indigo-600 font-medium animate-pulse">
+              Storage: criptografando e enviando para o Drive ({bytes(statusStorage.bytesEnviados)})...
+            </p>
+          )}
+          {statusStorage.fase === 'concluido' && (
+            <p className="mt-1 text-sm text-emerald-700 font-medium">
+              ✅ Storage concluído ({statusStorage.totalArquivos} arquivos · {bytes(statusStorage.bytesEnviados)})
+            </p>
+          )}
+          {statusStorage.fase === 'erro' && (
+            <p className="mt-1 text-sm text-red-700">❌ Storage: {statusStorage.mensagem}</p>
+          )}
+          {erroStorage && (
+            <p role="alert" className="mt-1 text-sm text-red-700">{erroStorage}</p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => void dispararBackup()}
-          disabled={emAndamento || disparando}
-          className="rounded-lg bg-[#3b597b] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 whitespace-nowrap"
-        >
-          {emAndamento ? faseLabel[statusBackup.fase] : faseLabel[statusBackup.fase]}
-        </button>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => void dispararBackup()}
+            disabled={emAndamentoBanco || disparando}
+            className="rounded-lg bg-[#3b597b] px-4 py-2 text-sm font-bold text-white hover:bg-[#2e4663] disabled:opacity-50 whitespace-nowrap shadow-sm transition-colors"
+          >
+            {emAndamentoBanco ? faseLabel[statusBackup.fase] : 'Backup do Banco (.bkgl)'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void dispararBackupStorage()}
+            disabled={emAndamentoStorage || disparandoStorage}
+            className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-800 disabled:opacity-50 whitespace-nowrap shadow-sm transition-colors"
+          >
+            {emAndamentoStorage ? 'Exportando Storage...' : 'Backup do Storage (.bksg)'}
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-slate-100 pt-3">

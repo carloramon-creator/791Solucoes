@@ -112,6 +112,7 @@ export async function PATCH(req: Request, context: RouteContext) {
 
     const payload = {
       nome: normalizeText(body?.nome),
+      cargo: normalizeText(body?.cargo),
       cpf: normalizeText(body?.cpf),
       whatsapp: normalizeText(body?.whatsapp),
       cep: normalizeText(body?.cep),

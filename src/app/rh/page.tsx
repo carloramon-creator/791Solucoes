@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
 import {
   Users,
@@ -20,10 +21,20 @@ import {
   Receipt,
   Download,
   Check,
-  ChevronRight
+  ChevronRight,
+  ExternalLink,
+  Printer,
+  X,
+  UserCheck
 } from 'lucide-react';
+import type { DemonstrativoColaborador } from '@/lib/folha-pagamento';
 
 type Aba = 'funcionarios' | 'cargos' | 'ponto' | 'escalas' | 'folha';
+
+// Classe padronizada para garantir 100% de simetria e alinhamento em todos os campos do sistema
+const inputPadrao = "h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-800 transition-colors focus:border-[#3b597b] focus:outline-none focus:ring-1 focus:ring-[#3b597b]";
+const selectPadrao = "h-11 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-sm font-medium text-slate-800 transition-colors focus:border-[#3b597b] focus:outline-none focus:ring-1 focus:ring-[#3b597b]";
+const textareaPadrao = "w-full rounded-xl border border-slate-300 bg-white p-3.5 text-sm font-medium text-slate-800 transition-colors focus:border-[#3b597b] focus:outline-none focus:ring-1 focus:ring-[#3b597b]";
 
 export default function RHPage() {
   const supabase = createSupabaseBrowser();
@@ -36,17 +47,29 @@ export default function RHPage() {
   const [cargos, setCargos] = useState<any[]>([]);
   const [pontos, setPontos] = useState<any[]>([]);
   const [escalas, setEscalas] = useState<any[]>([]);
-  const [bancoHoras, setBancoHoras] = useState<any[]>([]);
+  const [folhaDados, setFolhaDados] = useState<{
+    demonstrativo: DemonstrativoColaborador[];
+    totais: {
+      totalColaboradores: number;
+      totalProventos: number;
+      totalDescontos: number;
+      totalLiquido: number;
+      totalInss: number;
+      totalIrrf: number;
+      totalFgts: number;
+    };
+  } | null>(null);
 
   // Filtros
   const [busca, setBusca] = useState('');
   const [mesFolha, setMesFolha] = useState(() => new Date().toISOString().slice(0, 7));
 
-  // Modais de Criação
+  // Modais
   const [modalFuncionario, setModalFuncionario] = useState(false);
   const [modalCargo, setModalCargo] = useState(false);
   const [modalEscala, setModalEscala] = useState(false);
   const [modalPonto, setModalPonto] = useState(false);
+  const [holeriteSelecionado, setHoleriteSelecionado] = useState<DemonstrativoColaborador | null>(null);
 
   // Estados dos Formulários
   const [novoFuncionario, setNovoFuncionario] = useState({
@@ -143,7 +166,7 @@ export default function RHPage() {
       if (jsonCargos.cargos) setCargos(jsonCargos.cargos);
       if (jsonPonto.pontos) setPontos(jsonPonto.pontos);
       if (jsonEscalas.escalas) setEscalas(jsonEscalas.escalas);
-      if (jsonFolha.bancoHoras) setBancoHoras(jsonFolha.bancoHoras);
+      if (jsonFolha.demonstrativo) setFolhaDados(jsonFolha);
     } catch {
       setErro('Erro ao carregar dados do RH.');
     } finally {
@@ -317,25 +340,34 @@ export default function RHPage() {
             Recursos Humanos & Ponto Eletrônico
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Gestão da equipe, cargos, escalas de jornada, folha de pagamento e espelho de ponto da 791 Soluções (Holding).
+            Gestão integrada da equipe, cargos, escalas CLT, folha de pagamento oficial e espelho de ponto digital.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {abaAtiva === 'funcionarios' && (
-            <button
-              onClick={() => setModalFuncionario(true)}
-              className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Novo Colaborador
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/equipe"
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition-all flex items-center gap-1.5"
+              >
+                <Users className="h-4 w-4 text-[#3b597b]" />
+                Ver Usuários (/equipe)
+              </Link>
+              <button
+                onClick={() => setModalFuncionario(true)}
+                className="rounded-xl bg-[#3b597b] px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Novo Colaborador
+              </button>
+            </div>
           )}
 
           {abaAtiva === 'cargos' && (
             <button
               onClick={() => setModalCargo(true)}
-              className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
+              className="rounded-xl bg-[#3b597b] px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
               Novo Cargo
@@ -345,7 +377,7 @@ export default function RHPage() {
           {abaAtiva === 'escalas' && (
             <button
               onClick={() => setModalEscala(true)}
-              className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
+              className="rounded-xl bg-[#3b597b] px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
               Nova Escala
@@ -355,10 +387,10 @@ export default function RHPage() {
           {abaAtiva === 'ponto' && (
             <button
               onClick={abrirModalPonto}
-              className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
+              className="rounded-xl bg-[#3b597b] px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#2d445f] transition-all flex items-center gap-2"
             >
               <Clock className="h-4 w-4" />
-              Bater Ponto Manual
+              Bater Ponto Digital
             </button>
           )}
         </div>
@@ -411,7 +443,7 @@ export default function RHPage() {
           }`}
         >
           <DollarSign className="h-4 w-4" />
-          Folha de Pagamento
+          Folha de Pagamento Oficial
         </button>
 
         <button
@@ -437,19 +469,23 @@ export default function RHPage() {
       {/* ABA 1: COLABORADORES */}
       {abaAtiva === 'funcionarios' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
                 placeholder="Buscar por nome, matrícula, cargo..."
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 py-2 text-xs focus:border-[#3b597b] focus:outline-none shadow-sm"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-medium focus:border-[#3b597b] focus:outline-none shadow-sm"
               />
             </div>
-            <div className="text-xs text-slate-500">
-              Total cadastrado: <b>{funcionarios.length}</b>
+            <div className="text-xs text-slate-500 flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 font-semibold border border-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Sincronizado com Usuários da Holding
+              </span>
+              <span>Total: <b>{funcionarios.length}</b></span>
             </div>
           </div>
 
@@ -458,49 +494,63 @@ export default function RHPage() {
           ) : funcionariosFiltrados.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 p-12 text-center bg-white shadow-sm">
               <Users className="mx-auto h-12 w-12 text-slate-300" />
-              <h3 className="mt-3 text-sm font-bold text-slate-700">Nenhum colaborador cadastrado</h3>
+              <h3 className="mt-3 text-sm font-bold text-slate-700">Nenhum colaborador encontrado</h3>
               <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
-                Cadastre o primeiro colaborador da Holding para acompanhar cargos, jornadas e batidas de ponto.
+                Os colaboradores são sincronizados automaticamente com o cadastro de Usuários (/equipe).
               </p>
-              <button
-                onClick={() => setModalFuncionario(true)}
-                className="mt-4 rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
+              <Link
+                href="/equipe"
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
               >
-                + Cadastrar Agora
-              </button>
+                Gerenciar Usuários & Equipe
+              </Link>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {funcionariosFiltrados.map(f => (
-                <div key={f.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div key={f.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
                       <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                        #{f.matricula || 'SEM MATRÍCULA'}
+                        Matrícula #{f.matricula || '001'}
                       </span>
-                      <h4 className="text-sm font-bold text-slate-800">{f.nome}</h4>
-                      <p className="text-xs text-[#3b597b] font-medium mt-0.5">{f.cargo?.nome || 'Cargo não definido'}</p>
+                      <h4 className="text-base font-bold text-slate-800">{f.nome}</h4>
+                      <p className="text-xs text-[#3b597b] font-semibold mt-0.5">{f.cargo?.nome || 'Geral'}</p>
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
                       {f.situacao || 'Ativo'}
                     </span>
                   </div>
 
-                  <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  <div className="space-y-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
                     <div className="flex items-center justify-between">
-                      <span>Email:</span>
-                      <span className="text-slate-700 font-mono text-[11px]">{f.email || '—'}</span>
+                      <span className="text-slate-400">CPF:</span>
+                      <span className="font-mono text-slate-700 font-semibold">{f.cpf || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span>Telefone:</span>
+                      <span className="text-slate-400">Email:</span>
+                      <span className="text-slate-700 font-mono text-[11px] truncate max-w-[180px]">{f.email || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">WhatsApp:</span>
                       <span className="text-slate-700">{f.telefone || '—'}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span>Admissão:</span>
-                      <span className="text-slate-700">
-                        {f.admissao ? new Date(f.admissao).toLocaleDateString('pt-BR') : '—'}
+                      <span className="text-slate-400">Salário Base:</span>
+                      <span className="font-black text-emerald-700">
+                        R$ {Number(f.dados_bancarios?.salario_base || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                       </span>
                     </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <Link
+                      href="/equipe"
+                      className="text-[11px] font-bold text-[#3b597b] hover:underline flex items-center gap-1"
+                    >
+                      Editar Cadastro Completo
+                      <ChevronRight className="h-3 w-3" />
+                    </Link>
                   </div>
                 </div>
               ))}
@@ -521,7 +571,7 @@ export default function RHPage() {
               </p>
               <button
                 onClick={() => setModalCargo(true)}
-                className="mt-4 rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
+                className="mt-4 rounded-xl bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
               >
                 + Criar Cargo
               </button>
@@ -536,9 +586,9 @@ export default function RHPage() {
                       {c.niveis?.length || 0} Níveis
                     </span>
                   </div>
-                  <h4 className="text-sm font-bold text-slate-800">{c.nome}</h4>
+                  <h4 className="text-base font-bold text-slate-800">{c.nome}</h4>
                   <p className="text-xs text-slate-500 line-clamp-3">
-                    {c.responsabilidades || 'Sem descrição cadastrada.'}
+                    {c.responsabilidades || 'Atribuições e responsabilidades do cargo.'}
                   </p>
                 </div>
               ))}
@@ -556,7 +606,7 @@ export default function RHPage() {
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                   Gestão de Jornadas & Turnos
                 </span>
-                <h3 className="text-lg font-black tracking-tight mt-1">Catálogo de Escalas de Trabalho</h3>
+                <h3 className="text-lg font-black tracking-tight mt-1">Catálogo de Escalas de Trabalho CLT</h3>
                 <p className="text-xs text-slate-300 mt-1 max-w-xl">
                   Configure modelos semanais (5x2, 6x1, 12x36) com tolerâncias da CLT e regras de descanso para cálculo automático no ponto.
                 </p>
@@ -580,7 +630,7 @@ export default function RHPage() {
               </p>
               <button
                 onClick={() => setModalEscala(true)}
-                className="mt-4 rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
+                className="mt-4 rounded-xl bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
               >
                 + Criar Primeira Escala
               </button>
@@ -622,26 +672,28 @@ export default function RHPage() {
         </div>
       )}
 
-      {/* ABA 4: FOLHA DE PAGAMENTO */}
+      {/* ABA 4: FOLHA DE PAGAMENTO OFICIAL */}
       {abaAtiva === 'folha' && (
         <div className="space-y-6">
-          {/* Seletor de Competência e Ações */}
+          {/* Seletor de Competência */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center gap-3">
               <Receipt className="h-6 w-6 text-[#3b597b]" />
               <div>
-                <h3 className="text-sm font-bold text-slate-800">Folha de Pagamento & Encargos</h3>
-                <p className="text-xs text-slate-500">Cálculo de proventos, descontos de INSS/IRRF e espelho salarial.</p>
+                <h3 className="text-sm font-bold text-slate-800">Folha de Pagamento Oficial (CLT / eSocial)</h3>
+                <p className="text-xs text-slate-500">
+                  Cálculo automático com tabelas progressivas de INSS e IRRF oficiais 2025/2026.
+                </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-slate-600">Competência:</label>
+              <label className="text-xs font-bold text-slate-600">Competência:</label>
               <input
                 type="month"
                 value={mesFolha}
                 onChange={e => setMesFolha(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#3b597b]"
+                className="h-10 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 focus:outline-none focus:border-[#3b597b]"
               />
             </div>
           </div>
@@ -651,7 +703,9 @@ export default function RHPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Colaboradores</span>
               <div className="mt-1 flex items-baseline justify-between">
-                <span className="text-2xl font-black text-slate-800">{funcionarios.length}</span>
+                <span className="text-2xl font-black text-slate-800">
+                  {folhaDados?.totais?.totalColaboradores || funcionarios.length}
+                </span>
                 <span className="text-xs font-semibold text-blue-600">Folha Ativa</span>
               </div>
             </div>
@@ -660,96 +714,99 @@ export default function RHPage() {
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Proventos (Bruto)</span>
               <div className="mt-1 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-emerald-700">
-                  R$ {(funcionarios.length * 3500).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {(folhaDados?.totais?.totalProventos || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
-                <span className="text-xs font-semibold text-emerald-600">Base</span>
+                <span className="text-xs font-semibold text-emerald-600">Salários Base</span>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Encargos Est. (INSS + FGTS)</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Encargos Empresa (FGTS 8%)</span>
               <div className="mt-1 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-amber-700">
-                  R$ {(funcionarios.length * 3500 * 0.17).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {(folhaDados?.totais?.totalFgts || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
-                <span className="text-xs font-semibold text-amber-600">~17% Médio</span>
+                <span className="text-xs font-semibold text-amber-600">Depósito Caixa</span>
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Líquido a Pagar</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Líquido a Pagar</span>
               <div className="mt-1 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-[#3b597b]">
-                  R$ {(funcionarios.length * 3500 * 0.89).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  R$ {(folhaDados?.totais?.totalLiquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </span>
-                <span className="text-xs font-semibold text-blue-600">Folha Líquida</span>
+                <span className="text-xs font-semibold text-blue-600">Líquido Final</span>
               </div>
             </div>
           </div>
 
-          {/* Tabela de Holerites dos Colaboradores */}
+          {/* Tabela Analítica de Holerites */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Demonstrativo de Pagamentos — {mesFolha}
+                Demonstrativo Individual de Pagamentos — {mesFolha}
               </h4>
-              <span className="text-[11px] font-semibold text-slate-400">
-                Tabelas Legais Atualizadas (CLT / eSocial)
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                Paridade Oficial com o 791 Glass
               </span>
             </div>
 
-            {funcionarios.length === 0 ? (
+            {!folhaDados || folhaDados.demonstrativo.length === 0 ? (
               <div className="p-10 text-center text-xs text-slate-400">
-                Nenhum colaborador cadastrado para gerar folha na competência {mesFolha}.
+                Nenhum colaborador na competência {mesFolha}.
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-100">
                     <tr>
-                      <th className="p-3.5">Colaborador</th>
+                      <th className="p-3.5">Colaborador / CPF</th>
                       <th className="p-3.5">Cargo</th>
                       <th className="p-3.5 text-right">Salário Base</th>
-                      <th className="p-3.5 text-right">INSS (Est.)</th>
-                      <th className="p-3.5 text-right">IRRF (Est.)</th>
+                      <th className="p-3.5 text-right">INSS (Desc.)</th>
+                      <th className="p-3.5 text-right">IRRF (Desc.)</th>
+                      <th className="p-3.5 text-right">FGTS (8%)</th>
                       <th className="p-3.5 text-right">Salário Líquido</th>
-                      <th className="p-3.5 text-center">Status</th>
+                      <th className="p-3.5 text-center">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {funcionarios.map(f => {
-                      const base = 3500;
-                      const inss = 328.75; // Alíquota progressiva estimada
-                      const irrf = 56.40;
-                      const liquido = base - inss - irrf;
-
-                      return (
-                        <tr key={f.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-3.5">
-                            <span className="font-bold text-slate-800 block">{f.nome}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">Matrícula: #{f.matricula}</span>
-                          </td>
-                          <td className="p-3.5 text-slate-600">{f.cargo?.nome || 'Geral'}</td>
-                          <td className="p-3.5 text-right font-medium">
-                            R$ {base.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3.5 text-right text-red-600 font-medium">
-                            - R$ {inss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3.5 text-right text-red-600 font-medium">
-                            - R$ {irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3.5 text-right font-black text-emerald-700">
-                            R$ {liquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3.5 text-center">
-                            <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
-                              Em Aberto
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {folhaDados.demonstrativo.map(d => (
+                      <tr key={d.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3.5">
+                          <span className="font-bold text-slate-800 block text-sm">{d.nome}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            CPF: {d.cpf || '—'} · Matrícula: #{d.matricula}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-slate-600 font-medium">{d.cargo}</td>
+                        <td className="p-3.5 text-right font-medium">
+                          R$ {d.salarioBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3.5 text-right text-red-600 font-medium">
+                          - R$ {d.inss.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3.5 text-right text-red-600 font-medium">
+                          {d.irrf > 0 ? `- R$ ${d.irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'Isento'}
+                        </td>
+                        <td className="p-3.5 text-right text-amber-700 font-medium">
+                          R$ {d.fgts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3.5 text-right font-black text-emerald-700 text-sm">
+                          R$ {d.salarioLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <button
+                            onClick={() => setHoleriteSelecionado(d)}
+                            className="rounded-lg bg-slate-100 hover:bg-[#3b597b] hover:text-white px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors inline-flex items-center gap-1.5"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Ver Holerite
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -768,9 +825,9 @@ export default function RHPage() {
               </h3>
               <button
                 onClick={abrirModalPonto}
-                className="rounded-lg bg-[#3b597b] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#2d445f]"
+                className="rounded-xl bg-[#3b597b] px-3.5 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
               >
-                + Bater Ponto Manual
+                + Bater Ponto Digital
               </button>
             </div>
 
@@ -809,8 +866,8 @@ export default function RHPage() {
                           </span>
                         </td>
                         <td className="p-3.5 text-slate-500 uppercase text-[10px] font-semibold">{p.origem || 'Web'}</td>
-                        <td className="p-3.5 text-slate-400">
-                          {p.latitude ? `${p.latitude}, ${p.longitude}` : 'Sem coordenadas'}
+                        <td className="p-3.5 text-slate-400 font-mono text-[11px]">
+                          {p.latitude ? `${Number(p.latitude).toFixed(4)}, ${Number(p.longitude).toFixed(4)}` : 'Sem coordenadas'}
                         </td>
                       </tr>
                     ))}
@@ -822,68 +879,262 @@ export default function RHPage() {
         </div>
       )}
 
-      {/* MODAL NOVO COLABORADOR */}
-      {modalFuncionario && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">Cadastrar Novo Colaborador</h3>
-            <form onSubmit={salvarFuncionario} className="space-y-3 text-xs">
+      {/* MODAL HOLERITE OFICIAL (PADRÃO GLASS) */}
+      {holeriteSelecionado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            {/* Header do Holerite */}
+            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
               <div>
-                <label className="font-semibold text-slate-700">Nome Completo</label>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  791 Soluções Holding · Recibo de Pagamento de Salário
+                </span>
+                <h3 className="text-lg font-black text-slate-800">Holerite Mensal — {mesFolha}</h3>
+              </div>
+              <button
+                onClick={() => setHoleriteSelecionado(null)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Dados do Colaborador */}
+            <div className="rounded-xl bg-slate-50 p-4 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Colaborador</span>
+                <p className="font-bold text-slate-800">{holeriteSelecionado.nome}</p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Cargo</span>
+                <p className="font-semibold text-slate-700">{holeriteSelecionado.cargo}</p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold">CPF</span>
+                <p className="font-mono text-slate-700">{holeriteSelecionado.cpf || '—'}</p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Matrícula</span>
+                <p className="font-mono text-slate-700">#{holeriteSelecionado.matricula}</p>
+              </div>
+            </div>
+
+            {/* Rubricas */}
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 font-bold text-slate-700 border-b border-slate-200">
+                  <tr>
+                    <th className="p-2.5">Cód.</th>
+                    <th className="p-2.5">Descrição</th>
+                    <th className="p-2.5 text-center">Referência</th>
+                    <th className="p-2.5 text-right">Vencimentos</th>
+                    <th className="p-2.5 text-right">Descontos</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {holeriteSelecionado.rubricas
+                    .filter(r => r.tipo === 'provento' || r.tipo === 'desconto')
+                    .map(r => (
+                      <tr key={r.codigo} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-mono text-slate-400">{r.codigo}</td>
+                        <td className="p-2.5 font-medium text-slate-800">{r.descricao}</td>
+                        <td className="p-2.5 text-center text-slate-500">{r.referencia || '—'}</td>
+                        <td className="p-2.5 text-right font-medium text-emerald-700">
+                          {r.tipo === 'provento' ? `R$ ${r.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}
+                        </td>
+                        <td className="p-2.5 text-right font-medium text-red-600">
+                          {r.tipo === 'desconto' ? `R$ ${r.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bases e Totais */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs border border-slate-200 rounded-xl p-3 bg-slate-50">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Salário Base</span>
+                <p className="font-bold text-slate-800">
+                  R$ {holeriteSelecionado.salarioBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Base INSS</span>
+                <p className="font-bold text-slate-800">
+                  R$ {Math.min(holeriteSelecionado.salarioBase, 8157.41).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">Base FGTS</span>
+                <p className="font-bold text-slate-800">
+                  R$ {holeriteSelecionado.salarioBase.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase">FGTS do Mês (8%)</span>
+                <p className="font-bold text-amber-700">
+                  R$ {holeriteSelecionado.fgts.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+
+            {/* Totalizadores e Valor Líquido */}
+            <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+              <div className="space-x-4 text-xs text-slate-600">
+                <span>Total Vencimentos: <b className="text-emerald-700">R$ {holeriteSelecionado.totalProventos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b></span>
+                <span>Total Descontos: <b className="text-red-600">R$ {holeriteSelecionado.totalDescontos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</b></span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Valor Líquido a Receber</span>
+                <span className="text-xl font-black text-[#3b597b]">
+                  R$ {holeriteSelecionado.salarioLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"
+              >
+                <Printer className="h-4 w-4" />
+                Imprimir Recibo
+              </button>
+              <button
+                type="button"
+                onClick={() => setHoleriteSelecionado(null)}
+                className="rounded-xl bg-[#3b597b] px-4 py-2 text-xs font-bold text-white hover:bg-[#2d445f]"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO COLABORADOR (100% SIMÉTRICO) */}
+      {modalFuncionario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-800">Cadastrar Novo Colaborador</h3>
+                <p className="text-xs text-slate-500">
+                  Preencha os dados do colaborador para o quadro e folha da Holding.
+                </p>
+              </div>
+              <button onClick={() => setModalFuncionario(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={salvarFuncionario} className="space-y-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Nome Completo</label>
                 <input
                   type="text"
                   required
-                  placeholder="Nome do colaborador"
+                  placeholder="Nome completo do colaborador"
                   value={novoFuncionario.nome}
                   onChange={e => setNovoFuncionario({ ...novoFuncionario, nome: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                  className={inputPadrao}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              {/* Linha Simétrica 1: Matrícula & Cargo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold text-slate-700">Matrícula</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Matrícula</label>
                   <input
                     type="text"
                     required
                     placeholder="Ex: 001"
                     value={novoFuncionario.matricula}
                     onChange={e => setNovoFuncionario({ ...novoFuncionario, matricula: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                    className={inputPadrao}
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-slate-700">Cargo</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Cargo Oficial</label>
                   <select
                     value={novoFuncionario.cargo_id}
                     onChange={e => setNovoFuncionario({ ...novoFuncionario, cargo_id: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                    className={selectPadrao}
                   >
-                    <option value="">Selecione...</option>
+                    <option value="">Selecione o cargo...</option>
                     {cargos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="font-semibold text-slate-700">Email Corporativo</label>
-                <input
-                  type="email"
-                  placeholder="colaborador@791solucoes.com.br"
-                  value={novoFuncionario.email}
-                  onChange={e => setNovoFuncionario({ ...novoFuncionario, email: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
-                />
+
+              {/* Linha Simétrica 2: CPF & Salário Base */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">CPF</label>
+                  <input
+                    type="text"
+                    placeholder="000.000.000-00"
+                    value={novoFuncionario.cpf}
+                    onChange={e => setNovoFuncionario({ ...novoFuncionario, cpf: e.target.value })}
+                    className={inputPadrao}
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Salário Mensal (R$)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 3500.00"
+                    value={novoFuncionario.salario_base}
+                    onChange={e => setNovoFuncionario({ ...novoFuncionario, salario_base: e.target.value })}
+                    className={inputPadrao}
+                  />
+                </div>
               </div>
+
+              {/* Linha Simétrica 3: Email Corporativo & Telefone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Email Corporativo</label>
+                  <input
+                    type="email"
+                    placeholder="colaborador@791solucoes.com.br"
+                    value={novoFuncionario.email}
+                    onChange={e => setNovoFuncionario({ ...novoFuncionario, email: e.target.value })}
+                    className={inputPadrao}
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">WhatsApp / Telefone</label>
+                  <input
+                    type="text"
+                    placeholder="(00) 00000-0000"
+                    value={novoFuncionario.telefone}
+                    onChange={e => setNovoFuncionario({ ...novoFuncionario, telefone: e.target.value })}
+                    className={inputPadrao}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-blue-50 p-3 border border-blue-200 text-blue-900 text-[11px] flex items-center justify-between">
+                <span>Deseja gerenciar permissões e documentos avançados?</span>
+                <Link href="/equipe" className="font-bold underline text-[#3b597b]">
+                  Abrir Usuários (/equipe)
+                </Link>
+              </div>
+
               <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
                   type="button"
                   onClick={() => setModalFuncionario(false)}
-                  className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100"
+                  className="rounded-xl px-4 py-2.5 text-slate-500 hover:bg-slate-100 font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-[#3b597b] px-4 py-1.5 font-bold text-white hover:bg-[#2d445f]"
+                  className="rounded-xl bg-[#3b597b] px-5 py-2.5 font-bold text-white hover:bg-[#2d445f]"
                 >
                   Salvar Colaborador
                 </button>
@@ -893,54 +1144,66 @@ export default function RHPage() {
         </div>
       )}
 
-      {/* MODAL NOVO CARGO */}
+      {/* MODAL NOVO CARGO (100% SIMÉTRICO) */}
       {modalCargo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">Cadastrar Novo Cargo</h3>
-            <form onSubmit={salvarCargo} className="space-y-3 text-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
-                <label className="font-semibold text-slate-700">Título do Cargo</label>
+                <h3 className="text-base font-bold text-slate-800">Cadastrar Novo Cargo</h3>
+                <p className="text-xs text-slate-500">Defina a nomenclatura e atribuições do cargo.</p>
+              </div>
+              <button onClick={() => setModalCargo(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={salvarCargo} className="space-y-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Título do Cargo</label>
                 <input
                   type="text"
                   required
                   placeholder="Ex: Desenvolvedor Senior, Vendedor, etc."
                   value={novoCargo.nome}
                   onChange={e => setNovoCargo({ ...novoCargo, nome: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                  className={inputPadrao}
                 />
               </div>
+
               <div>
-                <label className="font-semibold text-slate-700">Setor / Departamento</label>
+                <label className="font-semibold text-slate-700 block mb-1">Setor / Departamento</label>
                 <input
                   type="text"
                   placeholder="Ex: Comercial, Tecnologia, Financeiro"
                   value={novoCargo.setor}
                   onChange={e => setNovoCargo({ ...novoCargo, setor: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                  className={inputPadrao}
                 />
               </div>
+
               <div>
-                <label className="font-semibold text-slate-700">Responsabilidades</label>
+                <label className="font-semibold text-slate-700 block mb-1">Responsabilidades</label>
                 <textarea
                   rows={3}
                   placeholder="Atribuições e escopo da função..."
                   value={novoCargo.responsabilidades}
                   onChange={e => setNovoCargo({ ...novoCargo, responsabilidades: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                  className={textareaPadrao}
                 />
               </div>
+
               <div className="flex justify-end gap-2 pt-3 border-t">
                 <button
                   type="button"
                   onClick={() => setModalCargo(false)}
-                  className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100"
+                  className="rounded-xl px-4 py-2.5 text-slate-500 hover:bg-slate-100 font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-[#3b597b] px-4 py-1.5 font-bold text-white hover:bg-[#2d445f]"
+                  className="rounded-xl bg-[#3b597b] px-5 py-2.5 font-bold text-white hover:bg-[#2d445f]"
                 >
                   Salvar Cargo
                 </button>
@@ -950,30 +1213,40 @@ export default function RHPage() {
         </div>
       )}
 
-      {/* MODAL NOVA ESCALA */}
+      {/* MODAL NOVA ESCALA (100% SIMÉTRICO) */}
       {modalEscala && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
-            <h3 className="text-base font-bold text-slate-800">Cadastrar Modelo de Escala</h3>
-            <form onSubmit={salvarEscala} className="space-y-3 text-xs">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
-                <label className="font-semibold text-slate-700">Nome da Escala</label>
+                <h3 className="text-base font-bold text-slate-800">Cadastrar Modelo de Escala</h3>
+                <p className="text-xs text-slate-500">Configure jornadas de trabalho e turnos CLT.</p>
+              </div>
+              <button onClick={() => setModalEscala(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={salvarEscala} className="space-y-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Nome da Escala</label>
                 <input
                   type="text"
                   required
                   placeholder="Ex: Comercial 44h (5x2), Turno Suporte 12x36"
                   value={novaEscala.nome}
                   onChange={e => setNovaEscala({ ...novaEscala, nome: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                  className={inputPadrao}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold text-slate-700">Modelo</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Modelo</label>
                   <select
                     value={novaEscala.tipo}
                     onChange={e => setNovaEscala({ ...novaEscala, tipo: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                    className={selectPadrao}
                   >
                     <option value="5x2">5x2 (Segunda a Sexta)</option>
                     <option value="6x1">6x1 (Seis dias, folga um)</option>
@@ -982,11 +1255,11 @@ export default function RHPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="font-semibold text-slate-700">Jornada Diária</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Jornada Diária</label>
                   <select
                     value={novaEscala.jornada_diaria_minutos}
                     onChange={e => setNovaEscala({ ...novaEscala, jornada_diaria_minutos: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2 focus:outline-none focus:border-[#3b597b]"
+                    className={selectPadrao}
                   >
                     <option value={528}>8h 48m (44h sem sábado)</option>
                     <option value={480}>8h 00m (40h semanais)</option>
@@ -1000,13 +1273,13 @@ export default function RHPage() {
                 <button
                   type="button"
                   onClick={() => setModalEscala(false)}
-                  className="rounded-lg px-3 py-1.5 text-slate-500 hover:bg-slate-100"
+                  className="rounded-xl px-4 py-2.5 text-slate-500 hover:bg-slate-100 font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-[#3b597b] px-4 py-1.5 font-bold text-white hover:bg-[#2d445f]"
+                  className="rounded-xl bg-[#3b597b] px-5 py-2.5 font-bold text-white hover:bg-[#2d445f]"
                 >
                   Salvar Escala
                 </button>
@@ -1053,115 +1326,82 @@ export default function RHPage() {
               </div>
             </div>
 
-            {funcionarios.length === 0 ? (
-              /* Caso não haja colaborador ainda cadastrado */
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center space-y-3">
-                <AlertCircle className="mx-auto h-8 w-8 text-amber-600" />
-                <div>
-                  <h4 className="text-xs font-bold text-amber-900">Nenhum Colaborador Cadastrado</h4>
-                  <p className="mt-1 text-[11px] text-amber-700">
-                    Para registrar ponto, a Holding precisa ter ao menos um colaborador no quadro (ex: você mesmo).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModalPonto(false);
-                    setNovoFuncionario({
-                      nome: 'Ramon',
-                      matricula: '001',
-                      cpf: '',
-                      email: 'ramon@791solucoes.com.br',
-                      telefone: '',
-                      cargo_id: cargos[0]?.id || '',
-                      admissao: new Date().toISOString().slice(0, 10),
-                      salario_base: '5000.00'
-                    });
-                    setModalFuncionario(true);
-                  }}
-                  className="rounded-lg bg-[#3b597b] px-4 py-2 text-xs font-bold text-white shadow hover:bg-[#2d445f]"
+            {/* Formulário com Colaborador & Batidas Rápidas */}
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Colaborador</label>
+                <select
+                  value={novoPonto.funcionario_id || funcionarios[0]?.id || ''}
+                  onChange={e => setNovoPonto({ ...novoPonto, funcionario_id: e.target.value })}
+                  className={selectPadrao}
                 >
-                  + Cadastrar Ramon como Colaborador
-                </button>
+                  {funcionarios.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome} (#{f.matricula}) {f.cargo?.nome ? `— ${f.cargo.nome}` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              /* Formulário com Colaborador & Batidas Rápidas */
-              <div className="space-y-4 text-xs">
-                <div>
-                  <label className="font-semibold text-slate-700">Colaborador</label>
-                  <select
-                    value={novoPonto.funcionario_id || funcionarios[0]?.id || ''}
-                    onChange={e => setNovoPonto({ ...novoPonto, funcionario_id: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-medium text-slate-800 focus:outline-none focus:border-[#3b597b]"
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-2">Bater Ponto Agora (1 Clique):</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => salvarPonto(undefined, 'entrada')}
+                    className="rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 p-3 text-left transition-colors group"
                   >
-                    {funcionarios.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.nome} (#{f.matricula}) {f.cargo?.nome ? `— ${f.cargo.nome}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <span className="block text-emerald-800 font-bold text-xs flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Entrada
+                    </span>
+                    <span className="text-[10px] text-emerald-600 mt-0.5 block">Início da jornada</span>
+                  </button>
 
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-2">Bater Ponto Agora (1 Clique):</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => salvarPonto(undefined, 'entrada')}
-                      className="rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 p-3 text-left transition-colors group"
-                    >
-                      <span className="block text-emerald-800 font-bold text-xs flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        Entrada
-                      </span>
-                      <span className="text-[10px] text-emerald-600 mt-0.5 block">Início da jornada</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => salvarPonto(undefined, 'intervalo_saida')}
+                    className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 p-3 text-left transition-colors group"
+                  >
+                    <span className="block text-amber-800 font-bold text-xs flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      Saída Almoço
+                    </span>
+                    <span className="text-[10px] text-amber-600 mt-0.5 block">Intervalo refeição</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => salvarPonto(undefined, 'intervalo_saida')}
-                      className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 p-3 text-left transition-colors group"
-                    >
-                      <span className="block text-amber-800 font-bold text-xs flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-amber-500" />
-                        Saída Almoço
-                      </span>
-                      <span className="text-[10px] text-amber-600 mt-0.5 block">Intervalo refeição</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => salvarPonto(undefined, 'intervalo_retorno')}
+                    className="rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 p-3 text-left transition-colors group"
+                  >
+                    <span className="block text-blue-800 font-bold text-xs flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-blue-500" />
+                      Retorno Almoço
+                    </span>
+                    <span className="text-[10px] text-blue-600 mt-0.5 block">Volta do intervalo</span>
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => salvarPonto(undefined, 'intervalo_retorno')}
-                      className="rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 p-3 text-left transition-colors group"
-                    >
-                      <span className="block text-blue-800 font-bold text-xs flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-blue-500" />
-                        Retorno Almoço
-                      </span>
-                      <span className="text-[10px] text-blue-600 mt-0.5 block">Volta do intervalo</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => salvarPonto(undefined, 'saida')}
-                      className="rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 p-3 text-left transition-colors group"
-                    >
-                      <span className="block text-rose-800 font-bold text-xs flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-full bg-rose-500" />
-                        Saída
-                      </span>
-                      <span className="text-[10px] text-rose-600 mt-0.5 block">Fim de expediente</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => salvarPonto(undefined, 'saida')}
+                    className="rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 p-3 text-left transition-colors group"
+                  >
+                    <span className="block text-rose-800 font-bold text-xs flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-rose-500" />
+                      Saída
+                    </span>
+                    <span className="text-[10px] text-rose-600 mt-0.5 block">Fim de expediente</span>
+                  </button>
                 </div>
               </div>
-            )}
+            </div>
 
             <div className="flex justify-end pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setModalPonto(false)}
-                className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
               >
                 Fechar
               </button>

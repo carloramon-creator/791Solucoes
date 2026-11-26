@@ -78,6 +78,7 @@ type UserDocument = {
 
 type UserDetailsForm = {
   nome: string;
+  cargo: string;
   cpf: string;
   email: string;
   whatsapp: string;
@@ -172,6 +173,7 @@ function toDateInput(value: string | null | undefined): string {
 function buildForm(member: TeamMember | null): UserDetailsForm {
   return {
     nome: member?.nome || '',
+    cargo: member?.cargo || '',
     cpf: member?.cpf || '',
     email: member?.email || '',
     whatsapp: member?.whatsapp || '',
@@ -215,6 +217,7 @@ export default function EquipePage() {
   const [invitePassword, setInvitePassword] = useState('');
   const [inviteDetails, setInviteDetails] = useState<InviteDetailsForm>({
     nome: '',
+    cargo: '',
     cpf: '',
     whatsapp: '',
     cep: '',
@@ -338,7 +341,7 @@ export default function EquipePage() {
 
     try {
       const selectedProfile = permissionProfileOptions.find((profile) => profile.id === inviteProfileId) || permissionProfileOptions[0] || null;
-      const cargo = selectedProfile?.name || 'Suporte';
+      const cargo = inviteDetails.cargo || selectedProfile?.name || 'Suporte';
 
       const { error } = await supabase.from('equipe_791').insert({
         email: inviteEmail.toLowerCase().trim(),
@@ -376,6 +379,7 @@ export default function EquipePage() {
       setInvitePassword('');
       setInviteDetails({
         nome: '',
+        cargo: '',
         cpf: '',
         whatsapp: '',
         cep: '',
@@ -579,6 +583,7 @@ export default function EquipePage() {
         method: 'PATCH',
         body: JSON.stringify({
           nome: editingDetails.nome,
+          cargo: editingDetails.cargo || null,
           cpf: editingDetails.cpf,
           whatsapp: editingDetails.whatsapp,
           cep: editingDetails.cep,
@@ -752,6 +757,22 @@ export default function EquipePage() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cargo Oficial (RH)</label>
+              <input
+                list="cargos-sugestoes-add"
+                value={inviteDetails.cargo}
+                onChange={(e) => setInviteDetails((prev) => ({ ...prev, cargo: e.target.value }))}
+                placeholder="Ex: Dono, Suporte, Financeiro..."
+                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 focus:outline-none focus:border-[#3b597b] focus:ring-1 focus:ring-[#3b597b] transition-all"
+              />
+              <datalist id="cargos-sugestoes-add">
+                {fallbackCargos.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -1059,13 +1080,28 @@ export default function EquipePage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div className="md:col-span-2">
+                    <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nome completo</label>
                       <input
                         value={editingDetails.nome}
                         onChange={(e) => setEditingDetails((prev) => ({ ...prev, nome: e.target.value }))}
                         className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
                       />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cargo Oficial (RH)</label>
+                      <input
+                        list="cargos-sugestoes"
+                        value={editingDetails.cargo}
+                        placeholder="Ex: Dono, Suporte, Financeiro..."
+                        onChange={(e) => setEditingDetails((prev) => ({ ...prev, cargo: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[12px]"
+                      />
+                      <datalist id="cargos-sugestoes">
+                        {fallbackCargos.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Perfil de permissao</label>

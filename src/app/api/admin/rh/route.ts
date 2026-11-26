@@ -1,18 +1,90 @@
 /**
  * /api/admin/rh
  * API de Gestão de RH da Holding:
+ * - Sincronização automática com equipe_791 (Configurações / Usuários)
  * - Funcionários (listar, criar, atualizar, excluir)
  * - Cargos e Níveis
  * - Batidas de Ponto
  * - Escalas e Turnos
- * - Folha de Pagamento / Banco de Horas
+ * - Folha de Pagamento Oficial (CLT / eSocial)
  */
 
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
+import { processarFolhaColaborador, arredondar, PARAMETROS_LEGAIS_PADRAO } from '@/lib/folha-pagamento';
 
 export const dynamic = 'force-dynamic';
+
+async function syncEquipeComRH() {
+  try {
+    // 1. Busca todos da equipe_791
+    const { data: equipe } = await supabaseServer.from('equipe_791').select('*');
+    if (!equipe || equipe.length === 0) return;
+
+    // 2. Busca cargos existentes em rh_cargos
+    const { data: cargosExistentes } = await supabaseServer.from('rh_cargos').select('id, nome');
+    const mapaCargos = new Map<string, string>();
+    (cargosExistentes || []).forEach(c => mapaCargos.set(c.nome.toLowerCase().trim(), c.id));
+
+    // 3. Garante que os cargos mencionados na equipe existam em rh_cargos
+    for (const mem of equipe) {
+      const cargoNome = (mem.cargo || 'Colaborador').trim();
+      if (cargoNome && !mapaCargos.has(cargoNome.toLowerCase())) {
+        const { data: novoCargo } = await supabaseServer
+          .from('rh_cargos')
+          .insert({ nome: cargoNome, setor: 'Geral', responsabilidades: `Atribuições do cargo de ${cargoNome}` })
+          .select('id, nome')
+          .single();
+        if (novoCargo) {
+          mapaCargos.set(novoCargo.nome.toLowerCase().trim(), novoCargo.id);
+        }
+      }
+    }
+
+    // 4. Busca funcionários já cadastrados em rh_funcionarios
+    const { data: funcAtuais } = await supabaseServer.from('rh_funcionarios').select('id, email, matricula, cargo_id');
+    const mapaFuncPorEmail = new Map<string, any>();
+    (funcAtuais || []).forEach(f => mapaFuncPorEmail.set((f.email || '').toLowerCase().trim(), f));
+
+    // 5. Insere ou atualiza quem estiver na equipe_791
+    let seq = (funcAtuais?.length || 0) + 1;
+    for (const mem of equipe) {
+      const email = (mem.email || '').toLowerCase().trim();
+      if (!email) continue;
+      const cargoNome = (mem.cargo || '').toLowerCase().trim();
+      const cargoId = mapaCargos.get(cargoNome) || null;
+
+      const jaExiste = mapaFuncPorEmail.get(email);
+      const salarioBase = Number(mem.salario_mensal) || 0;
+
+      if (!jaExiste) {
+        const matricula = String(seq++).padStart(3, '0');
+        await supabaseServer.from('rh_funcionarios').insert({
+          nome: mem.nome || email.split('@')[0],
+          email,
+          cpf: mem.cpf || null,
+          telefone: mem.whatsapp || null,
+          matricula,
+          cargo_id: cargoId,
+          admissao: mem.periodo_trabalho_inicio || mem.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          situacao: 'ativo',
+          dados_bancarios: { salario_base: salarioBase, foto_path: mem.foto_path || null }
+        });
+      } else {
+        await supabaseServer.from('rh_funcionarios').update({
+          nome: mem.nome || jaExiste.nome,
+          cpf: mem.cpf || null,
+          telefone: mem.whatsapp || null,
+          cargo_id: cargoId || jaExiste.cargo_id,
+          dados_bancarios: { salario_base: salarioBase, foto_path: mem.foto_path || null }
+        }).eq('id', jaExiste.id);
+      }
+    }
+  } catch (err) {
+    console.error('Erro na sincronização equipe -> RH:', err);
+  }
+}
 
 export async function GET(req: Request) {
   const auth = await authenticateHoldingAdmin(req);
@@ -41,20 +113,45 @@ export async function GET(req: Request) {
     }
 
     if (tipo === 'folha') {
+      await syncEquipeComRH();
       const mes = url.searchParams.get('mes') || new Date().toISOString().slice(0, 7);
-      
-      // Busca funcionários e banco de horas correspondente ao mês
-      const [funcRes, bancoRes] = await Promise.all([
-        supabaseServer.from('rh_funcionarios').select('*, cargo:rh_cargos(nome)'),
-        supabaseServer.from('rh_banco_horas').select('*').eq('mes_referencia', mes)
-      ]);
 
-      if (funcRes.error) throw funcRes.error;
+      const { data: funcionarios, error } = await supabaseServer
+        .from('rh_funcionarios')
+        .select('*, cargo:rh_cargos(nome)')
+        .order('nome');
+
+      if (error) throw error;
+
+      // Processa a folha oficial com deduções legais progressivas para cada colaborador
+      const demonstrativo = (funcionarios || []).map(f => {
+        const salario = Number(f.dados_bancarios?.salario_base) || 3500;
+        return processarFolhaColaborador({
+          id: f.id,
+          nome: f.nome,
+          matricula: f.matricula,
+          cargo: f.cargo?.nome || 'Colaborador',
+          cpf: f.cpf || '',
+          admissao: f.admissao || '',
+          salario
+        });
+      });
+
+      const totais = {
+        totalColaboradores: demonstrativo.length,
+        totalProventos: arredondar(demonstrativo.reduce((acc, d) => acc + d.totalProventos, 0)),
+        totalDescontos: arredondar(demonstrativo.reduce((acc, d) => acc + d.totalDescontos, 0)),
+        totalLiquido: arredondar(demonstrativo.reduce((acc, d) => acc + d.salarioLiquido, 0)),
+        totalInss: arredondar(demonstrativo.reduce((acc, d) => acc + d.inss, 0)),
+        totalIrrf: arredondar(demonstrativo.reduce((acc, d) => acc + d.irrf, 0)),
+        totalFgts: arredondar(demonstrativo.reduce((acc, d) => acc + d.fgts, 0))
+      };
 
       return NextResponse.json({
         competencia: mes,
-        funcionarios: funcRes.data || [],
-        bancoHoras: bancoRes.data || []
+        demonstrativo,
+        totais,
+        parametros: PARAMETROS_LEGAIS_PADRAO
       });
     }
 
@@ -68,11 +165,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ pontos: data || [] });
     }
 
-    // Padrão: funcionários
+    // Padrão: funcionários (sincroniza com equipe_791)
+    await syncEquipeComRH();
+
     const { data, error } = await supabaseServer
       .from('rh_funcionarios')
       .select('*, cargo:rh_cargos(nome), setor:rh_pessoal_setores(nome)')
-      .order('nome');
+      .order('matricula');
 
     if (error) throw error;
     return NextResponse.json({ funcionarios: data || [] });

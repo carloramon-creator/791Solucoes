@@ -160,7 +160,7 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
           {statusBackup.fase === 'ocioso' && (
             <p className="mt-1 text-sm text-slate-600">
               {arquivos.length > 0
-                ? `Último backup no Drive: ${dataHora.format(new Date(arquivos[0].criadoEm))} (${bytes(arquivos[0].tamanhoBytes)})`
+                ? `✅ Último backup no Drive: ${dataHora.format(new Date(arquivos[0].criadoEm))} (${bytes(arquivos[0].tamanhoBytes)})`
                 : 'Nenhum backup em execução no momento.'}
             </p>
           )}

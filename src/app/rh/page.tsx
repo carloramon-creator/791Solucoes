@@ -336,6 +336,20 @@ export default function RHPage() {
     }
   };
 
+  const imprimirTodosHolerites = async () => {
+    if (!folhaDados || folhaDados.demonstrativo.length === 0) return;
+    try {
+      const { gerarHoleritesPdf } = await import('@/lib/folha-pdf');
+      const { doc } = await gerarHoleritesPdf(folhaDados.demonstrativo, mesFolha);
+      doc.autoPrint();
+      const blobUrl = doc.output('bloburl');
+      window.open(blobUrl, '_blank');
+    } catch (e) {
+      console.error('Erro ao imprimir holerites:', e);
+      alert('Erro ao imprimir holerites.');
+    }
+  };
+
   const funcionariosFiltrados = useMemo(() => {
     if (!busca.trim()) return funcionarios;
     const b = busca.toLowerCase();
@@ -729,6 +743,15 @@ export default function RHPage() {
               >
                 <Download className="h-4 w-4" />
                 Baixar Todos os Holerites (PDF)
+              </button>
+              <button
+                type="button"
+                onClick={imprimirTodosHolerites}
+                disabled={!folhaDados || folhaDados.demonstrativo.length === 0}
+                className="h-10 rounded-xl border border-[#3b597b] text-[#3b597b] hover:bg-slate-50 px-3.5 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                <Printer className="h-4 w-4" />
+                Imprimir Todos os Holerites
               </button>
             </div>
           </div>

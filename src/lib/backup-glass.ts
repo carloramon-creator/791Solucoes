@@ -14,6 +14,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { createCipheriv, randomBytes, createHash } from 'crypto';
+import { gzipSync } from 'zlib';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,7 +24,7 @@ export type BackupStatus =
   | { fase: 'ocioso' }
   | { fase: 'exportando'; iniciadoEm: string }
   | { fase: 'enviando'; iniciadoEm: string; bytesExportados: number }
-  | { fase: 'concluido'; iniciadoEm: string; concluidoEm: string; bytesExportados: number; driveFileId: string; driveFileName: string }
+  | { fase: 'concluido'; iniciadoEm: string; concluidoEm: string; bytesExportados: number; bytesEnviados?: number; driveFileId: string; driveFileName: string }
   | { fase: 'erro'; iniciadoEm: string; falhouEm: string; mensagem: string };
 
 // ─── Estado em memória (single-process) ──────────────────────────────────────
@@ -69,11 +70,13 @@ export async function iniciarBackupGlass(): Promise<void> {
 
     _status = { fase: 'enviando', iniciadoEm, bytesExportados };
 
-    // 3. Criptografar o dump com AES-256-GCM
-    const { dados: dadosCriptografados, iv, tag } = criptografar(dump, passphrase);
+    // 3. Comprimir (gzip) e criptografar o dump com AES-256-GCM
+    const comprimido = gzipSync(Buffer.from(dump, 'utf8'), { level: 6 });
+    const { dados: dadosCriptografados, iv, tag } = criptografar(comprimido, passphrase);
 
-    // 4. Montar arquivo final: cabeçalho (iv + tag) + dados cifrados
+    // 4. Montar arquivo final: cabeçalho (BKGL2 + iv + tag) + dados cifrados
     const pacote = montarPacote(iv, tag, dadosCriptografados);
+    const bytesEnviados = pacote.length;
 
     // 5. Obter token do Drive (OAuth2 preferencialmente; Service Account como fallback)
     const accessToken = temOAuth
@@ -93,6 +96,7 @@ export async function iniciarBackupGlass(): Promise<void> {
       iniciadoEm,
       concluidoEm,
       bytesExportados,
+      bytesEnviados,
       driveFileId: fileId,
       driveFileName: nomeArquivo,
     };
@@ -168,19 +172,19 @@ function extrairSenha(dbUrl: string): string {
 
 // ─── Criptografia AES-256-GCM ─────────────────────────────────────────────────
 
-function criptografar(texto: string, passphrase: string): { dados: Buffer; iv: Buffer; tag: Buffer } {
+function criptografar(conteudo: Buffer, passphrase: string): { dados: Buffer; iv: Buffer; tag: Buffer } {
   // Derivar chave de 256 bits a partir da passphrase via SHA-256
   const chave = createHash('sha256').update(passphrase).digest();
   const iv = randomBytes(12); // 96 bits para GCM
   const cifra = createCipheriv('aes-256-gcm', chave, iv);
-  const dados = Buffer.concat([cifra.update(texto, 'utf8'), cifra.final()]);
+  const dados = Buffer.concat([cifra.update(conteudo), cifra.final()]);
   const tag = cifra.getAuthTag(); // 128 bits de autenticação
   return { dados, iv, tag };
 }
 
 function montarPacote(iv: Buffer, tag: Buffer, dados: Buffer): Buffer {
-  // Formato: "BKGL1" (magic) + iv (12 bytes) + tag (16 bytes) + dados cifrados
-  const magic = Buffer.from('BKGL1');
+  // Formato: "BKGL2" (magic gzip+AES-GCM) + iv (12 bytes) + tag (16 bytes) + dados cifrados
+  const magic = Buffer.from('BKGL2');
   return Buffer.concat([magic, iv, tag, dados]);
 }
 

@@ -142,6 +142,7 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
             <p className="mt-1 text-sm text-slate-600">
               ✅ Concluído em {new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(statusBackup.concluidoEm))}{' '}
               · {Math.round(statusBackup.bytesExportados / 1024)} KB exportados
+              {statusBackup.bytesEnviados ? ` · ${Math.round(statusBackup.bytesEnviados / 1024)} KB enviados (comprimido)` : ''}
             </p>
           )}
           {statusBackup.fase === 'erro' && (

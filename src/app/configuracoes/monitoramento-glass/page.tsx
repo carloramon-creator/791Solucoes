@@ -215,6 +215,9 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     setTextoConfirmacao('');
   };
 
+  const emAndamentoBanco = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
+  const emAndamentoStorage = statusStorage.fase === 'listando' || statusStorage.fase === 'baixando' || statusStorage.fase === 'enviando';
+
   const dispararBackupCompleto = useCallback(async () => {
     void dispararBackup();
     void dispararBackupStorage();

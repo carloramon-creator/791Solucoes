@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server';
 import { authenticateHoldingAdmin } from '@/lib/holding-admin-auth';
 import { hasExplicitHoldingPermission } from '@/lib/holding-route-permissions';
-import { iniciarBackupGlass, obterStatusBackup } from '@/lib/backup-glass';
+import { iniciarBackupGlass, listarBackupsDrive, obterStatusBackup } from '@/lib/backup-glass';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,12 +43,23 @@ async function verificarPermissao(req: Request) {
   return { ok: true as const };
 }
 
-// GET /api/admin/backup-glass → status atual
+// GET /api/admin/backup-glass → status atual (e ?lista=1 para listar arquivos no Drive)
 export async function GET(req: Request) {
   const perm = await verificarPermissao(req);
   if (!perm.ok) return perm.resposta;
 
-  return NextResponse.json({ status: obterStatusBackup() }, { headers });
+  const incluirLista = new URL(req.url).searchParams.get('lista') === '1';
+  if (!incluirLista) {
+    return NextResponse.json({ status: obterStatusBackup() }, { headers });
+  }
+
+  try {
+    const arquivos = await listarBackupsDrive();
+    return NextResponse.json({ status: obterStatusBackup(), arquivos, listaErro: null }, { headers });
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : 'Não foi possível listar os backups do Drive.';
+    return NextResponse.json({ status: obterStatusBackup(), arquivos: [], listaErro: mensagem }, { headers });
+  }
 }
 
 // POST /api/admin/backup-glass → disparar backup

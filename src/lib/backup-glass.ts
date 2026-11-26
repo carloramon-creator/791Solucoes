@@ -27,6 +27,13 @@ export type BackupStatus =
   | { fase: 'concluido'; iniciadoEm: string; concluidoEm: string; bytesExportados: number; bytesEnviados?: number; driveFileId: string; driveFileName: string }
   | { fase: 'erro'; iniciadoEm: string; falhouEm: string; mensagem: string };
 
+export type BackupArquivoDrive = {
+  id: string;
+  nome: string;
+  criadoEm: string;
+  tamanhoBytes: number;
+};
+
 // ─── Estado em memória (single-process) ──────────────────────────────────────
 
 let _status: BackupStatus = { fase: 'ocioso' };
@@ -246,6 +253,49 @@ async function buscarArquivoDrive(nome: string, folderId: string, token: string)
   if (!r.ok) return null;
   const json = await r.json() as { files?: { id: string }[] };
   return json.files?.[0]?.id ?? null;
+}
+
+async function obterAccessTokenDrive(): Promise<{ accessToken: string; folderId: string }> {
+  const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const oauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+  const temOAuth = Boolean(oauthClientId && oauthClientSecret && oauthRefreshToken);
+  if (!temOAuth && !serviceAccountJson) {
+    throw new Error('Configure GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET e GOOGLE_OAUTH_REFRESH_TOKEN (ou GOOGLE_SERVICE_ACCOUNT_JSON).');
+  }
+  if (!folderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID não configurado.');
+
+  const accessToken = temOAuth
+    ? await obterTokenOAuth(oauthClientId!, oauthClientSecret!, oauthRefreshToken!)
+    : await obterTokenDrive(serviceAccountJson!);
+
+  return { accessToken, folderId };
+}
+
+export async function listarBackupsDrive(limite = 30): Promise<BackupArquivoDrive[]> {
+  const { accessToken, folderId } = await obterAccessTokenDrive();
+  const q = encodeURIComponent(`name contains 'backup-glass-' and '${folderId}' in parents and trashed=false`);
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime%20desc&pageSize=${limite}&fields=files(id,name,createdTime,size)`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!r.ok) {
+    const texto = await r.text().catch(() => '');
+    throw new Error(`Falha ao listar backups no Drive (${r.status}): ${texto}`);
+  }
+  const json = await r.json() as { files?: { id?: string; name?: string; createdTime?: string; size?: string }[] };
+  return (json.files ?? [])
+    .filter((f): f is { id: string; name: string; createdTime: string; size?: string } =>
+      Boolean(f.id && f.name && f.createdTime))
+    .map(f => ({
+      id: f.id,
+      nome: f.name,
+      criadoEm: f.createdTime,
+      tamanhoBytes: Number(f.size ?? 0) || 0,
+    }));
 }
 
 async function limparAntigos(accessToken: string, folderId: string, diasRetencao: number): Promise<void> {

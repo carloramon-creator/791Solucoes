@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSupabaseBrowser } from '@/lib/supabase-browser';
-import type { BackupStatus } from '@/lib/backup-glass';
+import type { BackupArquivoDrive, BackupStatus } from '@/lib/backup-glass';
 import { validarHistorico, validarIndices, validarIntegridade, validarListaTabelas, validarReferencias, validarStorage, type AmostraBanco, type AmostraStorage, type ListaTabelas, type ResultadoIndices, type ResultadoIntegridade, type ResultadoReferencias } from '@/lib/monitoramento-glass';
 import { alertaSustentado, percentualCpu, taxasDisco, validarInfra, type DispositivoAmostra, type InfraAmostra, type LeituraAlerta } from '@/lib/monitoramento-infra';
 
@@ -74,11 +74,36 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
   const [statusBackup, setStatusBackup] = useState<BackupStatus>({ fase: 'ocioso' });
   const [erroBackup, setErroBackup] = useState('');
   const [disparando, setDisparando] = useState(false);
+  const [arquivos, setArquivos] = useState<BackupArquivoDrive[]>([]);
+  const [carregandoLista, setCarregandoLista] = useState(true);
+  const [erroLista, setErroLista] = useState('');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const pararPolling = useCallback(() => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
   }, []);
+
+  const carregarLista = useCallback(async () => {
+    setCarregandoLista(true);
+    setErroLista('');
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) { setCarregandoLista(false); return; }
+    try {
+      const r = await fetch('/api/admin/backup-glass?lista=1', {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        cache: 'no-store',
+      });
+      const json = await r.json() as { status?: BackupStatus; arquivos?: BackupArquivoDrive[]; listaErro?: string | null; error?: string };
+      if (!r.ok) { setErroLista(json.error ?? 'Erro ao carregar backups.'); return; }
+      if (json.status) setStatusBackup(json.status);
+      if (json.arquivos) setArquivos(json.arquivos);
+      if (json.listaErro) setErroLista(json.listaErro);
+    } catch {
+      setErroLista('Não foi possível consultar a lista de backups no Drive.');
+    } finally {
+      setCarregandoLista(false);
+    }
+  }, [supabase]);
 
   const consultarStatus = useCallback(async () => {
     const { data, error } = await supabase.auth.getSession();
@@ -95,10 +120,13 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
         if (json.status.fase !== 'exportando' && json.status.fase !== 'enviando') {
           pararPolling();
           setDisparando(false);
+          if (json.status.fase === 'concluido') {
+            void carregarLista();
+          }
         }
       }
     } catch { /* polling silencioso */ }
-  }, [supabase, pararPolling]);
+  }, [supabase, pararPolling, carregarLista]);
 
   const dispararBackup = useCallback(async () => {
     setErroBackup('');
@@ -117,18 +145,24 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
     } catch { setErroBackup('Falha de comunicação ao iniciar o backup.'); setDisparando(false); }
   }, [supabase, consultarStatus]);
 
-  // Limpar polling ao desmontar
-  useEffect(() => () => pararPolling(), [pararPolling]);
+  useEffect(() => {
+    void carregarLista();
+    return () => pararPolling();
+  }, [carregarLista, pararPolling]);
 
   const emAndamento = statusBackup.fase === 'exportando' || statusBackup.fase === 'enviando';
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-xs font-bold uppercase text-slate-500">Backup e restauração</p>
           {statusBackup.fase === 'ocioso' && (
-            <p className="mt-1 text-sm text-slate-600">Nenhum backup registrado nesta sessão.</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {arquivos.length > 0
+                ? `Último backup no Drive: ${dataHora.format(new Date(arquivos[0].criadoEm))} (${bytes(arquivos[0].tamanhoBytes)})`
+                : 'Nenhum backup em execução no momento.'}
+            </p>
           )}
           {statusBackup.fase === 'exportando' && (
             <p className="mt-1 text-sm text-slate-600">Exportando banco do Glass...</p>
@@ -140,7 +174,7 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
           )}
           {statusBackup.fase === 'concluido' && (
             <p className="mt-1 text-sm text-slate-600">
-              ✅ Concluído em {new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(statusBackup.concluidoEm))}{' '}
+              ✅ Concluído em {dataHora.format(new Date(statusBackup.concluidoEm))}{' '}
               · {Math.round(statusBackup.bytesExportados / 1024)} KB exportados
               {statusBackup.bytesEnviados ? ` · ${Math.round(statusBackup.bytesEnviados / 1024)} KB enviados (comprimido)` : ''}
             </p>
@@ -160,6 +194,48 @@ function PainelBackup({ supabase }: { supabase: ReturnType<typeof createSupabase
         >
           {emAndamento ? faseLabel[statusBackup.fase] : faseLabel[statusBackup.fase]}
         </button>
+      </div>
+      <div className="border-t border-slate-100 pt-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-xs font-bold uppercase text-slate-500">Backups salvos no Google Drive (últimos 30 · retenção de 90 dias)</p>
+          <button
+            type="button"
+            onClick={() => void carregarLista()}
+            disabled={carregandoLista}
+            className="text-xs font-semibold text-[#3b597b] hover:underline disabled:opacity-50"
+          >
+            {carregandoLista ? 'Atualizando...' : 'Atualizar lista'}
+          </button>
+        </div>
+        {erroLista && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">{erroLista}</p>}
+        {!erroLista && carregandoLista && arquivos.length === 0 && (
+          <p className="text-xs text-slate-500">Consultando arquivos no Google Drive...</p>
+        )}
+        {!erroLista && !carregandoLista && arquivos.length === 0 && (
+          <p className="text-xs text-slate-500">Nenhum backup encontrado na pasta do Drive.</p>
+        )}
+        {arquivos.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-slate-100">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="p-2.5">Arquivo</th>
+                  <th className="p-2.5">Data / Hora</th>
+                  <th className="p-2.5 text-right">Tamanho</th>
+                </tr>
+              </thead>
+              <tbody>
+                {arquivos.map(arq => (
+                  <tr key={arq.id} className="border-t border-slate-100 text-slate-700">
+                    <td className="p-2.5 font-mono">{arq.nome}</td>
+                    <td className="p-2.5 whitespace-nowrap">{dataHora.format(new Date(arq.criadoEm))}</td>
+                    <td className="p-2.5 text-right whitespace-nowrap">{bytes(arq.tamanhoBytes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
       <p className="text-xs text-slate-500">
         Exportação lógica (schema + dados públicos e de autenticação). Objetos do Storage e configurações gerenciadas pelo Supabase não são incluídos neste backup. Restauração deve ser testada em projeto isolado.

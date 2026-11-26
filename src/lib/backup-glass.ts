@@ -48,12 +48,18 @@ export async function iniciarBackupGlass(): Promise<void> {
   try {
     // 1. Validar variáveis de ambiente
     const dbUrl = process.env.GLASS_DATABASE_URL;
+    const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+    const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    const oauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
     const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const passphrase = process.env.BACKUP_ENCRYPTION_PASSPHRASE;
 
+    const temOAuth = Boolean(oauthClientId && oauthClientSecret && oauthRefreshToken);
     if (!dbUrl) throw new Error('GLASS_DATABASE_URL não configurada.');
-    if (!serviceAccountJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON não configurada.');
+    if (!temOAuth && !serviceAccountJson) {
+      throw new Error('Configure GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET e GOOGLE_OAUTH_REFRESH_TOKEN (ou GOOGLE_SERVICE_ACCOUNT_JSON).');
+    }
     if (!folderId) throw new Error('GOOGLE_DRIVE_FOLDER_ID não configurado.');
     if (!passphrase) throw new Error('BACKUP_ENCRYPTION_PASSPHRASE não configurada.');
 
@@ -69,12 +75,17 @@ export async function iniciarBackupGlass(): Promise<void> {
     // 4. Montar arquivo final: cabeçalho (iv + tag) + dados cifrados
     const pacote = montarPacote(iv, tag, dadosCriptografados);
 
-    // 5. Fazer upload para o Drive com verificação de duplicata por hash
-    const nomeArquivo = nomearArquivo();
-    const { fileId } = await uploadDrive(pacote, nomeArquivo, serviceAccountJson, folderId);
+    // 5. Obter token do Drive (OAuth2 preferencialmente; Service Account como fallback)
+    const accessToken = temOAuth
+      ? await obterTokenOAuth(oauthClientId!, oauthClientSecret!, oauthRefreshToken!)
+      : await obterTokenDrive(serviceAccountJson!);
 
-    // 6. Limpar arquivos com mais de 90 dias
-    await limparAntigos(serviceAccountJson, folderId, 90);
+    // 6. Fazer upload para o Drive com verificação de duplicata por nome
+    const nomeArquivo = nomearArquivo();
+    const { fileId } = await uploadDrive(pacote, nomeArquivo, accessToken, folderId);
+
+    // 7. Limpar arquivos com mais de 90 dias
+    await limparAntigos(accessToken, folderId, 90);
 
     const concluidoEm = new Date().toISOString();
     _status = {
@@ -178,11 +189,9 @@ function montarPacote(iv: Buffer, tag: Buffer, dados: Buffer): Buffer {
 async function uploadDrive(
   conteudo: Buffer,
   nomeArquivo: string,
-  serviceAccountJson: string,
+  accessToken: string,
   folderId: string,
 ): Promise<{ fileId: string }> {
-  const accessToken = await obterTokenDrive(serviceAccountJson);
-
   // Verificar se já existe arquivo com mesmo nome (deduplicação por nome)
   const existente = await buscarArquivoDrive(nomeArquivo, folderId, accessToken);
   if (existente) {
@@ -235,8 +244,7 @@ async function buscarArquivoDrive(nome: string, folderId: string, token: string)
   return json.files?.[0]?.id ?? null;
 }
 
-async function limparAntigos(serviceAccountJson: string, folderId: string, diasRetencao: number): Promise<void> {
-  const accessToken = await obterTokenDrive(serviceAccountJson);
+async function limparAntigos(accessToken: string, folderId: string, diasRetencao: number): Promise<void> {
   const corte = new Date(Date.now() - diasRetencao * 24 * 60 * 60 * 1000).toISOString();
   const q = encodeURIComponent(
     `name contains 'backup-glass-' and '${folderId}' in parents and trashed=false and createdTime < '${corte}'`,
@@ -256,7 +264,29 @@ async function limparAntigos(serviceAccountJson: string, folderId: string, diasR
   }
 }
 
-// ─── Autenticação Google (JWT → access token) ─────────────────────────────────
+// ─── Autenticação Google (OAuth2 refresh token ou Service Account JWT) ────────
+
+async function obterTokenOAuth(clientId: string, clientSecret: string, refreshToken: string): Promise<string> {
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!resp.ok) {
+    const texto = await resp.text().catch(() => '');
+    throw new Error(`Falha ao renovar token OAuth do Google (${resp.status}): ${texto}`);
+  }
+
+  const json = await resp.json() as { access_token?: string };
+  if (!json.access_token) throw new Error('Google não retornou access_token (OAuth).');
+  return json.access_token;
+}
 
 async function obterTokenDrive(serviceAccountJson: string): Promise<string> {
   let sa: { client_email: string; private_key: string };

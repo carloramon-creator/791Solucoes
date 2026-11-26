@@ -4,6 +4,8 @@
  * - Funcionários (listar, criar, atualizar, excluir)
  * - Cargos e Níveis
  * - Batidas de Ponto
+ * - Escalas e Turnos
+ * - Folha de Pagamento / Banco de Horas
  */
 
 import { NextResponse } from 'next/server';
@@ -26,7 +28,34 @@ export async function GET(req: Request) {
         .select('*, niveis:rh_niveis_carreira(*)')
         .order('nome');
       if (error) throw error;
-      return NextResponse.json({ cargos: data });
+      return NextResponse.json({ cargos: data || [] });
+    }
+
+    if (tipo === 'escalas') {
+      const { data, error } = await supabaseServer
+        .from('rh_escalas')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return NextResponse.json({ escalas: data || [] });
+    }
+
+    if (tipo === 'folha') {
+      const mes = url.searchParams.get('mes') || new Date().toISOString().slice(0, 7);
+      
+      // Busca funcionários e banco de horas correspondente ao mês
+      const [funcRes, bancoRes] = await Promise.all([
+        supabaseServer.from('rh_funcionarios').select('*, cargo:rh_cargos(nome)'),
+        supabaseServer.from('rh_banco_horas').select('*').eq('mes_referencia', mes)
+      ]);
+
+      if (funcRes.error) throw funcRes.error;
+
+      return NextResponse.json({
+        competencia: mes,
+        funcionarios: funcRes.data || [],
+        bancoHoras: bancoRes.data || []
+      });
     }
 
     if (tipo === 'ponto') {
@@ -36,7 +65,7 @@ export async function GET(req: Request) {
         .order('marcada_em', { ascending: false })
         .limit(100);
       if (error) throw error;
-      return NextResponse.json({ pontos: data });
+      return NextResponse.json({ pontos: data || [] });
     }
 
     // Padrão: funcionários
@@ -46,7 +75,7 @@ export async function GET(req: Request) {
       .order('nome');
 
     if (error) throw error;
-    return NextResponse.json({ funcionarios: data });
+    return NextResponse.json({ funcionarios: data || [] });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Erro ao buscar dados do RH.';
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -72,6 +101,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ cargo: data });
     }
 
+    if (acao === 'criar_escala') {
+      const { nome, tipo, jornada_diaria_minutos, dias_trabalho } = body;
+      const { data, error } = await supabaseServer
+        .from('rh_escalas')
+        .insert({
+          nome,
+          tipo: tipo || '5x2',
+          jornada_diaria_minutos: Number(jornada_diaria_minutos) || 480,
+          dias_trabalho: dias_trabalho || ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'],
+          ativo: true
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ escala: data });
+    }
+
     if (acao === 'registrar_ponto') {
       const { funcionario_id, tipo, latitude, longitude, origem } = body;
       const { data, error } = await supabaseServer
@@ -89,16 +135,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ ponto: data });
     }
 
+    if (acao === 'fechar_banco_horas') {
+      const { funcionario_id, mes_referencia, saldo_minutos, horas_trabalhadas_minutos, horas_esperadas_minutos } = body;
+      const { data, error } = await supabaseServer
+        .from('rh_banco_horas')
+        .upsert({
+          funcionario_id,
+          mes_referencia,
+          saldo_minutos: saldo_minutos || 0,
+          horas_trabalhadas_minutos: horas_trabalhadas_minutos || 0,
+          horas_esperadas_minutos: horas_esperadas_minutos || 0,
+          fechado: true,
+          fechado_em: new Date().toISOString()
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return NextResponse.json({ banco_horas: data });
+    }
+
     // Criar funcionário
-    const { nome, matricula, email, telefone, cargo_id, situacao } = body;
+    const { nome, matricula, email, telefone, cargo_id, situacao, cpf, admissao } = body;
     const { data, error } = await supabaseServer
       .from('rh_funcionarios')
       .insert({
         nome,
         matricula,
+        cpf: cpf || null,
         email: email || null,
         telefone: telefone || null,
         cargo_id: cargo_id || null,
+        admissao: admissao || new Date().toISOString().slice(0, 10),
         situacao: situacao || 'ativo',
       })
       .select()

@@ -125,7 +125,7 @@ async function exportarBanco(dbUrl: string): Promise<string> {
       '--exclude-table=auth.one_time_tokens',
       dbUrl,
     ], {
-      env: { ...process.env, PGPASSWORD: extrairSenha(dbUrl) },
+      env: { ...process.env, PGPASSWORD: extrairSenha(dbUrl), PGCONNECT_TIMEOUT: '15' },
       maxBuffer: 500 * 1024 * 1024, // 500 MB
       timeout: 10 * 60 * 1000,      // 10 minutos
     });
@@ -139,7 +139,12 @@ async function exportarBanco(dbUrl: string): Promise<string> {
     if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error('pg_dump não encontrado. Instale o PostgreSQL client no ambiente de execução.');
     }
-    throw new Error(`Falha na exportação do banco: ${err instanceof Error ? err.message : String(err)}`);
+    const stderr = err && typeof err === 'object' && 'stderr' in err && typeof err.stderr === 'string'
+      ? err.stderr.trim()
+      : '';
+    const bruto = stderr || (err instanceof Error ? err.message : String(err));
+    const seguro = bruto.replace(/postgres(?:ql)?:\/\/[^\s]+/gi, 'postgresql://[oculto]');
+    throw new Error(`Falha na exportação do banco: ${seguro}`);
   }
 }
 

@@ -191,14 +191,19 @@ interface GlassUserRow {
   nomeExibicao: string;
   pessoaNome: string | null;
   perfilId: string | null;
+  possuiPerfil: boolean;
   ativo: boolean;
   isMaster: boolean;
   createdAt: string | null;
   lastSignInAt: string | null;
+  emailConfirmado: boolean | null;
+  contaTecnica: boolean;
+  authExiste: boolean;
   vidracariaId: string | null;
   vidracariaNome: string;
   vidracariaSlug: string | null;
   vidracariaAtiva: boolean | null;
+  vidracariaExiste: boolean;
 }
 
 interface TenantInvoiceHistoryItem {
@@ -296,7 +301,7 @@ export default function AssinaturasPage() {
   const [glassUsers, setGlassUsers] = useState<GlassUserRow[]>([]);
   const [glassUsersSearch, setGlassUsersSearch] = useState('');
   const [glassUsersTenantFilter, setGlassUsersTenantFilter] = useState('all');
-  const [glassUsersStatusFilter, setGlassUsersStatusFilter] = useState<'all' | 'active' | 'inactive' | 'tenant-inactive'>('all');
+  const [glassUsersStatusFilter, setGlassUsersStatusFilter] = useState<'all' | 'active' | 'inactive' | 'no-profile' | 'tenant-inactive' | 'unverified'>('all');
   const [glassUsersSort, setGlassUsersSort] = useState<
     'last-access-desc' | 'last-access-asc' | 'name-asc' | 'tenant-asc' | 'created-asc' | 'created-desc'
   >('last-access-desc');
@@ -454,7 +459,7 @@ export default function AssinaturasPage() {
         throw new Error('Sessao nao encontrada. Faca login novamente.');
       }
 
-      const response = await fetch('/api/admin/glass-users', {
+      const response = await fetch('/api/admin/glass-users?includeTechnical=true', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -788,14 +793,15 @@ export default function AssinaturasPage() {
     }
   };
 
-  const handleCleanupAuthUser = async (userIdArg?: string) => {
+  const handleCleanupAuthUser = async (userIdArg?: string, technical = false) => {
     const normalizedUserId = String(userIdArg || orphanAuthUserId).trim();
     if (!normalizedUserId) {
       alert('Informe o userId do usuario que deve ser removido do Auth.');
       return;
     }
 
-    if (!window.confirm(`Confirma remover do Auth o usuario ${normalizedUserId}?`)) {
+    const technicalWarning = technical ? '\n\nEsta é uma conta técnica de suporte/chat. Sua exclusão pode interromper essas funcionalidades.' : '';
+    if (!window.confirm(`Confirma remover permanentemente do Auth o usuario ${normalizedUserId}?${technicalWarning}`)) {
       return;
     }
 
@@ -815,7 +821,7 @@ export default function AssinaturasPage() {
         throw new Error('Sessao nao encontrada. Faca login novamente.');
       }
 
-      const response = await fetch(`/api/admin/auth-users/${encodeURIComponent(normalizedUserId)}`, {
+      const response = await fetch(`/api/admin/auth-users/${encodeURIComponent(normalizedUserId)}${technical ? '?confirmTechnical=true' : ''}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -1000,11 +1006,13 @@ export default function AssinaturasPage() {
     const tenantKey = user.vidracariaId || 'sem-vidracaria';
     const matchesTenant = glassUsersTenantFilter === 'all' || tenantKey === glassUsersTenantFilter;
 
-    const isTenantInactive = user.vidracariaAtiva === false || !user.vidracariaId;
+    const isTenantInactive = user.vidracariaAtiva === false || !user.vidracariaExiste;
     const matchesStatus = glassUsersStatusFilter === 'all'
       || (glassUsersStatusFilter === 'active' && user.ativo)
-      || (glassUsersStatusFilter === 'inactive' && !user.ativo)
-      || (glassUsersStatusFilter === 'tenant-inactive' && isTenantInactive);
+      || (glassUsersStatusFilter === 'inactive' && user.possuiPerfil && !user.ativo)
+      || (glassUsersStatusFilter === 'no-profile' && !user.possuiPerfil)
+      || (glassUsersStatusFilter === 'tenant-inactive' && isTenantInactive)
+      || (glassUsersStatusFilter === 'unverified' && user.emailConfirmado === false);
 
     return matchesTerm && matchesTenant && matchesStatus;
   }).sort((left, right) => {
@@ -2050,9 +2058,9 @@ export default function AssinaturasPage() {
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">Usuarios 791glass</p>
-                <h3 className="text-lg font-black text-slate-900 mt-1">Usuários vinculados e sem vidraçaria</h3>
+                <h3 className="text-lg font-black text-slate-900 mt-1">Todos os usuários do 791Glass</h3>
                 <p className="text-[12px] text-slate-600 mt-1">
-                  Contas antigas sem vínculo também aparecem como “Sem vidraçaria”. Contas técnicas de suporte e chat ficam ocultas.
+                  Inclui contas sem vidraçaria, não verificadas e técnicas de suporte/chat.
                 </p>
               </div>
               <button
@@ -2103,13 +2111,15 @@ export default function AssinaturasPage() {
 
                 <select
                   value={glassUsersStatusFilter}
-                  onChange={(e) => setGlassUsersStatusFilter(e.target.value as 'all' | 'active' | 'inactive' | 'tenant-inactive')}
+                  onChange={(e) => setGlassUsersStatusFilter(e.target.value as 'all' | 'active' | 'inactive' | 'no-profile' | 'tenant-inactive' | 'unverified')}
                   className="h-[40px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="all">Todos os status</option>
                   <option value="active">Usuarios ativos</option>
                   <option value="inactive">Usuarios inativos</option>
+                  <option value="no-profile">Usuários sem perfil</option>
                   <option value="tenant-inactive">Vidracaria inativa/excluida</option>
+                  <option value="unverified">E-mail não verificado</option>
                 </select>
 
                 <select
@@ -2169,6 +2179,9 @@ export default function AssinaturasPage() {
                         <td className="px-4 py-3 align-top">
                           <div className="text-sm font-bold text-slate-800">{user.nomeExibicao || user.pessoaNome || 'Sem nome'}</div>
                           <div className="text-xs text-slate-500 mt-0.5">{user.email || 'E-mail nao encontrado'}</div>
+                          {user.contaTecnica && (
+                            <div className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700 mt-1">Conta técnica de suporte/chat</div>
+                          )}
                           {user.pessoaNome && user.pessoaNome !== user.nomeExibicao && (
                             <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mt-1">
                               Pessoa: {user.pessoaNome}
@@ -2180,9 +2193,9 @@ export default function AssinaturasPage() {
                           <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 mt-1">
                             {user.vidracariaSlug ? `/${user.vidracariaSlug}` : 'Sem slug'}
                           </div>
-                          {(!user.vidracariaId || user.vidracariaAtiva === false) && (
+                          {(!user.vidracariaExiste || user.vidracariaAtiva === false) && (
                             <div className="mt-1 inline-flex rounded-full bg-red-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-700">
-                              {!user.vidracariaId ? 'SEM VIDRACARIA' : 'VIDRACARIA INATIVA'}
+                              {!user.vidracariaId ? 'SEM VIDRACARIA' : !user.vidracariaExiste ? 'VIDRACARIA EXCLUIDA' : 'VIDRACARIA INATIVA'}
                             </div>
                           )}
                         </td>
@@ -2193,12 +2206,18 @@ export default function AssinaturasPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 align-top whitespace-nowrap">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${user.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                            {user.ativo ? 'ATIVO' : 'INATIVO'}
+                          <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${!user.possuiPerfil ? 'bg-slate-100 text-slate-700' : user.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {!user.possuiPerfil ? 'SEM PERFIL' : user.ativo ? 'ATIVO' : 'INATIVO'}
                           </span>
-                          {(!user.vidracariaId || user.vidracariaAtiva === false) && (
+                          {user.emailConfirmado === false && (
+                            <div className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700 mt-1">E-mail não verificado</div>
+                          )}
+                          {!user.authExiste && (
+                            <div className="text-[10px] font-black uppercase tracking-[0.12em] text-red-500 mt-1">Sem conta no Auth</div>
+                          )}
+                          {(!user.vidracariaExiste || user.vidracariaAtiva === false) && (
                             <div className="text-[10px] font-black uppercase tracking-[0.12em] text-red-500 mt-1">
-                              {!user.vidracariaId ? 'USUARIO ORFAO' : 'TENANT BLOQUEADO'}
+                              {!user.vidracariaExiste ? 'USUARIO ORFAO' : 'TENANT BLOQUEADO'}
                             </div>
                           )}
                         </td>
@@ -2217,10 +2236,10 @@ export default function AssinaturasPage() {
                             onClick={async () => {
                               setShowAuthCleanupModal(false);
                               setOrphanAuthUserId(user.userId);
-                              await handleCleanupAuthUser(user.userId);
+                              await handleCleanupAuthUser(user.userId, user.contaTecnica);
                               await fetchGlassUsers();
                             }}
-                            disabled={isCleaningAuthUser}
+                            disabled={isCleaningAuthUser || !user.authExiste}
                             className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-red-700 hover:bg-red-100 disabled:opacity-50"
                           >
                             {isCleaningAuthUser && orphanAuthUserId.trim() === user.userId ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}

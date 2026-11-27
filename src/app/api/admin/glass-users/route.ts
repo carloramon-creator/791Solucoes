@@ -52,10 +52,12 @@ type GlassAuthUser = {
   email?: string | null;
   created_at?: string;
   last_sign_in_at?: string | null;
+  email_confirmed_at?: string | null;
   user_metadata?: Record<string, unknown> | null;
 };
 
 const PAGE_SIZE = 1000;
+const AUTH_PAGE_SIZE = 50;
 const MAX_PAGES = 1000;
 
 async function fetchAllRows<T>(
@@ -81,12 +83,12 @@ async function fetchAllAuthUsers(glass: Awaited<ReturnType<typeof getGlassClient
   const users: GlassAuthUser[] = [];
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const { data, error } = await glass.auth.admin.listUsers({ page, perPage: PAGE_SIZE });
+    const { data, error } = await glass.auth.admin.listUsers({ page, perPage: AUTH_PAGE_SIZE });
     if (error) throw new Error(`Falha ao listar usuários do Auth: ${error.message}`);
 
     const pageUsers = data.users || [];
     users.push(...pageUsers);
-    if (pageUsers.length < PAGE_SIZE) return users;
+    if (data.nextPage == null && pageUsers.length < AUTH_PAGE_SIZE) return users;
   }
 
   throw new Error('Não foi possível concluir a listagem paginada de usuários Auth.');
@@ -148,6 +150,10 @@ export async function GET(req: Request) {
     if (!await hasExplicitHoldingPermission(auth.user.email, GLASS_USER_LIST_PERMISSIONS, 'any')) {
       return NextResponse.json({ error: 'Sem permissão para consultar usuários de todas as vidraçarias.' }, { status: 403 });
     }
+    const includeTechnical = new URL(req.url).searchParams.get('includeTechnical') === 'true';
+    if (includeTechnical && !await hasExplicitHoldingPermission(auth.user.email, ['menu.assinaturas'])) {
+      return NextResponse.json({ error: 'Sem permissão para consultar contas técnicas.' }, { status: 403 });
+    }
 
     const glass = await getGlassClient();
 
@@ -200,7 +206,7 @@ export async function GET(req: Request) {
         .map((user) => user.id)
     );
 
-    const rows = profiles.filter((profile) => !technicalUserIds.has(String(profile.user_id || ''))).map((profile) => {
+    const rows = profiles.filter((profile) => profile.user_id && (includeTechnical || !technicalUserIds.has(profile.user_id))).map((profile) => {
       const userId = String(profile.user_id || '');
       const tenant = tenantById.get(String(profile.vidracaria_id || ''));
       const authUser = authUserById.get(userId);
@@ -212,15 +218,20 @@ export async function GET(req: Request) {
         nomeExibicao: profile.nome_exibicao || person?.nome || authUser?.email || userId,
         pessoaNome: person?.nome || null,
         perfilId: profile.perfil_id || null,
+        possuiPerfil: true,
         ativo: Boolean(profile.ativo),
         isMaster: Boolean(profile.is_master),
-        createdAt: profile.created_at || null,
+        createdAt: authUser?.created_at || profile.created_at || null,
         lastSignInAt: authUser?.last_sign_in_at || null,
+        emailConfirmado: authUser?.email ? Boolean(authUser.email_confirmed_at) : null,
+        contaTecnica: technicalUserIds.has(userId),
+        authExiste: Boolean(authUser),
         vidracariaId: profile.vidracaria_id || null,
-        vidracariaNome: tenant?.nome || 'Sem vidracaria',
+        vidracariaNome: tenant?.nome || (profile.vidracaria_id && !tenant ? 'Vidraçaria excluída' : 'Sem vidraçaria'),
         vidracariaNomeFantasia: tenant?.nome_fantasia || null,
         vidracariaSlug: tenant?.slug || null,
         vidracariaAtiva: tenant?.ativa ?? null,
+        vidracariaExiste: Boolean(tenant),
       };
     });
     const linkedUserIds = new Set(profiles.map((profile) => String(profile.user_id || '')));
@@ -229,8 +240,7 @@ export async function GET(req: Request) {
         const metadata = user.user_metadata || {};
         return (
           !linkedUserIds.has(user.id)
-          && metadata.holding_chat !== true
-          && metadata.holding_support !== true
+          && (includeTechnical || (metadata.holding_chat !== true && metadata.holding_support !== true))
         );
       })
       .map((user) => {
@@ -242,15 +252,20 @@ export async function GET(req: Request) {
           nomeExibicao,
           pessoaNome: null,
           perfilId: null,
+          possuiPerfil: false,
           ativo: false,
           isMaster: false,
           createdAt: user.created_at || null,
           lastSignInAt: user.last_sign_in_at || null,
+          emailConfirmado: user.email ? Boolean(user.email_confirmed_at) : null,
+          contaTecnica: technicalUserIds.has(user.id),
+          authExiste: true,
           vidracariaId: null,
           vidracariaNome: 'Sem vidraçaria',
           vidracariaNomeFantasia: null,
           vidracariaSlug: null,
           vidracariaAtiva: null,
+          vidracariaExiste: false,
         };
       });
     const allRows = [...rows, ...unlinkedRows];

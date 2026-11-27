@@ -100,10 +100,11 @@ export async function DELETE(req: Request, context: { params: Promise<{ userId: 
       return NextResponse.json({ error: 'Usuário Auth não encontrado.' }, { status: 404 });
     }
     if (
-      targetUserData.user.user_metadata?.holding_chat === true
-      || targetUserData.user.user_metadata?.holding_support === true
+      (targetUserData.user.user_metadata?.holding_chat === true
+      || targetUserData.user.user_metadata?.holding_support === true)
+      && new URL(req.url).searchParams.get('confirmTechnical') !== 'true'
     ) {
-      return NextResponse.json({ error: 'Contas técnicas de suporte/chat não podem ser removidas por esta lista.' }, { status: 409 });
+      return NextResponse.json({ error: 'Confirme explicitamente a remoção da conta técnica de suporte/chat.' }, { status: 409 });
     }
 
     const removedFromAuth = await deleteGlassAuthUser(glass, normalizedUserId);
